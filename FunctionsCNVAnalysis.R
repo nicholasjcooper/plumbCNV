@@ -12,9 +12,6 @@ auto.mode <- function(on=T,set=F) {
 }
 
 
-# mean replacement code not used at this stage
-row.rep <- function(X) { X[is.na(X)] <- mean(X,na.rm=T); X }
-
 
 clean.fn <- function(x,fail=NA,fn=function(x) { x }) {
   # allows an sapply style function to only work on valid values
@@ -207,8 +204,9 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
                                    descr.fn=sub.fn,nprev=3,snp.info=snp.info,sample.info=sample.info)
   
     # run the PCA  ### here was 'sub.fn' - what do we do with that now???
-    pca.result <- big.PCA(subDescr=subset.descr,dir=dir,pcs.to.keep=n.store,
-                          SVD=SVD,LAP=LAP,save.pcs=T,pcs.fn=pcs.fn) 
+    cat("\nRunning Principle Components Analysis (PCA), using LRR-data subset:\n\n")
+    pca.result <- big.PCA(bigMat=subset.descr,dir=dir,pcs.to.keep=n.store,
+                          SVD=SVD,LAP=LAP,save.pcs=T,pcs.fn=pcs.fn,verbose=T) 
     nsamp <- length(which(sample.info$QCfail==0))
     varz <- do.scree.plots(pca.result$Evalues,dir=dir,elbow=num.pcs,nsamp=nsamp)
     cat("",round(cumsum(varz)[num.pcs]*100,1),"% Est. LRR variance explained by first",num.pcs,"components.\n")
@@ -237,6 +235,52 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
     return(DT)
   } else {
     return(corrected.ref)
+  }
+}
+
+
+
+#plumb cnv internal function
+load.data.to.bigmat <- function(dat.fn,inputType="TXT",bck,des,dir,Hopt=F,RNopt=T)
+{
+  # get data stored in a text or binary file and get it into a bigmatrix object format
+  dir <- validate.dir.for(dir,c("ano","big"),warn=F)
+  if(inputType=="RDATA")
+  {
+    # attach datafile bigmemory object
+    cat("\nLoading RData file...")
+    this.mat <- load(dat.fn)
+    if (this.mat!="m.by.s.matrix") { 
+      m.by.s.matrix <- get(this.mat)
+      rm(this.mat) 
+    }
+    cat("complete\n")
+    if(is.null(colnames(m.by.s.matrix)))
+    {
+      snp.fn <- cat.path(dir$ano,"snpNames.txt")
+      snp.list <- readLines(snp.fn)
+      if (ncol(m.by.s.matrix)==length(snp.list))
+      {
+        colnames(m.by.s.matrix) <- snp.list
+        cat(paste("*warning: added column names to matrix from",snp.fn,"\n"))
+        cat("if replacement with these names is undesired please check/modify the .R source code\n")
+      } else {
+        cat("Error: matrix has no column names and default file doesn't\n")
+        cat("match number of columns, please check/modify the .R source code\n")
+        stop()
+      }
+    }
+    cat(" saving datafile as big matrix\n")
+    bigMat <- as.big.matrix(m.by.s.matrix, backingfile=bck,
+                            backingpath=dir$big, descriptorfile=des)
+  } else {
+    # assume inputType=="TXT"
+    cat("\nLoading TAB file...(this will probably be slow)...")
+    read.big.matrix(dat.fn, sep = '\t', header = Hopt,
+                    has.row.names=RNopt, ignore.row.names=FALSE,
+                    backingfile = bck, backingpath = dir$big,
+                    descriptorfile = des, extraCols = NULL)
+    cat("complete\n")
   }
 }
 
@@ -528,7 +572,7 @@ do.quick.LRR.snp.assocs <- function(descr.fn,sample.info=NULL,use.col="phenotype
   # NB: avoided parallel computing - it does not seem to add any speed here
   kk <- proc.time()[3]
   if(n.cores>1 & require(multicore)) {
-    Fvalues <- bigmcapply(bigMat,1,FUN=ph.test,dir=dir$big,by=200,n.cores=n.cores,pheno=pheno)
+    Fvalues <- bmcapply(bigMat,1,FUN=ph.test,dir=dir$big,by=200,n.cores=n.cores,pheno=pheno)
   } else {  
     for (dd in 1:n.segs)
     {
@@ -892,7 +936,7 @@ calc.main.stats.on.big <- function(des.fn,dir,dlrs.pref="DLRS",deleteDLRS=T,skip
       }
       cmp.there <- require(compiler); if (cmp.there) { dlrs.fast <- cmpfun(dlrs.fast) }
       if(n.cores>1) {
-        uu <- system.time(dlrs <- bigmcapply(bigMat2,2,FUN=dlrs.fast,dir=dir$big,n.cores=n.cores,y=ind.to.rmv)) # ? sec
+        uu <- system.time(dlrs <- bmcapply(bigMat2,2,FUN=dlrs.fast,dir=dir$big,n.cores=n.cores,y=ind.to.rmv)) # ? sec
       } else {
         uu <- system.time(dlrs <- apply(bigMat2,2,dlrs.fast,y=ind.to.rmv)) # ? sec
       }
@@ -2075,7 +2119,7 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
 }
 
 
-draw.density.plots <- function(fn,sample.info,snp.info,samp.result=NULL,snp.result=NULL,
+draw.density.plots <- function(fn=NULL,sample.info,snp.info,samp.result=NULL,snp.result=NULL,
                             callrate.samp.thr=.95, callrate.snp.thr=.95, anot=F, par=NULL) 
 {
  # draw density plots for SNP/sample-wise callrate evaluation
@@ -2141,7 +2185,10 @@ call.rate.summary <- function(s.info=NULL,snp=(is(s.info)[1]=="RangedData"),cr.v
  crs.o <- NULL; if(!is.null(cr.vec)) { crs.o <- cr.vec } 
  if(!is.null(s.info)) { if ("call.rate" %in% colnames(s.info)) {
    crs.o <- s.info$call.rate
- } }
+ } else {
+   s.info <- column.salvage(cs,"call.rate",c("Call.rate","callrate"),ignore.case=T)
+   crs.o <- s.info$call.rate
+ }}
  if(is.null(crs.o)) { warning("need an object with column 'call.rate' or cr.vec of callrates") ; return(NULL) }
  crs <- narm(crs.o)
  # Report
@@ -3000,65 +3047,6 @@ sort.exclude.from.annot <- function(bigMat,dir="",dosnp=T,dosamp=T,ordR=T,ordC=T
 }
 
 
-select.samp.snp.custom <- function(bigMat,snp,samp)
-{
- # based on files/vectors of snp-ids and sample-ids create selection
- # vectors to select only the ids in these lists for a matrix
- cat(" calculating selections for snps\n")
- # try to detect whether a vector of IDs, or file names
- snp.ref <- rownames(bigMat)  ; samp.ref <- colnames(bigMat) 
- 
- if (length(snp)==1 & length(samp)==1 & is.character(snp) & is.character(samp))
- {
-   cat(" [assuming 'samp' and 'snp' are file names containing sample and snp ids]")
-   if(file.exists(snp)) {
-     snp.sel <- readLines(snp)
-   } else {
-     if(snp=="") {
-       cat(c(" snp subset file was empty, selecting all\n"))
-       snp.sel <- snp.ref
-     } else {
-       stop("Error: argument 'snp' should be a vector of SNPs length>1 or a filename with a list of snps (no header)")
-     }
-   }
-   if(file.exists(samp)) {
-     sample.sel <- readLines(samp)
-   } else {
-     if(samp=="") {
-       cat(c(" sample subset file was empty, selecting all\n"))
-       sample.sel <- samp.ref
-     } else {
-       stop("Error: argument 'samp' should be a vector of Samples length>1 or a filename with a list of snps (no header)")
-     }
-   }
- } else { 
-   #cat("[assuming 'samp' and 'snp' are vectors of sample and snp ids]")
-   # if blank then assign all ids
-   if(all(snp=="")) {
-     snp.sel <- snp.ref
-   } else {
-     snp.sel <- snp
-   }
-   if(all(samp=="")) {
-     sample.sel <- samp.ref
-   } else { 
-     sample.sel <- samp  
-   }
- }
- # use sort/exclusion lists to get reordering vectors
- row.sel <- snp.sel ; col.sel <- sample.sel
-
- #print(head(row.sel));print(head(col.sel))
- to.order.r <- narm(match(row.sel,rownames(bigMat)))
- to.order.c <- narm(match(col.sel,colnames(bigMat)))
- if (!(length(to.order.r[!is.na(to.order.r)])>0 & length(to.order.c[!is.na(to.order.c)])>0))
- { warning("selection of SNPs and/or Samples has resulted in an empty dataset",
-   "\ncheck rownames, column names and selection lists for errors") }
-
- out.list <- list(to.order.r,to.order.c,snp.sel,sample.sel)
- names(out.list) <- c("to.order.r","to.order.c","snp.list","sample.list")
- return(out.list)
-}
 
 
 big.exclude.sort <- function(des.fn="LRRdescrFile", dir="", deepC=T, tranMode=2, pref="LRRFilt",
@@ -3101,7 +3089,7 @@ big.exclude.sort <- function(des.fn="LRRdescrFile", dir="", deepC=T, tranMode=2,
     cat(paste(length(to.order.c),"col indexes range is from",min(to.order.c),"to",max(to.order.c),"\n"))
     cat("-->",head(to.order.c),sep=", ")
     cat("\n\n raw big.matrix summary before ordering and exclusion based on SNP-QC:\n\n")
-    bigMatSummary(bigMat,"bigMat")
+    print.big.matrix(bigMat,"bigMat")
   }
   if(!deepC)
   {
@@ -3676,6 +3664,7 @@ get.chr.info.filt <- function(dir, extended=T, filt.names=NULL,verbose=F,
  # basically does nothing if recalcF == FALSE
  must.use.package(c("genoset","IRanges"),bioC=T)
  dir <- validate.dir.for(dir,c("ano"),warn=F)
+ add.dir.if.not <- reader:::add.dir.if.not # get internal function from reader
  snp.info.fn <- add.dir.if.not(snp.info.fn,dir$ano,dir) # would also take entire 'dir'
  #  [ID and position for each SNP within chromosomes]
  snp.info <- import.marker.data(dir,markerinfo.fn=snp.info.fn,snp.fn=snp.fn,
@@ -4268,7 +4257,7 @@ init.data.tracker <- function(dir,grps=NA,grp.names=NULL,raw.lrr=NULL,raw.baf=NU
     cat("Warning, sample.info object not created as sample list",samples,", or plate lookup file",plate.fn,"were missing!\n")
   }
   if(!is.null(snps) & is.null(snp.info) & is.character(map.file)) {
-    snp.info <- make.snp.info(dir,snps,anot=map.type,snp.info.fn=map.file,make.sort=T,
+    snp.info <- make.snp.info(dir,snpIDs=snps,anot=map.type,snp.info.fn=map.file,make.sort=T,
                               non.autosomes.excl.file=T,verbose=verbose,ucsc=ucsc,scheme=scheme,col1=col1,col2=col2)
   } else {
     cat("Warning, snp.info object not created as the",snps,", or the",map.file,"[chr,pos,id] file were missing!\n")
@@ -5130,12 +5119,17 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
   if(doDensityPlots) {
     fn <- paste(dir$cr,"callRateDistributions.pdf",sep="")
     draw.density.plots(fn,sample.info,snp.info,samp.result=NULL,snp.result=NULL,
-                       callrate.samp.thr=callrate.samp.thr, callrate.snp.thr=callrate.snp.thr)
+                       callrate.samp.thr=callrate.samp.thr, 
+                       callrate.snp.thr=callrate.snp.thr)
     hwe.density.plots(Z.hwe=snp.info$Z.hwe,hwe.thr=hwe.thr,dir=dir)
     het.density.plots(data="sampleqc.txt",het.lo=.1,het.hi=0.4,zoom=T,
                                   het=NULL,dir=dir,fn="HZDistribution.pdf") 
     hwe.vs.callrate.plots(call.rate=snp.info$call.rate,Z.hwe=snp.info$Z.hwe,
                           callrate.snp.thr=callrate.snp.thr,hwe.thr=hwe.thr,dir=dir)
+    hz.vs.callrate.plots(data="sampleqc.txt",callrate.samp.thr=callrate.samp.thr,
+                                    het.lo=.1,het.hi=0.4,
+                                     zoom=T,full=T,dir=NULL,
+                                     fn="HZvsCallrate.pdf")
   }
   
   if(coverage.loss) {
@@ -5310,7 +5304,7 @@ process.cohort.qc <- function(DT=NULL,grp,of,dir,sample.info,snp.info,restore.mo
   if(F) { R.descr <- cat.path(dir$big,"LRRSortdescrFile.RData") } else {
   R.descr <- big.exclude.sort(des.fn, dir=dir, pref=pref,verbose=verbose) }
   bigMat2 <- getBigMat(R.descr,dir)
-  bigMatSummary(bigMat2,"Snp_QC_Mat")
+  print.big.matrix(bigMat2,"Snp_QC_Mat")
   
   datlist <- lrr.sample.dists(bigMat2,snp.info=snp.info,dir=dir,n.cores=n.cores,
                               gc=T,dlrs=dlrs,pref=pref,med.chunk.fn=med.chunk.out,
@@ -5489,69 +5483,11 @@ make.grp.column <- function(DT,sample.info,add=F) {
 }
 
 
-get.text.matrix.format <- function(fn,cols,IDs,snps,ch="\t") 
-{
-  # read the first two lines of a text matrix file and determine
-  # whether it has row and or column names, return T/F indices for this
-  # assumes tab as separator
-  fn <- fn[1]
-  if(!is.character(fn)) { warning("file name 'fn' should be a character()") }
-  if(!file.exists(fn)) { stop(paste("Error: file",fn,"not found")) } 
-  dat.file <- file(fn)
-  rnames.in.file <- F; first.is.head <- F; name.lookup <- F
-  # read first two lines of matrix format datafile
-  open(con=dat.file,open="r")
-  next.line <- readLines(dat.file,n=1)
-  line1 <- strsplit(next.line,ch,fixed=T)[[1]]
-  next.line <- readLines(dat.file,n=1)
-  line2 <- strsplit(next.line,ch,fixed=T)[[1]]
-  close(con=dat.file)
-  ## check whether first row is header or just plain data
-  frst <- length(line1)
-  if (frst!=cols & frst!=cols+1) {
-    stop("dimensions of import file do not match id lists specified, exiting")
-    break; break; 
-  } else {
-    if(length(which(paste(line1[1:10]) %in% paste(IDs)))>8) {
-      # first line seems to be the header
-      if(!all(IDs==paste(line1[(frst-cols+1):frst]))) {
-        stop("Error: ID list did not match file header. Please check the files (head -1 <filename>) and fix this")
-      } else {
-        # will need to go to next line to avoid reading header as data
-        first.is.head <- T
-      }
-    } else {
-      first.is.head <- F
-    }
-  }
-  ## check whether second row starts with a rowname, or just plain data
-  if(length(line2)==cols+1) {
-    rnames.in.file <- T
-    if(!paste(line2[1]) %in% paste(snp.list[1:2])) {
-      if(!paste(line2[1]) %in% paste(snp.list)) {
-        warning("there seem to be row labels in the raw file but not the snp labels specified\n",
-                "proceeding with these, but please check this mismatch is expected (e.g, might be row numbers)")
-        name.lookup <- F
-      } else {
-        warning("order of row labels in data file does not match order of inputted snp list\n",
-                "proceeding, but using name lookup method will make import very slow and possibly unstable\n",
-                "If your source file has an inconsistent order this is the only supported import method.\n",
-                "Otherwise, recommend to cancel using ctrl-C, amend this discrepancy and run again")
-        name.lookup <- T
-      }
-    }
-  } else {
-    # seem to be no rownames in file
-    rnames.in.file <- F
-  }
-  out <- list(first.is.head,rnames.in.file,name.lookup)
-  names(out) <- c("header","rnames","match")
-  return(out)
-}
 
 
 dat.to.big.matrix <- function(dir, grp=NA, snp.fn="snpNames.txt", sample.fn=NULL, 
-           input.fn=NULL, pref="LRR", delete.existing=T,ret.obj=F,DT=NULL,verbose=T)
+                              input.fn=NULL, pref="LRR", delete.existing=T,
+                              ret.obj=F,DT=NULL,verbose=T)
 {
   # import from a text (hopefully long format) datafile to a big.matrix
   # return bigmatrix description 'object' or name of description file according to 'ret.obj'
@@ -5574,13 +5510,13 @@ dat.to.big.matrix <- function(dir, grp=NA, snp.fn="snpNames.txt", sample.fn=NULL
     if(is.data.tracker(DT)) {
       if(!bafmode) { input.fn <- getSlot(DT,"shape.lrr",grps=grp) 
       } else { input.fn <- getSlot(DT,"shape.baf",grps=grp) }
-      if(is.list(input.fn)) { input.fn <- unlist(input.fn,recursive=F) } #cat("CHECK: removed 1 level of list\n") }
+      if(is.list(input.fn)) { input.fn <- unlist(input.fn,recursive=F) } #cat("CHECK: removed 1 level of list\n") 
     } else {
       if(!bafmode) { input.fn <- get.lrr.files(dir,grp,suffix=dat.file.suf)    
       } else { input.fn <- get.lrr.files(dir,grp,suffix=dat.file.suf,baf=T) }
     }
   }
-# print(input.fn)
+  # print(input.fn)
   #### GET THE CORRESPONDING SAMPLE LIST(S) ####
   if(all(!is.null(sample.fn))) {
     sample.fn <- find.file(sample.fn,dir$ids)  # sample id file name
@@ -5647,113 +5583,226 @@ dat.to.big.matrix <- function(dir, grp=NA, snp.fn="snpNames.txt", sample.fn=NULL
   fil.ofs <- c(0,cumsum(smp.szs)) #note last element is the end of the last file
   num.snp <- length(snp.list)
   cat(paste(" found",num.sub,"samples and",num.snp,"markers\n"))
-  cls <- num.sub; rws <- num.snp
-  cells.per.gb <- 2^27  # size of double() resulting in ~1GB of memory use by R 2.15
-  memory.estimate <- as.double((as.double(rws)*as.double(cls))/cells.per.gb)
-  if (memory.estimate > max.mem) {
-    cat("\nError: Insufficient disk space availability expected for this import method\n")
-    cat("Please free up some disk space and try again\n")
-    stop()
-  }
+  
   # use 'pref' as the name of the big.matrix backing files for this cohort
   bck.fn <- paste(pref,"bckfile",sep="")
   des.fn <- paste(pref,"descrFile",sep="")
-  ### DELETE EXISTING FILE IF HAS SAME NAME ###
-  if ((!des.fn %in% list.files(dir$big)) | delete.existing )
-  {
-    if(delete.existing & (des.fn %in% list.files(dir$big)))
-    {
-      dfn <- cat.path(dir$big,des.fn)
-      cat("\n deleting",dfn,"\n")
-      unlink(dfn)
-    } else {
-      #all clear, no files already exist with same name
-    }
-  } else {
-    cat(paste("\nWarning: Big matrix description file",des.fn,"already exists in",dir$big,"\n"))
-    cat("You may wish to delete, rename or move this file, or use option 'delete.existing'=T, before re-running this script\n")
-    #stop()
-  }
-  ### MAIN IMPORT LOOP ###
-  cat("\nCreating big matrix object to store group data")
-  cat("\n predicted disk use: ",round(memory.estimate,1),"GB\n")
-  bigVar <- big.matrix(nrow=rws,ncol=cls, backingfile=bck.fn, dimnames=list(snp.list,cmb.ID.list),
-                       type=dat.typeL, backingpath=dir$big, descriptorfile=des.fn)
-  for(ff in 1:numfls) {
-    #ifn <- cat.path(dir$col,input.fn[ff],must.exist=T)
-    # create file name depending on whether in baf or lrr directory
-    if(!bafmode) {  
-      ifn <- cat.path(dir$col,input.fn,must.exist=T)
-    } else {  
-      ifn <- cat.path(dir$baf.col,input.fn,must.exist=T)  
-    }
-    #test file type if matrix
-    if(file.ncol(ifn[ff])>1) { input.is.vec <- F } else { input.is.vec <- T }
-    if(!input.is.vec) {
-      frm <- get.text.matrix.format(fn=ifn[ff],cols=smp.szs[ff],IDs=ID.list[[ff]],snps=snp.list)
-      if(frm$rname & !frm$match) { file.rn <- character(cls) } # recording rownames as we go
-    }
-    dat.file <- file(ifn[ff])
-    dir.ch <- .Platform$file.sep
-    open(con=dat.file,open="r")
-    cat(paste(" opening connection to ",c("matrix","long")[1+input.is.vec],
-              " format datafile (",ff,dir.ch,numfls,"): ",basename(ifn[ff]),"\n",sep=""))
-    cat("\nLoading text data into big matrix object:\n")
-    nxt.rng <- (fil.ofs[ff]+1):(fil.ofs[ff+1])
-    cls <- length(nxt.rng)
-    if(!input.is.vec)
-    {
-      ## read from matrix format tab file
-      twty.pc <- round(rws/5)
-      for (cc in 1:rws) {
-        if ((cc %% twty.pc)==0)  { fl.suc <- flush(bigVar) ; if(!fl.suc) { cat("flush failed\n") } }
-        loop.tracker(cc,rws)
-        next.line <- readLines(dat.file,n=1)
-        next.row <- strsplit(next.line,"\t",fixed=T)[[1]]
-        if (cc==1 & frm$header) { 
-            # need to go to next line to avoid reading header as data
-            next.line <- readLines(dat.file,n=1); next.row <- strsplit(next.line,"\t",fixed=T)[[1]]
-        }
-        if (frm$rnames) {
-          if(frm$match) {
-            lbl <- next.row[1]; bigVar[match(lbl,snp.list),nxt.rng] <- next.row[-1]
-          } else {
-            file.rn[nxt.rng[cc]] <- next.row[1]; bigVar[cc,nxt.rng] <- next.row[-1]
-          }
-        } else {
-          bigVar[cc,nxt.rng] <- next.row
-        }
-      }
-    } else {
-      ## read from (long) vector format tab file
-      twty.pc <- round(cls/5)
-      for (cc in 1:cls) {
-        loop.tracker(cc,cls)
-        if ((cc %% twty.pc)==0)  { fl.suc <- flush(bigVar) ; if(!fl.suc) { cat("flush failed\n") } }
-        bigVar[,(cc+fil.ofs[ff])] <- as(readLines(dat.file,n=rws),dat.typeL)
-      }
-    }
-    close(dat.file)
-  }
-  ### FINISH UP, RETURN BIGMATRIX DESCRIPTION ###
-  # in the case of different rownames found in matrix, then show following warning text:
-  if(!input.is.vec) {
-    if(frm$rname & !frm$match) {
-      ofn <- cat.path(dir$ano,pref=pref,"_file_rowname_list_check_this.txt")
-      warning(paste("rownames didn't match what was in file, check the list in the file at:\n ",ofn))
-      writeLines(paste(file.rn),con=ofn) ; cat("\n file preview:\n"); print(head(file.rn,10)); cat("\n")
-    }
-  }
-  cat("\n")
-  cat(paste(" created big.matrix description file:",des.fn,"\n"))
-  cat(paste(" created big.matrix backing file:",bck.fn,"\n"))
-  if(ret.obj) {
-    return(describe(bigVar))
-  } else {
-    return(des.fn)
-  }
-  cat("...complete!\n")
+  # attempt to find amount of free memory using 'top()'
+  top <- top1(CPU=F); if(!is.null(top1)) { rGb <- top1$RAM$Free } else { rGb <- NA }
+  if(!is.numeric(rGb)) { rGb <- 2 }
+  return(import.big.data(input.fn=input.fn, dir=dir, 
+                         row.names=snp.list, col.names=ID.list, 
+                         pref=pref, delete.existing=delete.existing, 
+                         ret.obj=ret.obj, verbose=verbose, 
+                         dat.type=dat.type, dat.typeL=dat.typeL, ram.gb=rGb, hd.gb=max.mem))
 }
+
+
+
+# old.dat.to.big.matrix <- function(dir, grp=NA, snp.fn="snpNames.txt", sample.fn=NULL, 
+#            input.fn=NULL, pref="LRR", delete.existing=T,ret.obj=F,DT=NULL,verbose=T)
+# {
+#   # import from a text (hopefully long format) datafile to a big.matrix
+#   # return bigmatrix description 'object' or name of description file according to 'ret.obj'
+#   ### CALIBRATE OPTIONS AND PERFORM CHECKS ###
+#   max.mem <- 4096 # stupidly large
+#   bafmode <- F # assume in LRR mode unless otherwise indicated by 'pref'
+#   if(length(grep("BAF",toupper(pref)))>0) {
+#     ## note these must match initial bash script that extracts data!
+#     dat.file.suf <- "BAF.dat"; bafmode <- T
+#   } else {
+#     dat.file.suf <- "LRR.dat"
+#   }
+#   ## Define data types for big.matrix
+#   dat.type <- double(1)
+#   dat.typeL <- "double"  # label
+#   dir <- validate.dir.for(dir,c("ano","big","col"),warn=F)
+#   #### GET THE SHAPED INPUT FILE NAME(S) ####
+#   if(all(is.null(input.fn))) {
+#     ## try to automatically detect datafiles if not specified
+#     if(is.data.tracker(DT)) {
+#       if(!bafmode) { input.fn <- getSlot(DT,"shape.lrr",grps=grp) 
+#       } else { input.fn <- getSlot(DT,"shape.baf",grps=grp) }
+#       if(is.list(input.fn)) { input.fn <- unlist(input.fn,recursive=F) } #cat("CHECK: removed 1 level of list\n") }
+#     } else {
+#       if(!bafmode) { input.fn <- get.lrr.files(dir,grp,suffix=dat.file.suf)    
+#       } else { input.fn <- get.lrr.files(dir,grp,suffix=dat.file.suf,baf=T) }
+#     }
+#   }
+# # print(input.fn)
+#   #### GET THE CORRESPONDING SAMPLE LIST(S) ####
+#   if(all(!is.null(sample.fn))) {
+#     sample.fn <- find.file(sample.fn,dir$ids)  # sample id file name
+#     cat("Reading sample and snp lists from text files...\n")
+#     cat(paste(" samples entered manually, reading samples from",sample.fn,"\n"))
+#     ID.list <- lapply(sample.fn,readLines)  #readLines(sample.fn)
+#   } else {
+#     if(is.data.tracker(DT)) {
+#       ## GET samples using data.tracker object 'DT'
+#       if(all(!is.na(grp))) {
+#         if(verbose) { cat(" getting ID list(s) for group",grp,"\n") }
+#         # return file lists, listed by 'group'; separate lists for each file despite grp
+#         ID.list <- unlist(getSlot(DT,"sub.samples",grps=grp,ret.obj=T),recursive=F)
+#       } else {
+#         ng <- getSlot(DT,"ngrps")
+#         if(length(input.fn)==1 & ng==1) {
+#           # all samples in 1 set
+#           if(verbose) { cat(" 1 input file and 1 sample set only, getting IDs\n") }
+#           ID.list <- list(unlist(getSlot(DT,"samples",ret.obj=T))) 
+#         } else {
+#           # separate list for each file listed by group sets
+#           if(verbose) { cat(" getting all ID lists ignoring group [",ng," groups]\n",sep="") }
+#           ID.list <- unlist(getSlot(DT,"sub.samples",ret.obj=T),recursive=F) 
+#         }
+#       }
+#     } else {
+#       ## GET samples using 'file.spec.txt' # deprecated
+#       stop("if we need this code back, go to before march 19\n")
+#     }
+#   }
+#   ##print(headl(ID.list))
+#   cmb.ID.list <- paste(do.call("c",ID.list))
+#   ##print(length(ID.list[[1]]))
+#   numfls <- length(ID.list)
+#   ### GET THE ORDERED SNP LIST ###
+#   if(is.data.tracker(DT)) {
+#     snp.fn <- getSlot(DT,"snps")
+#   } else {
+#     snp.fn <- find.file(snp.fn,dir$ano,dir)  # snp annotation file name
+#   }
+#   #print(head(cmb.ID.list))
+#   cat(paste(" reading snps from",snp.fn,"\n"))
+#   snp.list <- readLines(snp.fn) ##; print(head(snp.list))
+#   ## Multiple possible input situations: 
+#   ##   FOR LRR: unlist all input files and subsamples for selected grp
+#   ##    n groups in study, 1 file each: should have input.fn length 1, id.list length 1
+#   ##    n groups in study, m_n files each: should have input.fn length m_n, id.list length m_n
+#   ##   FOR BAF: unlist all input files and subsamples for all grps
+#   ##    n groups in study, 1 file each: should have input.fn length n, id.list length n
+#   ##    n groups in study, m_n files each: should have input.fn length sum_i(m_n=i), id.list length sum_i(m_n=i)
+#   ## DEBUG print(length(input.fn)); print(numfls); print(input.fn)
+#   if(length(input.fn)>1) {
+#     if(length(input.fn)==numfls) {
+#       if(verbose) {
+#         warning(paste("reading a single cohort from",numfls,"source files. Edit file.spec.txt if this is unexpected"))
+#       }
+#     } else {
+#       stop("Error: when reading a single cohort from multiple source files, need same number of id files")
+#     }
+#   } else { if(numfls!=1) { warning(paste("length of ID list was",numfls,"but only 1 input file")) } } 
+#   #### DETERMINE FILE DIMENSIONS ####
+#   num.sub <- length(cmb.ID.list) #ID.list)
+#   smp.szs <- sapply(ID.list,length)
+#   fil.ofs <- c(0,cumsum(smp.szs)) #note last element is the end of the last file
+#   num.snp <- length(snp.list)
+#   cat(paste(" found",num.sub,"samples and",num.snp,"markers\n"))
+#   cls <- num.sub; rws <- num.snp
+#   cells.per.gb <- 2^27  # size of double() resulting in ~1GB of memory use by R 2.15
+#   memory.estimate <- as.double((as.double(rws)*as.double(cls))/cells.per.gb)
+#   if (memory.estimate > max.mem) {
+#     cat("\nError: Insufficient disk space availability expected for this import method\n")
+#     cat("Please free up some disk space and try again\n")
+#     stop()
+#   }
+#   # use 'pref' as the name of the big.matrix backing files for this cohort
+#   bck.fn <- paste(pref,"bckfile",sep="")
+#   des.fn <- paste(pref,"descrFile",sep="")
+#   ### DELETE EXISTING FILE IF HAS SAME NAME ###
+#   if ((!des.fn %in% list.files(dir$big)) | delete.existing )
+#   {
+#     if(delete.existing & (des.fn %in% list.files(dir$big)))
+#     {
+#       dfn <- cat.path(dir$big,des.fn)
+#       cat("\n deleting",dfn,"\n")
+#       unlink(dfn)
+#     } else {
+#       #all clear, no files already exist with same name
+#     }
+#   } else {
+#     cat(paste("\nWarning: Big matrix description file",des.fn,"already exists in",dir$big,"\n"))
+#     cat("You may wish to delete, rename or move this file, or use option 'delete.existing'=T, before re-running this script\n")
+#     #stop()
+#   }
+#   ### MAIN IMPORT LOOP ###
+#   cat("\nCreating big matrix object to store group data")
+#   cat("\n predicted disk use: ",round(memory.estimate,1),"GB\n")
+#   bigVar <- big.matrix(nrow=rws,ncol=cls, backingfile=bck.fn, dimnames=list(snp.list,cmb.ID.list),
+#                        type=dat.typeL, backingpath=dir$big, descriptorfile=des.fn)
+#   for(ff in 1:numfls) {
+#     #ifn <- cat.path(dir$col,input.fn[ff],must.exist=T)
+#     # create file name depending on whether in baf or lrr directory
+#     if(!bafmode) {  
+#       ifn <- cat.path(dir$col,input.fn,must.exist=T)
+#     } else {  
+#       ifn <- cat.path(dir$baf.col,input.fn,must.exist=T)  
+#     }
+#     #test file type if matrix
+#     if(file.ncol(ifn[ff])>1) { input.is.vec <- F } else { input.is.vec <- T }
+#     if(!input.is.vec) {
+#       frm <- check.text.matrix.format(fn=ifn[ff],ncol=smp.szs[ff],header=ID.list[[ff]],row.names=snp.list)
+#       if(frm$rname & !frm$match) { file.rn <- character(cls) } # recording rownames as we go
+#     }
+#     dat.file <- file(ifn[ff])
+#     dir.ch <- .Platform$file.sep
+#     open(con=dat.file,open="r")
+#     cat(paste(" opening connection to ",c("matrix","long")[1+input.is.vec],
+#               " format datafile (",ff,dir.ch,numfls,"): ",basename(ifn[ff]),"\n",sep=""))
+#     cat("\nLoading text data into big matrix object:\n")
+#     nxt.rng <- (fil.ofs[ff]+1):(fil.ofs[ff+1])
+#     cls <- length(nxt.rng)
+#     if(!input.is.vec)
+#     {
+#       ## read from matrix format tab file
+#       twty.pc <- round(rws/5)
+#       for (cc in 1:rws) {
+#         if ((cc %% twty.pc)==0)  { fl.suc <- flush(bigVar) ; if(!fl.suc) { cat("flush failed\n") } }
+#         loop.tracker(cc,rws)
+#         next.line <- readLines(dat.file,n=1)
+#         next.row <- strsplit(next.line,"\t",fixed=T)[[1]]
+#         if (cc==1 & frm$header) { 
+#             # need to go to next line to avoid reading header as data
+#             next.line <- readLines(dat.file,n=1); next.row <- strsplit(next.line,"\t",fixed=T)[[1]]
+#         }
+#         if (frm$rnames) {
+#           if(frm$match) {
+#             lbl <- next.row[1]; bigVar[match(lbl,snp.list),nxt.rng] <- next.row[-1]
+#           } else {
+#             file.rn[nxt.rng[cc]] <- next.row[1]; bigVar[cc,nxt.rng] <- next.row[-1]
+#           }
+#         } else {
+#           bigVar[cc,nxt.rng] <- next.row
+#         }
+#       }
+#     } else {
+#       ## read from (long) vector format tab file
+#       twty.pc <- round(cls/5)
+#       for (cc in 1:cls) {
+#         loop.tracker(cc,cls)
+#         if ((cc %% twty.pc)==0)  { fl.suc <- flush(bigVar) ; if(!fl.suc) { cat("flush failed\n") } }
+#         bigVar[,(cc+fil.ofs[ff])] <- as(readLines(dat.file,n=rws),dat.typeL)
+#       }
+#     }
+#     close(dat.file)
+#   }
+#   ### FINISH UP, RETURN BIGMATRIX DESCRIPTION ###
+#   # in the case of different rownames found in matrix, then show following warning text:
+#   if(!input.is.vec) {
+#     if(frm$rname & !frm$match) {
+#       ofn <- cat.path(dir$ano,pref=pref,"_file_rowname_list_check_this.txt")
+#       warning(paste("rownames didn't match what was in file, check the list in the file at:\n ",ofn))
+#       writeLines(paste(file.rn),con=ofn) ; cat("\n file preview:\n"); print(head(file.rn,10)); cat("\n")
+#     }
+#   }
+#   cat("\n")
+#   cat(paste(" created big.matrix description file:",des.fn,"\n"))
+#   cat(paste(" created big.matrix backing file:",bck.fn,"\n"))
+#   if(ret.obj) {
+#     return(describe(bigVar))
+#   } else {
+#     return(des.fn)
+#   }
+#   cat("...complete!\n")
+# }
 
 
 make.dir <- function(dir.base="plumbCNV_LRRQC",dir.raw="LRRQC_Raw_Files",no.raw=F)
@@ -5763,6 +5812,7 @@ make.dir <- function(dir.base="plumbCNV_LRRQC",dir.raw="LRRQC_Raw_Files",no.raw=
   #location of support files directory dir.sup <- "/chiswick/data/store/metabochip/PLINK/"
   #location to write summaries of call rate: dir.base <- "/chiswick/data/ncooper/ImmunochipReplication/"
   #make sure each ends in a slash
+  dir.force.slash <- reader:::dir.force.slash # use internal function from 'reader'
   paste.dr <- function(x,...) { dir.force.slash(paste(x,...)) }
   if(no.raw) { dir.raw <- NULL }
   dir.raw <- dir.force.slash(dir.raw)
@@ -5985,7 +6035,7 @@ prepare.penncnv.samples <- function(dir,LRR.fn="",BAF.fn="BAFdescrFile",num.pcs=
   }
   bigBAF <- getBigMat(BAF.fn, dir$big)
   bigLRR <- getBigMat(LRR.fn, dir$big)
-  bigMatSummary(bigBAF,"bigBAF") ; bigMatSummary(bigLRR,"bigLRR")
+  print.big.matrix(bigBAF,"bigBAF") ; print.big.matrix(bigLRR,"bigLRR")
   rB <- rownames(bigBAF); cB <- colnames(bigBAF)
   rL <- rownames(bigLRR); cL <- colnames(bigLRR)
   n <- ncol(bigLRR)
@@ -6837,7 +6887,7 @@ delete.all.files <- function(dir,rescue=NULL,to="~/Documents/") {
 }
 
 
-bigMatSummary <- function(bigMat,dir="",name=NULL,dat=T,descr=NULL,bck=NULL,mem=F,row=3,col=2,
+print.big.matrix <- function(bigMat,dir="",name=NULL,dat=T,descr=NULL,bck=NULL,mem=F,row=3,col=2,
                           rcap="SNPs",ccap="Samples",rlab="SNP-id",clab="Sample IDs",...) {
   print.big.matrix(bigMat=bigMat,dir=dir,name=name,dat=dat,descr=descr,bck=bck,
                     mem=mem,row=row,col=col,
@@ -7885,6 +7935,46 @@ plink.to.cnvGSA <- function(cnv.data) {
 }
 
 
+## export!
+get.PCA.subset <- function(dir,pc.to.keep=.13,assoc=F,autosomes=T,big.fn="combinedBigMat.RData",
+                           snp.sub.fn="pca.snp.subset.txt",use.current=F,pref="PCAMatrix",n.cores=1,
+                           descr.fn="pcaSubMat.RData",nprev=0,snp.info=NULL,sample.info=NULL) 
+{
+  ## extract LRR matrix with subset of SNPs, ready for PCA analysis
+  dir <- validate.dir.for(dir,c("ano","big"))
+  #load.all.libs() # load all main libraries used by plumbCNV
+  #if(add.pheno) {
+  #  sample.info <- read.sample.info(dir)
+  #  phenotype <- read.table(file=cat.path(dir$ano,"pheno.lookup.txt"))
+  #  sample.info <- add.to.sample.info(sample.info,phenotype,"phenotype")
+  #  write.sample.info(sample.info,dir)
+  #}
+  if(!is.data.frame(sample.info)) { sample.info <- read.sample.info(dir,nprev=nprev) }
+  if(is(snp.info)[1]!="RangedData") { snp.info <- read.snp.info(dir,nprev=nprev) }
+  #sample.info <- validate.samp.info(sample.info,QC.update=F,verbose=F) #this done done later anyway
+  #samp.fn <- "combined.samples.txt"
+  if(use.current & is.file(snp.sub.fn,dir$ano,dir)) {
+    snps.to.keep <- get.vec.multi.type(snp.sub.fn,dir=dir)
+  } else {
+    snps.to.keep <- extract.snp.subset(snp.info,sample.info,pc.to.keep=pc.to.keep,assoc=assoc,autosomes=autosomes,
+                                       writeResultsToFile=T,big.fn=big.fn,out.fn=snp.sub.fn,dir=dir, n.cores=n.cores)
+  }
+  ###bigMat <- getBigMat(big.fn,dir)
+  if(length(snps.to.keep)>100) {
+    ##writeLines(colnames(bigMat),paste(dir$ano,samp.fn,sep=""))
+    subset.descr <- big.exclude.sort(big.fn,dir=dir,T,tranMode=1,pref=pref,f.snp=snps.to.keep,verbose=F)
+  } else {
+    stop("Error: list of snps to keep is too small - trying running again with a higher pc.to.keep\n")
+  }
+  #if(descr.fn!="") {
+  #  save(subset.descr,file=cat.path(dir$big,descr.fn))
+  #} else { warning("submatrix description returned but not saved\n")}
+  print(subset.descr)
+  return(subset.descr)
+}
+
+
+
 random.spacing.snp.select <- function(snp.info,pc.to.keep=.05,dir,autosomes.only=T) {  
   # this assumes roughly whole genome coverage. breaks down if this is not roughly true
   # uses the chr, pos, label of each snp, stored in a genoset RangedData object
@@ -8058,17 +8148,19 @@ calculate.gc.for.samples <- function(bigMat,snp.info,dir,med.chunk.fn="",restore
 }
 
 
-make.sample.info <- function(dir=NULL,id.list=NULL,phenotype=NULL,plate=NULL,grp=NULL,sex=NULL,
+make.sample.info <- function(dir="",id.list=NULL,phenotype=NULL,plate=NULL,grp=NULL,sex=NULL,
                              other=list(),overwrite=T,verbose=F,...) {
   # create sample info dataframe, combining an id list with phenotype, plate, group,
   # or any other data, inputted as a named list of objects or file names.
+  dir <- validate.dir.for(dir,"ano")
   pheno.default.loc <- "pheno.lookup.txt"; phenot <- NULL
   if(is.null(id.list) & !is.null(dir)) {
     id.list <- get.subIDs(dir,"combine",verbose=verbose)
   } else {
-    id.list <- find.file(id.list,dir$ano,dir)
+    if(is.file(id.list,dir$ano,dir)) {
+      id.list <- find.file(id.list,dir$ano,dir)
+    } 
   }
-  print(id.list)
   id.list <- force.vec(id.list)
   id.list <- unique(id.list)
   sample.info <- data.frame(row.names=paste(id.list),grp=rep(1,times=length(id.list)))
@@ -8076,7 +8168,6 @@ make.sample.info <- function(dir=NULL,id.list=NULL,phenotype=NULL,plate=NULL,grp
     sample.info <- add.to.sample.info(sample.info,grp,"grp",overwrite=overwrite,verbose=verbose)
   }
   if(!is.null(dir)) {
-    dir <- validate.dir.for(dir,"ano")
     if(is.character(plate) & length(plate)==1) { plate <- find.file(plate,dir$ano,dir) }
     if(is.character(phenotype) & length(phenotype)==1) { phenotype <- find.file(phenotype,dir$ano,dir) }
     if(is.character(sex) & length(sex)==1) { sex <- find.file(sex,dir$ano,dir) }
@@ -8192,12 +8283,14 @@ add.to.sample.info <- function(sample.info,more.info,to.add=NULL,overwrite=F,ver
 het.density.plots <- function(data="sampleqc.txt",het.lo=.1,het.hi=0.4,zoom=T,
                               het=NULL,dir=NULL,fn="HZDistribution.pdf",...) {
   # make density plot of Heterozygosity; can enter a file location/data.frame or vecs of heterozygosity
+  if(!is.null(dir)) { dir <- validate.dir.for(dir,"cr") }
   if(!is.null(data) & is.null(het)) { 
     val <- F; if(!is.null(dim(data))) { val <- T }
     if(!is.null(dir)) { if(is.file(data,dir$cr,dir)) { 
       data <- find.file(data,dir$cr,dir); val <- T } }
     if(val) {
       tt <- force.frame(data) 
+      tt <- column.salvage(tt,"heterozygosity",c("Heterozygosity","Het","HZ","Hzg","Hetz"),T)
       if(all(c("heterozygosity") %in% colnames(tt))) {
         het <- tt$heterozygosity
       } else {
@@ -8206,18 +8299,20 @@ het.density.plots <- function(data="sampleqc.txt",het.lo=.1,het.hi=0.4,zoom=T,
     }
   }
   if(is.null(het)) { warning("no heterozygosity data found") ; return(NULL) }
-  add.boundary.and.legend <- function(het.thr=NULL) {
-    if(!is.null(het.thr)) { 
-      abline(v=het.thr,lty="dashed",col="blue") 
-      legend("topright",legend=c(paste("Heterozygosity cutoffs, ",het.lo,"< HZ <",het.hi,sep="")),
+  add.boundary.and.legend <- function(het.lo=NULL,het.hi=NULL) {
+    if(!is.null(het.lo) & !is.null(het.hi)) { 
+      abline(v=het.lo,lty="dashed",col="blue") 
+      abline(v=het.hi,lty="dashed",col="blue")
+      legend("topright",legend=c(paste("Cutoffs, ",het.lo,"< Hz <",het.hi,sep="")),
              lty="dashed",col="blue",bg="white",box.lwd=0)
     }
   }
   if(!is.null(dir)) { ofn <- cat.path(dir$cr,fn); pdf(ofn) }
-  if(zoom) { xl <- c(-10,10) }
+  if(zoom) { xl <- c(0,0.6) }
+  par(mfrow=c(1,1))
   plot(density(het),main="Heterozygosity distribution across all samples",
-       xlab="HZ-score",bty="n",xlim=xl,...)
-  add.boundary.and.legend(het.thr=c(het.lo,het.hi))
+       xlab="Heterozygosity (Hz) score",bty="n",xlim=xl,...)
+  add.boundary.and.legend(het.lo,het.hi)
   if(!is.null(dir)) { dev.off() }
 }
 
@@ -8225,16 +8320,18 @@ het.density.plots <- function(data="sampleqc.txt",het.lo=.1,het.hi=0.4,zoom=T,
 hwe.density.plots <- function(data="snpqc.txt",hwe.thr=10^-5,zoom=T,
                               Z.hwe=NULL,dir=NULL,fn="HWEDistribution.pdf",...) {
   # make density plot of HWE; can enter a file location/data.frame or vecs of hwe/
+  if(!is.null(dir)) { dir <- validate.dir.for(dir,"cr") }
   if(!is.null(data) & is.null(Z.hwe)) { 
-    val <- F; if(!is.null(dim(data))) { val <- T }
+    val <- F; if(!is.null(dim(data))) { val <- T } else { if(is.null(dir)) { dir <- getwd() }}
     if(!is.null(dir)) { if(is.file(data,dir$cr,dir)) { 
       data <- find.file(data,dir$cr,dir); val <- T } }
     if(val) {
       tt <- force.frame(data) 
-      if(all(c("Z.hwe") %in% colnames(tt))) {
-        Z.hwe <- tt$Z.hwe
+      tt <- column.salvage(tt,"z.hwe",c("z.hwe","hwe.z","zhwe","hwez","hwe"),T)
+      if(all(c("z.hwe") %in% colnames(tt))) {
+        Z.hwe <- tt$z.hwe
       } else {
-        warning(paste("required column: Z.hwe not found in",data))
+        warning(paste("required column: z.hwe not found in",data))
       }
     }
   }
@@ -8248,8 +8345,12 @@ hwe.density.plots <- function(data="snpqc.txt",hwe.thr=10^-5,zoom=T,
   }
   if(!is.null(dir)) { ofn <- cat.path(dir$cr,fn); pdf(ofn) }
   if(zoom) { xl <- c(-10,10) }
-  plot(density(Z.hwe),main="Z-score distribution across all SNPs",
+  mms <- length(which(is.na(Z.hwe)))
+  DD <- density(narm(Z.hwe))
+  par(mfrow=c(1,1))
+  plot(DD,main="Z-score distribution across all SNPs",
        xlab="HWE Z-score",bty="n",xlim=xl,...)
+  if(length(mms>0)) { cat("HWE data for",mms,"monomorphic SNPs was ignored\n")}
   add.boundary.and.legend(hwe.thr=hwe.thr)
   if(!is.null(dir)) { dev.off() }
 }
@@ -8258,8 +8359,9 @@ hwe.density.plots <- function(data="snpqc.txt",hwe.thr=10^-5,zoom=T,
 
 hwe.vs.callrate.plots <- function(data="snpqc.txt",callrate.snp.thr=.95,hwe.thr=10^-5,
                                   Z.hwe=NULL,call.rate=NULL,zoom=T,full=T,dir=NULL,
-                                  fn="HWEvsCallrate.pdf") {
+                                  fn="HWEvsCallrate.pdf",excl=F, incl=F) {
   # make plots of HWE against callrate; can enter a file location/data.frame or vecs of hwe/
+  if(!is.null(dir)) { dir <- validate.dir.for(dir,"cr") }
   if(!full & !zoom) { return(NULL) }
   if(!is.null(data) & ((is.null(Z.hwe) | is.null(call.rate)))) { 
     val <- F; if(!is.null(dim(data))) { val <- T }
@@ -8267,10 +8369,12 @@ hwe.vs.callrate.plots <- function(data="snpqc.txt",callrate.snp.thr=.95,hwe.thr=
       data <- find.file(data,dir$cr,dir); val <- T } }
     if(val) {
       tt <- force.frame(data) 
-      if(all(c("Z.hwe","call.rate") %in% colnames(tt))) {
-        Z.hwe <- tt$Z.hwe; call.rate <- tt$call.rate
+      tt <- column.salvage(tt,"z.hwe",c("z.hwe","hwe.z","zhwe","hwez","hwe"),T)
+      tt <- column.salvage(tt,"call.rate",c("Call.rate","callrate","cr"),T)
+      if(all(c("z.hwe","call.rate") %in% colnames(tt))) {
+        Z.hwe <- tt$z.hwe; call.rate <- tt$call.rate
       } else {
-        warning(paste("required columns: ",paste(c("Z.hwe"," call.rate"),collapse=","),", not found in ",data,sep=""))
+        warning(paste("required columns: ",paste(c("z.hwe"," call.rate"),collapse=","),", not found in ",data,sep=""))
       }
     }
   }
@@ -8298,6 +8402,79 @@ hwe.vs.callrate.plots <- function(data="snpqc.txt",callrate.snp.thr=.95,hwe.thr=
     add.boundary.and.legend(callrate.snp.thr=callrate.snp.thr,hwe.thr=hwe.thr,scl=scl)
   }
   if(!is.null(dir)) { dev.off() }
+  if(excl | incl) {
+    # return excluded sample list
+    filt <- which(!(abs(Z.hwe)<hwe.thr & call.rate>callrate.snp.thr))
+    if(incl & excl) {
+      return(list(incl=!filt,excl=filt))
+    } else {
+      if(excl) { return(filt) } else { return(!filt) }
+    }
+  }
+}
+
+
+
+
+
+hz.vs.callrate.plots <- function(data="snpqc.txt",callrate.samp.thr=.95,het.lo=.1,het.hi=0.4,
+                                 het=NULL,call.rate=NULL,zoom=T,full=T,dir=NULL,
+                                 fn="HZvsCallrate.pdf",snp.info=NULL,excl=F, incl=F) {  
+  # make plots of HWE against callrate; can enter a file location/data.frame or vecs of hwe/
+  if(!is.null(dir)) { dir <- validate.dir.for(dir,"cr") }
+  if(!full & !zoom) { return(NULL) }
+  if(!is.null(data) & ((is.null(het) | is.null(call.rate)))) { 
+    val <- F; if(!is.null(dim(data))) { val <- T }
+    if(!is.null(dir)) { if(is.file(data,dir$cr,dir)) { 
+      data <- find.file(data,dir$cr,dir); val <- T } }
+    if(val) {
+      tt <- force.frame(data) 
+      tt <- column.salvage(tt,"call.rate",c("Call.rate","callrate","cr"),T)
+      tt <- column.salvage(tt,"heterozygosity",c("Heterozygosity","Het","HZ","Hzg","Hetz"),T)
+      if(all(c("heterozygosity","call.rate") %in% colnames(tt))) {
+        het <- tt$het; call.rate <- tt$call.rate
+      } else {
+        warning(paste("required columns: ",paste(c("heterozygosity"," call.rate"),collapse=","),", not found in ",data,sep=""))
+      }
+    }
+  }
+  if(is.null(het) | is.null(call.rate)) { warning("no heterozygosity and/or call.rate data found") ; return(NULL) }
+  if(length(het)!=length(call.rate)) { cat(" het and callrate vectors had unequal length\n"); return(NULL) }
+  add.boundary.and.legend <- function(callrate.samp.thr=NULL,het.lo=NULL,het.hi=NULL,scl=1) {
+    if(!is.null(het.lo)) { abline(v=het.lo,lty="solid",col="blue") }
+    if(!is.null(het.hi)) { abline(v=het.hi,lty="solid",col="blue") }
+    if(!is.null(callrate.samp.thr)) { abline(h=callrate.samp.thr,lty="dashed",col="blue") }
+    if(!is.null(het.hi) & !is.null(het.lo) & !is.null(callrate.samp.thr)) {
+      legend("topright",legend=c(paste("Hz cutoffs, ",het.lo,"< Hz <",het.hi,sep=""),
+                                 paste("Call rate cutoff, ",callrate.samp.thr,"%",sep="")),
+             lty=c("solid","dashed"),col="blue",bg="white",box.col="white",box.lty="dotted",cex=scl)
+    }
+  }
+  if(!is.null(dir)) { ofn <- cat.path(dir$cr,fn); scl <- 1; pdf(ofn) 
+  } else { if(zoom & full) { par(mfrow=c(1,2)); scl <- 0.6 } else { scl <- 1 } }
+  if(full) {
+    plot(het,call.rate,pch=".",xlab="Heterozygosity (Hz)",ylab="call rate",
+         main="full range",ylim=c(1,0),bty="n")
+    add.boundary.and.legend(callrate.samp.thr=callrate.samp.thr,
+                            het.lo=het.lo,het.hi=het.hi,scl=scl)
+  }
+  if(zoom) {
+    zoom.range <- mean(het,na.rm=T)+(c(-2,2)*sd(het,na.rm=T))
+    plot(het,call.rate,pch=".",xlim=zoom.range,ylim=c(.005+max(call.rate,na.rm=T),callrate.samp.thr-.01),
+         xlab="Hz-score",ylab="call rate",main="cutoff range",bty="n")
+    add.boundary.and.legend(callrate.samp.thr=callrate.samp.thr,
+                            het.lo=het.lo,het.hi=het.hi,scl=scl)
+  }
+  if(!is.null(dir)) { dev.off() }
+  if(excl | incl) {
+    # return excluded sample list
+    filt <- which(!(het>het.lo & het<het.hi & call.rate>callrate.samp.thr))
+    if(incl & excl) {
+      return(list(incl=!filt,excl=filt))
+    } else {
+      if(excl) { return(filt) } else { return(!filt) }
+    }
+  }
 }
 
 
@@ -8548,7 +8725,7 @@ LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.c
   dir <- validate.dir.for(dir,c("big","gc"))
   origMat <- getBigMat(bigLRR,dir)
   cat("\nRunning GC correction, using LRR-dataset:\n")
-  bigMatSummary(origMat,name="preCorrectedMat")
+  print.big.matrix(origMat,name="preCorrectedMat")
   # get filenames now to add to result later
   rN <- rownames(origMat); cN <- colnames(origMat)
   # run pca.correction using ectors (PCs) and alues from LRR.PCA
@@ -8612,7 +8789,7 @@ LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.c
   cat(paste(" LRR GC-Correction took",round((ll-jj)[3]/3600,3),"hours\n"))
   flush(gcCorMat) # should allow names to take  
   cat("\nGC-corrected dataset produced:\n")
-  bigMatSummary(gcCorMat,name="gcCorMat")
+  print.big.matrix(gcCorMat,name="gcCorMat")
   
   mat.ref <- describe(gcCorMat)
   if(write) {
@@ -10683,6 +10860,7 @@ get.chr.lens <- function(dir="",len.fn="humanChrLens.txt",ucsc=c("hg18","hg19")[
 }
 
 
+
 import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames.txt", anot=c("bim","vcf","map","map3")[4],
                                snp.col=NA, pos.col=NA, chr.col=NA, verbose=F )
 {
@@ -11005,14 +11183,28 @@ is.data.tracker <- function(DT)
 }
 
 
-make.snp.info <- function(dir, snpIDs="snpNames.txt", anot="map3", ucsc="hg18",
+make.snp.info <- function(dir=NULL, map=NULL, snpIDs=NULL, anot="map3", ucsc="hg18",
                           snp.info.fn="snpdata.map",sav=F,verbose=F,filt.by=NULL,make.sort=F,
                           extended=T,non.autosomes.excl.file=F,autosomes.only=F,absolute.index=T,
                           scheme=NA,col1="black",col2="grey",...)
 {
   # make a snp.info object from scratch by combining a list of snps (in order of datafile)
   # with an annotation file (map3/bim/vcf/etc), optionally filtering for only 'filt.by' snps
+  if(is.null(dir)) { if(is.null(map)) { warning("dir not specified, using current") } ; dir <- getwd() }
   dir <- validate.dir.for(dir,c("ano","excl2","sort2"))
+  if(!is.null(map)) { 
+    id.names <- c("Id","snp.name","snp","snpid","snp.id",
+    "label","rsid","rs.id","marker","marker.name","probe","probeid","probe.id")
+    sobj <- map
+    # coerce chr,pos,id columns to those names if possible
+    sobj <- column.salvage(sobj,"chr",c("Chr","Chromosome","space"),ignore.case=T)
+    sobj <- column.salvage(sobj,"pos",c("Pos","position","location"),ignore.case=T)
+    if(!any(id.names %in% colnames(sobj))) { sobj[["id"]] <- rownames(sobj) }
+    sobj <- column.salvage(sobj,"id",id.names,ignore.case=T)
+    want <- c("chr","id","pos"); if(!all(want %in% colnames(sobj))) { 
+      warning("invalid map object, need chr, id, pos columns"); return(NULL) }
+    write.table(sobj[,want],cat.path(dir$ano,snp.info.fn),sep="\t",col.names=F,row.names=F)
+  }
   snp.info.fn <- find.file(snp.info.fn,dir$ano,dir) 
   #CHR.INFO <- calc.chr.ind(dir=dir, snp.fn=snpIDs, anot=anot, 
   #                         markerinfo.fn=snp.info.fn, sav=F, verbose=verbose,...)
@@ -12030,8 +12222,8 @@ get.plate.snp.stats.for.big <- function(bigMat, dir, func=mean, n.cores=1,...) {
   plt <- get.plate.info.for.big(bigMat=bigMat,dir=dir)
   plate.func <- function(X,plt) { tapply(X,factor(plt),func,na.rm=T) }
   #  plate.sd <- function(X,plt) { tapply(X,factor(plt),sd,na.rm=T) }
-  mnz.list <- bigmcapply(bigMat,1,plate.func,plt=plt,n.cores=n.cores,dir=dir$big,...)
-  #  sdz.list <- bigmcapply(bigMat,F,plate.sd,plt=plt,n.cores=n.cores,dir=dir$big)
+  mnz.list <- bmcapply(bigMat,1,plate.func,plt=plt,n.cores=n.cores,dir=dir$big,...)
+  #  sdz.list <- bmcapply(bigMat,F,plate.sd,plt=plt,n.cores=n.cores,dir=dir$big)
   return(mnz.list)
 }
 
@@ -12111,7 +12303,9 @@ start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,neare
 
 
 
-
+## may want to add option to import from plink, BED, BIM, FAM !###
+## annotBed <- gtfToBed(annotTrack)  ## install.packages("GeneticTools")
+## bigmemoryExtras to use assaydata slot in eSet object
 plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.as.we.go=F,
                      dt.name="datatracker",run.mode="scratch",snp.run.mode="normal",
                      grps=NA,snp.fields=NULL,geno.file=NULL,big.lrr=NULL,big.baf=NULL,

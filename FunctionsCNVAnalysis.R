@@ -3924,7 +3924,7 @@ force.sex.codes <- function(sex,missing=c(0,-9,-99,99),verbose=F) {
     sex2 <- paste(sex); sex <- rep(0,times=length(sex2))
     is.girlz <- grep("F",toupper(sex2))
     is.guyz <- grep("M",toupper(sex2))
-    sex[is.guys] <- 1
+    sex[is.guyz] <- 1
     sex[is.girlz] <- 2
   } 
   if(length(unique(sex))<3) {
@@ -4257,6 +4257,7 @@ init.data.tracker <- function(dir,grps=NA,grp.names=NULL,raw.lrr=NULL,raw.baf=NU
     cat("Warning, sample.info object not created as sample list",samples,", or plate lookup file",plate.fn,"were missing!\n")
   }
   if(!is.null(snps) & is.null(snp.info) & is.character(map.file)) {
+    #prv(snps,map.type,map.file,scheme,col1,col2)
     snp.info <- make.snp.info(dir,snpIDs=snps,anot=map.type,snp.info.fn=map.file,make.sort=T,
                               non.autosomes.excl.file=T,verbose=verbose,ucsc=ucsc,scheme=scheme,col1=col1,col2=col2)
   } else {
@@ -4812,6 +4813,22 @@ initialise.excl.files <- function(dir,reset.files=c("ChrAb.txt","DLRS.txt","GCWa
     }
   }
 }
+
+
+get.txt.http <- function(url, ...) {
+  # load package
+  require(RCurl)
+  
+  # parse and evaluate each .R script
+  sapply(c(url, ...), function(u) {
+    text = getURL(u, followlocation = TRUE, cainfo = system.file("CurlSSL", "cacert.pem", package = "RCurl"))
+  })
+}
+
+# Example
+#txt <- get.txt.http("https://raw.github.com/nicholasjcooper/plumbCNV/getDataGS.sh")
+
+
 
 
 init.DATA.read <- function(dir,doLRR=T,doBAF=F,plink.imp=F,n.cores=1,scr.name="getDataGS.sh",scr.dir="",
@@ -5588,13 +5605,13 @@ dat.to.big.matrix <- function(dir, grp=NA, snp.fn="snpNames.txt", sample.fn=NULL
   bck.fn <- paste(pref,"bckfile",sep="")
   des.fn <- paste(pref,"descrFile",sep="")
   # attempt to find amount of free memory using 'top()'
-  top <- top1(CPU=F); if(!is.null(top1)) { rGb <- top1$RAM$Free } else { rGb <- NA }
+  top1 <- top(CPU=F); if(!is.null(top1)) { rGb <- top1$RAM$Free } else { rGb <- NA }
   if(!is.numeric(rGb)) { rGb <- 2 }
   return(import.big.data(input.fn=input.fn, dir=dir, 
                          row.names=snp.list, col.names=ID.list, 
                          pref=pref, delete.existing=delete.existing, 
                          ret.obj=ret.obj, verbose=verbose, 
-                         dat.type=dat.type, dat.typeL=dat.typeL, ram.gb=rGb, hd.gb=max.mem))
+                         dat.type=dat.type, ram.gb=rGb, hd.gb=max.mem))
 }
 
 
@@ -5860,7 +5877,14 @@ make.dir <- function(dir.base="plumbCNV_LRRQC",dir.raw="LRRQC_Raw_Files",no.raw=
   all.locs <- ls()[grep("dir.",ls())]
   nloc <- length(all.locs)
   dir <- vector("list", nloc)
-  for (cc in 1:nloc) {  dir[[cc]] <- get(all.locs[cc]) }
+  inval <- NULL
+  for (cc in 1:nloc) { 
+    nxt <- get(all.locs[cc])
+    if(!is.function(nxt)) {
+      dir[[cc]] <- nxt
+    } else { inval <- c(inval,cc) }
+  }
+  if(!is.null(inval)) { dir <- dir[-inval] ; all.locs <- all.locs[-inval] }
   #dir <- dir.force.slash(dir) ; dir <- as.list(dir)
   names(dir) <- substr(all.locs,5,nchar(all.locs))
   return(dir)
@@ -10879,7 +10903,7 @@ import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames
                        vcf=read.delim(markerinfo.fn,comment.char="#",header=T,stringsAsFactors=F,sep=del),
                        map=read.delim(markerinfo.fn,header=F,stringsAsFactors=F,sep=del),
                        map3=read.delim(markerinfo.fn,header=F,stringsAsFactors=F,sep=del) )
-    if(verbose) { cat(" file preview:\n"); print(head(vcf.file,4)); cat("\n") }
+    if(verbose | T) { cat(" file preview:\n"); print(head(vcf.file,4)); cat("\n") }
   } else {
     linez <- character()
     linez[1] <- (paste("Error: expecting file: '",markerinfo.fn,"' from function parameter 'markerinfo.fn'.",sep=""))
@@ -10933,7 +10957,7 @@ import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames
     match.list.to.vcf <- match(snp.list,vcf.file[,snp.col])
     pc.missing <- (length(which(is.na(match.list.to.vcf)))/length(snp.list))
     if(verbose) { cat("",paste(round(100*pc.missing,1),"% snps missing from annotation file\n")) }
-    if(pc.missing>.5) { stop("Error: too many missing. comment out [#] line in function 'calc.chr.ind' if intentional")}
+    if(pc.missing>.5) { stop("too many missing. comment out [#] line in function 'calc.chr.ind' if intentional")}
   }
   snpData <- RangedData(ranges=IRanges(start=vcf.file[,pos.col],width=1,
                                        names=paste(vcf.file[,snp.col])),space=vcf.file[,chr.col])
@@ -11676,7 +11700,7 @@ check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=
   }
   # check dir
   if(is.null(dir)) { stop("Error: invalid directory 'dir' object") } else {
-    dir <- validate.dir.for(dir,lst=names(make.dir()),warn=T) # checks dir object is complete
+    dir <- validate.dir.for(dir,names(make.dir()),warn=T) # checks dir object is complete
   }
   #check for existence of compulsory files depending on where we plan to start from
   modez <- c("scratch","normal","big")
@@ -11958,6 +11982,8 @@ sim.snp.baf <- function(n=1,type="normal",noise=1,...) {
 }
 
 
+## states for simulation
+
 del0 <- function(n=1,noise=1,mode="LRR"){
   if(mode=="LRR") {
     m1 <- c(-3.52)+ rnorm(1,0,.002*noise) # ? SE of the plate mean
@@ -12158,7 +12184,7 @@ convert.snp.indx.to.pos <- function(ROHlist,snpMat,snp.info) {
 }
 
 
-
+# extract runs of homozygosity for a SNP matrix (slow)
 get.ROH.for.SnpMatrix <- function(snpMat,snp.info=NULL,snp.fail=NULL,dir=NULL,sample.list=NULL,...) {
   # either use 'dir' to automatically get snp.info and failures
   if(!is(snpMat)[1]=="SnpMatrix" & !is.raw(snpMat)) { warning("snpMat must be a SnpMatrix object") ; return(NULL) }
@@ -12208,7 +12234,7 @@ get.ROH.for.SnpMatrix <- function(snpMat,snp.info=NULL,snp.fail=NULL,dir=NULL,sa
 
 
 ##
-
+# extract plate information associated with the big.matrix
 get.plate.info.for.big <- function(bigMat, dir) {
   dir <- validate.dir.for(dir,"big")
   plt <- get.plate.info(dir)
@@ -12216,7 +12242,7 @@ get.plate.info.for.big <- function(bigMat, dir) {
   return(plate.vec)
 }
 
-
+# get plate means for a big matrix by using plate information
 get.plate.snp.stats.for.big <- function(bigMat, dir, func=mean, n.cores=1,...) {
   dir <- validate.dir.for(dir,"big")
   plt <- get.plate.info.for.big(bigMat=bigMat,dir=dir)
@@ -12227,17 +12253,17 @@ get.plate.snp.stats.for.big <- function(bigMat, dir, func=mean, n.cores=1,...) {
   return(mnz.list)
 }
 
-
+# for given genome ranges will try to find the closest snps to the end of the ranges
 end.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,nearest=T) {
   return(start.snp(snp.info=snp.info,chr=chr,pos=pos,ranged=ranged,start=F,end=T,nearest=nearest))
 }
 
-
+# for given genome ranges will try to find the closest snps to the start and end of the ranges
 range.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,nearest=T) {
   return(start.snp(snp.info=snp.info,chr=chr,pos=pos,ranged=ranged,start=T,end=T,nearest=nearest))
 }
 
-
+# for given genome ranges will try to find the closest snps to the start of the ranges
 start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,nearest=T) {
   # will preferably find an exact match but if nearest=T, will fall-back on nearest match
   must.use.package("genoset",T)
@@ -12383,6 +12409,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
     dir <- make.dir(dir.raw=dir.raw,dir.base=dir.base)
   }
   if(proper.start) {
+    #prv(dir)
     init.dirs.fn(dir,overwrite=erase.previous,silent=T,update.bash=T,info.dir=aux.files.dir)
     erase.previous <- F  # change erase so it can't be done again below
     if(check.readiness(dir=dir,mode=run.mode,snp.mode=snp.run.mode)) { cat("plumbCNV file check successful\n") }
@@ -12401,7 +12428,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   ## 0. EXTRACT The DATA from Genome Studio Long Format file(s)
   if(run.mode=="scratch" & start.at==0) {
     Header("0. DATA EXTRACTION","#")
-    sfiles <- init.DATA.read(dir,doLRR=T,doBAF=T,plink.imp=F,n.cores=n.cores,
+    sfiles <- init.DATA.read(dir,doLRR=T,doBAF=T,plink.imp=plink.imp,n.cores=n.cores,
                              snp.info.sup=snp.support,genome.stud.file=gsf,combine.files=F) 
     proc.done <- 0
   } else {
@@ -12632,7 +12659,7 @@ plumbcnv <- function(settings=list(),...) {
 
 
 # load other files with functions
-library(NCmisc)
-library(reader)
-source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/bigHelpers.R")
-source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/TempFunctions.R")
+#library(NCmisc)
+#library(reader)
+#source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/bigHelpers.R")
+#source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/TempFunctions.R")

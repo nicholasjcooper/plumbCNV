@@ -4,7 +4,7 @@
 ## Bash Script for Extracting LRR/BAF data from Genome Studio Files  ##
 #######################################################################
 
-# By: Nicholas Cooper, JDRF/WT DIL, CIMR Cambridge, Nov 2012 #
+# By: Nicholas Cooper, JDRF/WT DIL, CIMR Cambridge, Nov 2013 #
 
 ### INSTRUCTIONS ###
 # Firstly, in the directory this script is run from, make sure there is 
@@ -164,7 +164,7 @@ Usage: getDataGS [-h] [-B] [-T] [-N] [-S] [-L] [-F] [-l] [-C] [-D] [-M] [-m] [-R
 
 ### parse command line options ###
 
-while getopts B:T:N:E:m:F:O:x:y:hzfltLSCDMGRPX OPT;
+while getopts B:T:N:E:m:F:O:x:y:z:hfltLSCDMGRPX OPT;
 do
     case $OPT in
     h)  echo "$USAGE"
@@ -257,6 +257,12 @@ echo If combining, delete separate files?: $delseps
 echo Skip main extraction?: $skipmain
 echo Remove non-autosomes prior to sample QC in Plink?: $rmv23
 echo Do QC in Plink?: $plinkQC
+if [ "$plinkQC" = "yes" ]
+ then
+   echo sample call rate threshold: $sampcr
+   echo snp call rate threshold: $snpcr
+   echo HWE p threshold: $hwe
+fi
 echo
 
 

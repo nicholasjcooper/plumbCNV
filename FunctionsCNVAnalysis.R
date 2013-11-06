@@ -4815,23 +4815,23 @@ initialise.excl.files <- function(dir,reset.files=c("ChrAb.txt","DLRS.txt","GCWa
 }
 
 
-get.txt.http <- function(url, ...) {
+gs.bash.http <- function(repos="plumbCNV",script="getDataGS.sh") {
   # load package
-  require(RCurl)
-  
-  # parse and evaluate each .R script
-  sapply(c(url, ...), function(u) {
-    text = getURL(u, followlocation = TRUE, cainfo = system.file("CurlSSL", "cacert.pem", package = "RCurl"))
-  })
+  if(packages.loaded("RCurl")) {
+    txt <- getURL(paste("https://raw.github.com/nicholasjcooper/",repos,"/master/",basename(script),sep=""), followlocation = TRUE, cainfo = system.file("CurlSSL", "cacert.pem", package = "RCurl"))
+    return(txt)
+  } else {
+    warning("package RCurl not available, attempt to run bash script for data import failed")
+    return(NULL)
+  }
 }
 
-# Example
-#txt <- get.txt.http("https://raw.github.com/nicholasjcooper/plumbCNV/getDataGS.sh")
 
 
 
 
 init.DATA.read <- function(dir,doLRR=T,doBAF=F,plink.imp=F,n.cores=1,scr.name="getDataGS.sh",scr.dir="",
+                           hwe.thr=10^-8, callrate.samp.thr=.95, callrate.snp.thr=.95,
                            snp.info.sup="snpdata.map",genome.stud.file=F,combine.files=F) 
 {
   dir <- validate.dir.for(dir,c("scr","baf.col","lrr.dat","base","col","sup","raw"))
@@ -4892,8 +4892,11 @@ init.DATA.read <- function(dir,doLRR=T,doBAF=F,plink.imp=F,n.cores=1,scr.name="g
     } else {
       #import LRR and do plink QC:  
       cat("\nRunning bash data import script and calling plink for snp QC\n")
-      my.cmd <- paste(" -SLMRPlf",gs,combin," -N ",n.cores," -T 'LRR' -F '",dir$raw,"' -O '",
-                      dir$base,"' -m '",snp.info.sup,"'",sep="")
+      my.cmd <- paste(" -SLMRPlf",gs,combin," -N ",n.cores,
+                      " -T 'LRR' -F '",dir$raw,"' -O '",
+                      dir$base,"' -m '",snp.info.sup,"'",
+                      " -x ",callrate.samp.thr," -y ",callrate.snp.thr," -z ",format(hwe.thr,digits=9,scientific=F),
+                      sep="")
       scr.file <- cat.path(scr.dir,scr.name,must.exist=T)
       cmd <- paste(scr.file,my.cmd,collapse="",sep="")
       cat(cmd,"\n")
@@ -11539,9 +11542,18 @@ init.dirs.fn <- function(dir,overwrite=F,ignore=c("raw","sup"),
       if(file.exists(src)) {
         file.copy(from=src,to=scr.file,recursive=T,overwrite=T)
       } else {
-        rforge.url <- "http://r-forge.r-project.org/scm/viewvc.php/*checkout*/scripts/getDataGS.sh?revision=2&root=plumbcnv"
-        download.file(url=rforge.url,destfile=scr.file)
-        cat(" copied file",basename(scr.file),"\ninto:",dir$scr,"\nfrom Rforge/plumbcnv/ \n")
+        gs <- gs.bash.http()
+        if(!is.null(gs)) {
+          # GITHUB WAY:
+          writeLines(gs,file=scr.file)
+          cat(" copied file",basename(scr.file),"\ninto:",dir$scr,"\nfrom github/plumbCNV/ \n")
+        } else {
+          ## RFORGE WAY:
+          warning("Could not reach github, reverting to RForge version of the script which might be outdated")
+          rforge.url <- "http://r-forge.r-project.org/scm/viewvc.php/*checkout*/scripts/getDataGS.sh?revision=2&root=plumbcnv"
+          download.file(url=rforge.url,destfile=scr.file)
+          cat(" copied file",basename(scr.file),"\ninto:",dir$scr,"\nfrom Rforge/plumbcnv/ \n")
+        }
       }
       system(paste("chmod +x",scr.file))
     }
@@ -12428,7 +12440,8 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   ## 0. EXTRACT The DATA from Genome Studio Long Format file(s)
   if(run.mode=="scratch" & start.at==0) {
     Header("0. DATA EXTRACTION","#")
-    sfiles <- init.DATA.read(dir,doLRR=T,doBAF=T,plink.imp=plink.imp,n.cores=n.cores,
+    sfiles <- init.DATA.read(dir,doLRR=T,doBAF=T,plink.imp=plink.imp,n.cores=n.cores,hwe.thr=hwe.thr,
+                             callrate.snp.thr=callrate.snp.thr,callrate.samp.thr=callrate.samp.thr,
                              snp.info.sup=snp.support,genome.stud.file=gsf,combine.files=F) 
     proc.done <- 0
   } else {

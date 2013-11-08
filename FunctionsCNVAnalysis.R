@@ -84,7 +84,7 @@ import.called.cnvs <- function(dir,out.format=c("Ranges","cnvGSA"),
 get.baf.markers <- function(baf.des.fn, samp.list, dir, low.ram=T) {
   # attach datafile bigmemory object
   dir <- validate.dir.for(dir,c("big"),warn=F)
-  bigBAF <- getBigMat(baf.des.fn,dir$big)
+  bigBAF <- get.big.matrix(baf.des.fn,dir$big)
   cat("\nRegenerating BAF average data from BAF matrix\n")
   to.keep <- which(colnames(bigBAF) %in% samp.list)
   #mean.sel <- function(X,to.keep) { mean(X[to.keep],na.rm=T) }
@@ -215,7 +215,7 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
                                                 pref=cor.pref,big.cor.fn=big.cor.fn,write=T,
                                                 sample.info=sample.info,correct.sex=correct.sex, add.int=add.int)
   }
-  corrected.bigMat <- getBigMat(corrected.ref,dir) #; rm(corrected.ref) #(in case it was a bigmat)
+  corrected.bigMat <- get.big.matrix(corrected.ref,dir) #; rm(corrected.ref) #(in case it was a bigmat)
   # optionally make comparison of pre and post-pc distributions
   if(comparison) {
     med.fn <- cat.path("",med.fn,suf=paste(num.pcs),ext="RData")
@@ -415,7 +415,7 @@ exclude.combine.big.mats <- function(bigList,dir,pref=paste("SampQC_Combined",se
   pulp <- function(vec,ch="-") { paste(vec,collapse=ch) }
   if(length(bigList)==1)
   {
-    bigUnified <- getBigMat(big.exclude.sort(bigList[[1]], dir=dir, pref=pref),dir$big,verbose=F)
+    bigUnified <- get.big.matrix(big.exclude.sort(bigList[[1]], dir=dir, pref=pref),dir$big,verbose=F)
     descr <- describe(bigUnified); rm(bigUnified)
     return(descr)
   } else {
@@ -513,7 +513,7 @@ load.big.pointer.list <- function(descr.list,dir)
   smp.szs <- numeric()
   for (cc in 1:n.data.files)
   { 
-    bigMatLst[[cc]] <- getBigMat(descr.list[[cc]],dir) 
+    bigMatLst[[cc]] <- get.big.matrix(descr.list[[cc]],dir) 
     samps[[cc]] <- colnames(bigMatLst[[cc]])
     samp.list <- c(samp.list,samps[[cc]])
     smp.szs[cc] <- length(samps[[cc]])
@@ -532,7 +532,7 @@ do.quick.LRR.snp.assocs <- function(descr.fn,sample.info=NULL,use.col="phenotype
   # for 2 phenotypes/grps gives t values - ordinally equivalent to logistic regression with 2 groups
   if(!all(c(use.col,"QCfail") %in% colnames(sample.info))) { stop(paste("sample.info was invalid for association tests, need",use.col,"and QCfail columns")) }
   cat(" running SNP-wise LRR-intensity tests against",use.col,"to filter most associated\n")
-  bigMat <- getBigMat(descr.fn,dir)
+  bigMat <- get.big.matrix(descr.fn,dir)
   samp.list <- colnames(bigMat)
   tot.samps <- length(samp.list)
   # check that sample.info is valid, if not attempt to fix it
@@ -890,7 +890,7 @@ calc.main.stats.on.big <- function(des.fn,dir,dlrs.pref="DLRS",deleteDLRS=T,skip
   dir <- validate.dir.for(dir,c("big"),warn=F)
   must.use.package("genoset",T)
   # attach datafile bigmemory object
-  bigMat2 <- getBigMat(des.fn,dir)
+  bigMat2 <- get.big.matrix(des.fn,dir)
   
   if(!skip.dlrs & !apply.method) {
     # make DLRS bigmat
@@ -1316,7 +1316,7 @@ get.chr.stats <- function(bigMat,snp.info,dir="",allow.subset=F)
      cat(" modifying big.matrix to match snp.info object\n")
      rN <- rownames(bigMat)[rownames(bigMat) %in% rownames(snp.info)]
      big.descr <- big.exclude.sort(bigMat,f.samp=NULL,f.snp=rN,tranMode=1,pref="TEMP_",dir=dir,verbose=F)
-     rm(bigMat); bigMat <- getBigMat(big.descr,dir$big)
+     rm(bigMat); bigMat <- get.big.matrix(big.descr,dir$big)
    }
  } else {
    if(nrow(snp.info)!=nrow(bigMat)) { stop("Error: bigMat contained snps not in snp.info") }
@@ -2269,10 +2269,18 @@ doSampQC <- function(dir, subIDs.actual, plink=T, callrate.samp.thr=.95, het.lo=
      stop(paste("Error: expecting plink samples-removed-by-QC file: snpdataout.irem, in",dir$cr.plk)) }
    if (!"snpdataout.imiss" %in% list.files(dir$cr.plk)) {
      stop(paste("Error: expecting plink samples-QC output file: snpdataout.imiss, in",dir$cr.plk)) }
-   call.rate.excl.grp <- paste(read.table(paste(dir$cr.plk,"snpdataout.irem",sep=""),header=F)[,2])
-   sample.info[call.rate.excl.grp,"QCfail"] <- proc
+   irem.fn <- cat.path(dir$cr.plk,"snpdataout.irem")
+   check.fl.rows <- file.nrow(irem.fn)
+   if(check.fl.rows>0) { 
+     call.rate.excl.grp <- paste(read.table(irem.fn,header=F)[,2]) 
+     sample.info[call.rate.excl.grp,"QCfail"] <- proc
+   } else { 
+     call.rate.excl.grp <- NULL 
+   }
    cat(paste(" plink sample QC removed",length(call.rate.excl.grp),"samples\n"))
-   imisser <- read.table(paste(dir$cr.plk,"snpdataout.imiss",sep=""),header=T)
+   imiss.fn <- cat.path(dir$cr.plk,"snpdataout.imiss")
+   check.fl.rows <- file.nrow(imiss.fn)
+   if(check.fl.rows>0) { imisser <- read.table(imiss.fn,header=T) } else { imisser <- data.frame(IID="",F_MISS="") }
    sample.info[["call.rate"]] <- 1-(imisser[match(rownames(sample.info),imisser$IID),"F_MISS"])
    sample.info$call.rate[is.na(sample.info$call.rate)] <- 0
    more.fail <- which(sample.info$call.rate[!is.na(sample.info$call.rate)]<callrate.samp.thr)
@@ -2285,6 +2293,9 @@ doSampQC <- function(dir, subIDs.actual, plink=T, callrate.samp.thr=.95, het.lo=
      sample.info$QCfail[more.fail] <- proc
      call.rate.excl.grp <- c(call.rate.excl.grp,rownames(sample.info)[more.fail])
    }
+   # using plink QC, no heterozygosity exclusion?
+   warning("SNP-QC with plink means samples not excluded outside heterozygosity limits")
+   het.excl.grp <- paste(NULL)
  } else {
    sample.qc <- list.rowsummary(snpMatLst,dir=dir,n.cores=n.cores)
    sample.info[["call.rate"]] <- sample.qc[rownames(sample.info),"Call.rate"]
@@ -2425,7 +2436,26 @@ doSnpQC <- function(dir, plink=T, n.cores=1,
    lmisser <- read.table(paste(dir$cr.plk,"snpdataout.lmiss",sep=""),header=T)
    snp.info[["call.rate"]] <- 1-(lmisser[match(rownames(snp.info),lmisser$SNP),"F_MISS"])
    hweer <- read.table(paste(dir$cr.plk,"snpdataout.hwe",sep=""),header=T)
-   snp.info[["P.hwe"]] <- hweer[match(rownames(snp.info),hweer$SNP),"P"]
+   pp <- snp.info[["P.hwe"]] <- hweer[match(rownames(snp.info),hweer$SNP),"P"]
+   counts <- hweer[match(rownames(snp.info),hweer$SNP),"GENO"]
+   three.counts <- strsplit(counts, "/",fixed=T)
+   three.counts <- lapply(three.counts,function(X) { Y <- as.numeric(X[1:3]); Y[is.na(Y[1:3])] <- 0; Y })
+   monoms <- sapply(three.counts,function(X){ length(which(X==0))})
+   #prv(three.counts)
+   mafz <- sapply(three.counts,function(X){ if(X[1]>=X[3]) { j <- X[3] } else { j <- X[1] } ; (2*j+X[2])/(sum(X)*2) })
+   hetz <- sapply(three.counts,function(X){ X[2]/(sum(X)) })
+   P.BB <- sapply(three.counts,function(X){ X[3]/(sum(X)) })
+   snp.info[["maf"]] <- mafz
+   snp.info[["het"]] <- hetz
+   snp.info[["BAF"]] <- (.5*hetz + P.BB)
+   cond <- snp.info$maf<.0005
+   cond[is.na(cond)] <- F
+   mmz <- rownames(snp.info)[cond]
+   ofn <- cat.path(dir$cr,"monomorphic.txt"); cat("~wrote",length(mmz),"suspected monomorphic snps to:\n ",ofn,"\n")
+   mafz <- cbind(mmz,round(snp.info[["maf"]][cond],7)); colnames(mafz) <- c("marker.id","minor.allele.frequency")
+   write.table(mafz,file=ofn,quote=F,row.names=F,sep="\t")
+   zz <- qnorm(1-(pp/2)) #only positive z values
+   snp.info[["Z.hwe"]] <- zz
  } else {
    if(autosomes.only) { snp.info <- select.autosomes(snp.info) }
    if(group.miss & !is.null(sample.info)) {
@@ -3063,7 +3093,7 @@ big.exclude.sort <- function(des.fn="LRRdescrFile", dir="", deepC=T, tranMode=2,
   des.fn.o <- paste(pref,"Sort","descrFile",sep="")
   R.descr <- cat.path(dir$big,des.fn.o,ext=".RData")
   
-  bigMat <- getBigMat(des.fn,dir)
+  bigMat <- get.big.matrix(des.fn,dir)
   cat(paste(" attached matrix with dims:",paste(dim(bigMat),collapse=","),"\n"))
   # get list of deleting/reordering vectors using annotation files
   if (tranMode==1) {
@@ -3089,7 +3119,7 @@ big.exclude.sort <- function(des.fn="LRRdescrFile", dir="", deepC=T, tranMode=2,
     cat(paste(length(to.order.c),"col indexes range is from",min(to.order.c),"to",max(to.order.c),"\n"))
     cat("-->",head(to.order.c),sep=", ")
     cat("\n\n raw big.matrix summary before ordering and exclusion based on SNP-QC:\n\n")
-    print.big.matrix(bigMat,"bigMat")
+    prv.big.matrix(bigMat,"bigMat")
   }
   if(!deepC)
   {
@@ -5323,8 +5353,8 @@ process.cohort.qc <- function(DT=NULL,grp,of,dir,sample.info,snp.info,restore.mo
   #debug(big.exclude.sort)
   if(F) { R.descr <- cat.path(dir$big,"LRRSortdescrFile.RData") } else {
   R.descr <- big.exclude.sort(des.fn, dir=dir, pref=pref,verbose=verbose) }
-  bigMat2 <- getBigMat(R.descr,dir)
-  print.big.matrix(bigMat2,"Snp_QC_Mat")
+  bigMat2 <- get.big.matrix(R.descr,dir)
+  prv.big.matrix(bigMat2,"Snp_QC_Mat")
   
   datlist <- lrr.sample.dists(bigMat2,snp.info=snp.info,dir=dir,n.cores=n.cores,
                               gc=T,dlrs=dlrs,pref=pref,med.chunk.fn=med.chunk.out,
@@ -5466,7 +5496,7 @@ run.SAMPLE.qc <- function(DT=NULL,dir=NULL,init=T,big.lrr=NULL,sample.info=NULL,
  ## sample.info$QCfail[rownames(sample.info) %in% get.all.samp.fails(dir)] <- 1
   sample.info <- validate.samp.info(sample.info,dir=dir,QC.update=T,verbose=F,proc=3) # updates fail flags
   ## update callrates to reflect current set of SNPs ###
-  crs <- samp.cr.summary(getBigMat(new.descr,dir$big),print=T)
+  crs <- samp.cr.summary(get.big.matrix(new.descr,dir$big),print=T)
   sample.info[names(crs),"call.rate"] <- crs
   write.sample.info(sample.info,dir=dir,verbose=T,type="tab")
   if(is.data.tracker(DT)) {
@@ -5980,7 +6010,7 @@ import.DATA.big <- function(DT,...,dir=NULL) {
   descr.list <- lrr.dat.to.big.matrix(dir,ngrp=ngrp,DT=DT,...)
   if(is.character(descr.list)) {
     ofn <- cat.path(dir$big,rmv.ext(descr.list),ext="RData")
-    descr <- describe(getBigMat(descr.list))
+    descr <- describe(get.big.matrix(descr.list))
     save(descr,file=ofn)
     descr.list <- ofn
   }
@@ -6060,9 +6090,9 @@ prepare.penncnv.samples <- function(dir,LRR.fn="",BAF.fn="BAFdescrFile",num.pcs=
   } else {
     cat(" using BAF big.matrix file:",BAF.fn,"\n")
   }
-  bigBAF <- getBigMat(BAF.fn, dir$big)
-  bigLRR <- getBigMat(LRR.fn, dir$big)
-  print.big.matrix(bigBAF,"bigBAF") ; print.big.matrix(bigLRR,"bigLRR")
+  bigBAF <- get.big.matrix(BAF.fn, dir$big)
+  bigLRR <- get.big.matrix(LRR.fn, dir$big)
+  prv.big.matrix(bigBAF,"bigBAF") ; prv.big.matrix(bigLRR,"bigLRR")
   rB <- rownames(bigBAF); cB <- colnames(bigBAF)
   rL <- rownames(bigLRR); cL <- colnames(bigLRR)
   n <- ncol(bigLRR)
@@ -6137,8 +6167,8 @@ prepare.penncnv.samples <- function(dir,LRR.fn="",BAF.fn="BAFdescrFile",num.pcs=
         # flush and reload bigmatrices to clear RAM
         if(test) {
           rm(bigBAF); rm(bigLRR); gc()
-          bigBAF <- getBigMat(BAF.fn, dir$big,verbose=F)
-          bigLRR <- getBigMat(LRR.fn, dir$big,verbose=F)
+          bigBAF <- get.big.matrix(BAF.fn, dir$big,verbose=F)
+          bigLRR <- get.big.matrix(LRR.fn, dir$big,verbose=F)
         }
       }
     }
@@ -6157,7 +6187,7 @@ prepare.penncnv.markers <- function(snp.info,lrr.descr, baf.descr="BAFdescrFile"
   dir <- validate.dir.for(dir,c("cnv","big"),warn=F)
   baf.out.fn <- cat.path(dir$cnv,"BAF.pfb")
   gc.out.fn <- cat.path(dir$cnv,"marker.gcm")
-  bigMat2 <- getBigMat(lrr.descr,dir)
+  bigMat2 <- get.big.matrix(lrr.descr,dir)
   snp.list <- rownames(bigMat2)
   samp.list <- colnames(bigMat2)
   rm(bigMat2)
@@ -6852,7 +6882,7 @@ delete.big.matrix.files <- function(bigMat,dir) {
       return(NULL) # was like a filename but couldn't find the file
     }
   }
-  bm <- getBigMat(bigMat,dir$big)
+  bm <- get.big.matrix(bigMat,dir$big)
   ott <- describe(bm)
   bckFileName <- attr(ott,"description")$filename
   rm(bm); rm(ott); gc() # remove the objects in case deleting the backing files causes problems
@@ -6914,9 +6944,9 @@ delete.all.files <- function(dir,rescue=NULL,to="~/Documents/") {
 }
 
 
-print.big.matrix <- function(bigMat,dir="",name=NULL,dat=T,descr=NULL,bck=NULL,mem=F,row=3,col=2,
+prv.big.matrix <- function(bigMat,dir="",name=NULL,dat=T,descr=NULL,bck=NULL,mem=F,row=3,col=2,
                           rcap="SNPs",ccap="Samples",rlab="SNP-id",clab="Sample IDs",...) {
-  print.big.matrix(bigMat=bigMat,dir=dir,name=name,dat=dat,descr=descr,bck=bck,
+  prv.big.matrix(bigMat=bigMat,dir=dir,name=name,dat=dat,descr=descr,bck=bck,
                     mem=mem,row=row,col=col,
                     rcap=rcap,ccap=ccap,rlab=rlab,clab=clab)
 }
@@ -6962,8 +6992,8 @@ qscore.cnvs <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.flank
     lrr.file <- XX$lrr.file; baf.file <- XX$baf.file; lrr.file.raw <- XX$lrr.file.raw
     if(!PREPOSTPC) {
       # load big objects to save loading each time for many ranges
-      if(LRR) { lrr.file <- getBigMat(lrr.file,dir$big) }
-      if(BAF) { baf.file <- getBigMat(baf.file,dir$big) }
+      if(LRR) { lrr.file <- get.big.matrix(lrr.file,dir$big) }
+      if(BAF) { baf.file <- get.big.matrix(baf.file,dir$big) }
     } else {
       warning("PREPOSTPC==T is slow for multiple ranges as data must be reloaded each iteration")
     }
@@ -7986,7 +8016,7 @@ get.PCA.subset <- function(dir,pc.to.keep=.13,assoc=F,autosomes=T,big.fn="combin
     snps.to.keep <- extract.snp.subset(snp.info,sample.info,pc.to.keep=pc.to.keep,assoc=assoc,autosomes=autosomes,
                                        writeResultsToFile=T,big.fn=big.fn,out.fn=snp.sub.fn,dir=dir, n.cores=n.cores)
   }
-  ###bigMat <- getBigMat(big.fn,dir)
+  ###bigMat <- get.big.matrix(big.fn,dir)
   if(length(snps.to.keep)>100) {
     ##writeLines(colnames(bigMat),paste(dir$ano,samp.fn,sep=""))
     subset.descr <- big.exclude.sort(big.fn,dir=dir,T,tranMode=1,pref=pref,f.snp=snps.to.keep,verbose=F)
@@ -8750,9 +8780,9 @@ LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.c
   ## using GC%, run correction for GC-wave on a dataset
   load.all.libs()
   dir <- validate.dir.for(dir,c("big","gc"))
-  origMat <- getBigMat(bigLRR,dir)
+  origMat <- get.big.matrix(bigLRR,dir)
   cat("\nRunning GC correction, using LRR-dataset:\n")
-  print.big.matrix(origMat,name="preCorrectedMat")
+  prv.big.matrix(origMat,name="preCorrectedMat")
   # get filenames now to add to result later
   rN <- rownames(origMat); cN <- colnames(origMat)
   # run pca.correction using ectors (PCs) and alues from LRR.PCA
@@ -8816,7 +8846,7 @@ LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.c
   cat(paste(" LRR GC-Correction took",round((ll-jj)[3]/3600,3),"hours\n"))
   flush(gcCorMat) # should allow names to take  
   cat("\nGC-corrected dataset produced:\n")
-  print.big.matrix(gcCorMat,name="gcCorMat")
+  prv.big.matrix(gcCorMat,name="gcCorMat")
   
   mat.ref <- describe(gcCorMat)
   if(write) {
@@ -9014,8 +9044,8 @@ plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.f
     lrr.file <- XX$lrr.file; baf.file <- XX$baf.file; lrr.file.raw <- XX$lrr.file.raw
     if(!PREPOSTPC) {
       # load big objects to save loading each time for many ranges
-      if(LRR) { lrr.file <- getBigMat(lrr.file,dir$big) }
-      if(BAF) { baf.file <- getBigMat(baf.file,dir$big) }
+      if(LRR) { lrr.file <- get.big.matrix(lrr.file,dir$big) }
+      if(BAF) { baf.file <- get.big.matrix(baf.file,dir$big) }
     } else {
       warning("PREPOSTPC==T is slow for multiple ranges as data must be reloaded each iteration")
     }
@@ -9400,10 +9430,10 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
     rng.mb <- NA
   }  
   if(LRR) { 
-    bigMat2 <- getBigMat(lrr.file,dir$big) ;
+    bigMat2 <- get.big.matrix(lrr.file,dir$big) ;
     if(PREPOSTPC) { 
-      bigMat1 <- getBigMat(lrr.file.raw,dir$big)
-      #    print.big.matrix(bigMat1,dir=dir$big,name="LRR_Matrix")
+      bigMat1 <- get.big.matrix(lrr.file.raw,dir$big)
+      #    prv.big.matrix(bigMat1,dir=dir$big,name="LRR_Matrix")
       not.in.lrr2 <- !(samples %in% colnames(bigMat1))
       if(any(not.in.lrr2))
       {
@@ -9417,7 +9447,7 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
         }
       }
     }
-    #    print.big.matrix(bigMat2,dir=dir$big,name="LRR_Matrix")
+    #    prv.big.matrix(bigMat2,dir=dir$big,name="LRR_Matrix")
     not.in.lrr <- !(samples %in% colnames(bigMat2))
     if(any(not.in.lrr))
     {
@@ -9431,8 +9461,8 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
     }
   }
   if(BAF) { 
-    bigMat3 <- getBigMat(baf.file,dir$big) 
-    #    print.big.matrix(bigMat3,dir=dir$big,name="BAF_Matrix")
+    bigMat3 <- get.big.matrix(baf.file,dir$big) 
+    #    prv.big.matrix(bigMat3,dir=dir$big,name="BAF_Matrix")
     not.in.baf <- !(samples %in% colnames(bigMat3))
     if(any(not.in.baf))
     {
@@ -9678,7 +9708,7 @@ get.dat.for.ranges <- function(ranges,dir,pcCor=T,BAF=F,snp.names=T,snp.pos=F,ge
   typ <- if(BAF) { "big.baf" } else { if(pcCor) { "big.pcc" } else { "big.qc" } }
   fn <- getSlot(DT, typ)
   if(!file.exists(fn)) { warning("bigMatrix datafile ",typ,"not found"); return(NULL) }
-  bigMat <- getBigMat(fn,dir$big)
+  bigMat <- get.big.matrix(fn,dir$big)
   snp.info <- read.snp.info(dir)
   snp.info <- snp.info[snp.info$QCfail==0,]
   first.last.snps <- range.snp(snp.info,ranges)
@@ -11162,7 +11192,7 @@ getSlot <- function(DT,what="description",grps=NA,n.pcs=NA,dir=NULL,
           out <- lapply(unlist(out),function(fn) { get(paste(load(fn))) })
         }
         if(stdz(what) %in% stdz(mdt$bigs) & length(out[[1]])==1) {
-          out <- getBigMat(out[[1]][1],dir)  
+          out <- get.big.matrix(out[[1]][1],dir)  
         }
         if(stdz(what) %in% stdz(mdt$massives)) {
           warning("requested object is too large to retrieve, returning filename only")
@@ -11754,7 +11784,7 @@ check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=
   must.have.files <- c("plate.lookup.txt","pheno.lookup.txt","file.spec.txt",
                        "snpNames.txt","subIdsALL.txt",
                        id.file,lrr.file,baf.file,big.file,
-                       "snpdata.irem", "snpdataout.imiss")[mode.select]
+                       "snpdataout.irem", "snpdataout.imiss")[mode.select]
   must.have.descr <- c("sample IDs and plate IDs","sample IDs and phenotype code(s)",
                        "raw file type, group and column specifications",
                        "list of all snp IDs","list of all sample IDs",
@@ -11806,8 +11836,8 @@ spike.in.cnv <- function(chr,pos,sample="",dir=NULL,big.lrr=NULL,big.baf=NULL,sn
   }
   if(is.null(big.lrr) | is.null(big.baf)) { stop("must have valid big.lrr and big.baf big.matrix objects or 'dir' which contains these")}
   if(is(snp.info)[1]!="RangedData") { stop("snp.info must be type RangedData") }
-  lrr <- getBigMat(big.lrr,dir$big)
-  baf <- getBigMat(big.baf,dir$big)
+  lrr <- get.big.matrix(big.lrr,dir$big)
+  baf <- get.big.matrix(big.baf,dir$big)
   incompletes <- which( (!sample %in% colnames(lrr)) | (!sample %in% colnames(baf)) )
   if(length(incompletes)>0) {
     sample <- sample[-incompletes]    

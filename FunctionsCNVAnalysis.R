@@ -124,7 +124,7 @@ do.scree.plots <- function(eigenv,dir="",fname="ScreePlotPCA.pdf",elbow=9,n.comp
   dir <- validate.dir.for(dir,"pc")
   if(writefig) {  ofn <- cat.path(dir$pc,fname);   pdf(ofn) }
   out <- pca.scree.plot(eigenv=eigenv,elbow=elbow,n.comp=n.comp,
-                         printvar=printvar,nsamp=nsamp,...)
+                         printvar=printvar,min.dim=nsamp,...)
   if(writefig) { dev.off() ;  cat(paste("~wrote file:",ofn,"\n")) }
   return(out)
 }
@@ -211,7 +211,7 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
     varz <- do.scree.plots(pca.result$Evalues,dir=dir,elbow=num.pcs,nsamp=nsamp)
     cat("",round(cumsum(varz)[num.pcs]*100,1),"% Est. LRR variance explained by first",num.pcs,"components.\n")
     # correct using the PC-components
-    corrected.ref <- LRR.PCA.correct(pca.result,big.lrr.fn,dir=dir,num.pcs=num.pcs,n.cores=n.cores,
+    corrected.ref <- PC.correct(pca.result,big.lrr.fn,dir=dir,num.pcs=num.pcs,n.cores=n.cores,
                                                 pref=cor.pref,big.cor.fn=big.cor.fn,write=T,
                                                 sample.info=sample.info,correct.sex=correct.sex, add.int=add.int)
   }
@@ -357,7 +357,7 @@ lrr.sample.dists <- function(bigMat,snp.info,dir,gc=F,dlrs=T,pref="",med.chunk.f
   #cat("\nCohort distribution statistics for LRR-stats:\n"); print(s.tab,digits=4); cat("\n")
   sum.fn <- file(cat.path(dir$qc.lrr,fn=sum.fn,suf=pref,ext="txt"),open="w")
   dual.cat(file=sum.fn,"\n\nCohort distribution statistics for LRR-stats:\n")
-  print.large.to.file(s.tab,con=sum.fn,to.scrn=T,digits=4)  #print((res.tab))
+  prv.large.to.file(s.tab,con=sum.fn,to.scrn=T,digits=4)  #print((res.tab))
   close(sum.fn)
   cat("\n")
   
@@ -788,10 +788,10 @@ dual.cat <- function(file="",...,to.scrn=T,to.file=T) {
 }
 
 
-print.large.to.file <- function(tab,con="",digits=3,rlab="",rownums=F,...,to.scrn=T) 
+prv.large.to.file <- function(tab,con="",digits=3,rlab="",rownums=F,...,to.scrn=T) 
 {
   #print a matrix to file nicely
-  linez <- print.large(tab,row=nrow(tab),col=ncol(tab),
+  linez <- prv.large(tab,row=nrow(tab),col=ncol(tab),
                        rlab=rlab,digits=digits,rownums=rownums,...,ret=T)
   for (j in 1:(length(linez))) {
     dual.cat(paste(paste(linez[[j]],collapse=" "),"\n",sep=""),file=con,to.scrn=to.scrn)
@@ -853,17 +853,17 @@ make.QC.summary.table <- function(sample.list,dir,pass.fn="PassQCSamples.txt",su
   
   ## Print tables to screen / and or file
   dual.cat("\ncounts\n",file=my.fn,to.scrn=to.scrn)
-  print.large.to.file(res.tab,con=my.fn,to.scrn=to.scrn)  #print((res.tab))
+  prv.large.to.file(res.tab,con=my.fn,to.scrn=to.scrn)  #print((res.tab))
   dual.cat("\npercent of failers\n",file=my.fn,to.scrn=to.scrn)
   fpc.tab <- ((round((res.tab/tot.uniq),3)))
-  print.large.to.file(fpc.tab,con=my.fn,to.scrn=to.scrn) #print(fpc.tab)
+  prv.large.to.file(fpc.tab,con=my.fn,to.scrn=to.scrn) #print(fpc.tab)
   dual.cat("\npercent of callrate passing sample\n",file=my.fn,to.scrn=to.scrn)
   pc.tab <- (round((res.tab/length(sample.list)),3))
-  print.large.to.file(pc.tab,con=my.fn,to.scrn=to.scrn) #print(pc.tab)
+  prv.large.to.file(pc.tab,con=my.fn,to.scrn=to.scrn) #print(pc.tab)
   # print counts table
   dual.cat("\nFrequency count of number of separate QC indices failed per sample\n",
            file=my.fn,to.scrn=to.scrn)
-  print.large.to.file(failedN.tab,con=my.fn,to.scrn=to.scrn)
+  prv.large.to.file(failedN.tab,con=my.fn,to.scrn=to.scrn)
   
   if(my.fn!="") { close(my.fn); cat("\n~wrote QC summary to:\n ",ofn,"\n") }
   out.list <- list(keep.samples,res.tab,failedN.tab)
@@ -1321,7 +1321,7 @@ get.chr.stats <- function(bigMat,snp.info,dir="",allow.subset=F)
  } else {
    if(nrow(snp.info)!=nrow(bigMat)) { stop("Error: bigMat contained snps not in snp.info") }
  }
- chr.set <- chr.nums.of.info(snp.info)
+ chr.set <- chrNums(snp.info)
  nC <- length(chr.set); range.chr <- 1:nC
  dns <- list(colnames(bigMat),paste("chr",chr.set,sep="")) # get rownames,colnames
  # create matrices for LRR-stats
@@ -1348,7 +1348,7 @@ make.chr.fail.table <- function(chr.mean,pctile.bound=.01)
  # using chromosome (autosome) means from 'get.chr.stats', create list of
  # failures per sample for their chr.mean to within confidence limits
  range.chr <- 1:ncol(chr.mean)
- #chr.set <- chr.nums.of.info(snp.info)
+ #chr.set <- chrNums(snp.info)
  #n.chr <- length(chr.set); range.chr <- 1:n.chr
  headz <- c("ID","LRR.Mean","LoHi","ChrNum")
  listOfFails <- matrix(ncol=4)
@@ -2466,7 +2466,7 @@ doSnpQC <- function(dir, plink=T, n.cores=1,
                                          sample.info=sample.info,n.cores=n.cores,
                                          plot.fn=cat.path(dir$cr,"grpwiseCallrates.pdf"))
    }
-   exp.snp <- length(chr.nums.of.info(select.autosomes(snp.info))) #,22)
+   exp.snp <- length(chrNums(select.autosomes(snp.info))) #,22)
    if(length(snpMatLst)!=exp.snp) {
      snpMatLst <- convert.smp.to.chr22(snpMatLst,snp.info=snp.info,dir=dir,n.cores=n.cores) }
    snp.qc <- list.colsummary(snpMatLst,dir=dir,n.cores=n.cores)
@@ -2708,7 +2708,7 @@ plot.extreme.samples <- function(rez,stat.table,bigMat2,snp.info,dir,pref="",
   }
   if (autosomes) { snp.info <- select.autosomes(snp.info) }
   uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
-  chr.set <- chr.nums.of.info(snp.info); n.chr <- length(chr.set)
+  chr.set <- chrNums(snp.info); n.chr <- length(chr.set)
   XX <- (snp.info$gindx)/scl
   chrLens <- get.chr.lens(dir,ucsc=ucsc)[chr.set]
   chrStarts <- c(0,cumsum((chrLens)))[1:n.chr] # genome position of chromosome starts
@@ -2863,7 +2863,7 @@ bw.plot.lrr <- function (samp.chr.means, SX=NULL, snp.info=NULL, samp.chr.sds=NU
  if(is(snp.info)[1]=="RangedData") { 
    uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
    snp.info <- select.autosomes(snp.info)
-   chr.set <- chr.nums.of.info(snp.info); nC <- length(chr.set)
+   chr.set <- chrNums(snp.info); nC <- length(chr.set)
  } else { nC <- 22 ; chr.set <- 1:nC }
  chrLens <- get.chr.lens(dir,ucsc=ucsc)[chr.set]
  chrStarts <- c(0,cumsum((chrLens)))[1:nC] # genome position of chromosome starts
@@ -2918,7 +2918,7 @@ plot.chr.ab.samples <- function (dir,bigMat2,chr.stat,chr.ab.samples.obj,snp.inf
   RRL <- RR-(lob*RRSD)
   RRU <- RR+(lob*RRSD)
   # set default to select all chromosomes for plotting
-  chr.set <- chr.nums.of.info(snp.info); nC <- length(chr.set)
+  chr.set <- chrNums(snp.info); nC <- length(chr.set)
   if(length(RR)!=nC) { warning("number of chromosomes in data doesn't match snp.info") }
   chr.select <- 1:nC
   if(colPlot) {
@@ -3077,6 +3077,66 @@ sort.exclude.from.annot <- function(bigMat,dir="",dosnp=T,dosamp=T,ordR=T,ordC=T
 }
 
 
+
+select.samp.snp.custom <- function(bigMat,snp,samp)
+{
+  # based on files/vectors of snp-ids and sample-ids create selection
+  # vectors to select only the ids in these lists for a matrix
+  cat(" calculating selections for snps\n")
+  # try to detect whether a vector of IDs, or file names
+  snp.ref <- rownames(bigMat)  ; samp.ref <- colnames(bigMat) 
+  
+  if (length(snp)==1 & length(samp)==1 & is.character(snp) & is.character(samp))
+  {
+    cat(" [assuming 'samp' and 'snp' are file names containing sample and snp ids]")
+    if(file.exists(snp)) {
+      snp.sel <- readLines(snp)
+    } else {
+      if(snp=="") {
+        cat(c(" snp subset file was empty, selecting all\n"))
+        snp.sel <- snp.ref
+      } else {
+        stop("Error: argument 'snp' should be a vector of SNPs length>1 or a filename with a list of snps (no header)")
+      }
+    }
+    if(file.exists(samp)) {
+      sample.sel <- readLines(samp)
+    } else {
+      if(samp=="") {
+        cat(c(" sample subset file was empty, selecting all\n"))
+        sample.sel <- samp.ref
+      } else {
+        stop("Error: argument 'samp' should be a vector of Samples length>1 or a filename with a list of snps (no header)")
+      }
+    }
+  } else { 
+    #cat("[assuming 'samp' and 'snp' are vectors of sample and snp ids]")
+    # if blank then assign all ids
+    if(all(snp=="")) {
+      snp.sel <- snp.ref
+    } else {
+      snp.sel <- snp
+    }
+    if(all(samp=="")) {
+      sample.sel <- samp.ref
+    } else { 
+      sample.sel <- samp  
+    }
+  }
+  # use sort/exclusion lists to get reordering vectors
+  row.sel <- snp.sel ; col.sel <- sample.sel
+  
+  #print(head(row.sel));print(head(col.sel))
+  to.order.r <- narm(match(row.sel,rownames(bigMat)))
+  to.order.c <- narm(match(col.sel,colnames(bigMat)))
+  if (!(length(to.order.r[!is.na(to.order.r)])>0 & length(to.order.c[!is.na(to.order.c)])>0))
+  { warning("selection of SNPs and/or Samples has resulted in an empty dataset",
+            "\ncheck rownames, column names and selection lists for errors") }
+  
+  out.list <- list(to.order.r,to.order.c,snp.sel,sample.sel)
+  names(out.list) <- c("to.order.r","to.order.c","snp.list","sample.list")
+  return(out.list)
+}
 
 
 big.exclude.sort <- function(des.fn="LRRdescrFile", dir="", deepC=T, tranMode=2, pref="LRRFilt",
@@ -3289,7 +3349,7 @@ remove.boundary.snps.window <- function(snp.info,window=0,ucsc="hg18",chrLens=NU
  uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
  if(is.null(chrLens)) { chrLens <- get.chr.lens(ucsc=ucsc) }
  if(is(snp.info)[1]=="RangedData"){
-   chr.set <- chr.nums.of.info(snp.info); chr.n <- length(chr.set)
+   chr.set <- chrNums(snp.info); chr.n <- length(chr.set)
    to.remove.names <- NULL
    for (cc in 1:chr.n) {  
      too.big <- which(start(snp.info[cc])>(chrLens[cc]-window))
@@ -3489,7 +3549,8 @@ reduce.list.to.scalars <- function(ll) {
 
 
 
-get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.query=T, txid=F, prog=F) {
+get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.query=T, txid=F, prog=F, alt.name=NULL) {
+  #prv(next.chr, x, y, xx, yy)
   ## mainly to tidy up function below - does the processing for 1 chromosome
   olp <- findOverlaps(x[[next.chr]],y[[next.chr]])  
   if(length(olp)==0 | length(subjectHits(olp))==0 | length(queryHits(olp))==0) {
@@ -3511,8 +3572,14 @@ get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.q
       ind <- rownames(xx[next.chr])
       genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
     } else {
-      # use row-numbers for matchs unless using DGV ids
-      genes.per.cnv <- genes.per.cnv.n 
+      if(!is.null(alt.name)) {
+        prv.large(xx[next.chr])
+        ind <- xx[next.chr][,paste(alt.name)]
+        genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
+      } else {
+        # use row-numbers for matchs unless using DGV ids
+        genes.per.cnv <- genes.per.cnv.n 
+      }
     }
   }
   gene.overlaps.per.cnv <- tapply(width(overlap.ranges),subjectHits(olp),c)
@@ -3581,7 +3648,7 @@ add.color.to.snp.info <- function(snp.info,scheme=c("mono","alt","unique","hilit
   if(!col2 %in% colors()) { col2 <- "orange" }
   if(is(snp.info)[1]!="RangedData") { stop("snp.info must be a RangedData object to add colours") }
   snp.info <- toGenomeOrder(snp.info,strict=T)
-  chr.set <- chr.nums.of.info(snp.info); n.chr <- length(chr.set)
+  chr.set <- chrNums(snp.info); n.chr <- length(chr.set)
   if(n.chr<1) { stop("there seem to be no chromosomes in the snp.info object") }
   scheme <- scheme[scheme %in% c("mono","alt","unique","hilite")][1]
   scheme[is.na(scheme)] <- "mono"
@@ -5242,7 +5309,7 @@ do.chromosomal.abberations <- function(dir,bigMat2,snp.info,pref="",
   if(!is(snp.info)[1]=="RangedData") { stop("snp.info was not a valid RangedData object") }
   snp.info <- snp.info[(rownames(snp.info) %in% rownames(bigMat2)),]  # snp.info object matching the bigmatrix rows exactly
   cat("\nDetecting chromosomal abberations\n")
-  chr.set <- chr.nums.of.info(snp.info); n.chr <- length(chr.set)
+  chr.set <- chrNums(snp.info); n.chr <- length(chr.set)
   if(n.chr<2) { 
     cat(" only 1 chromosome in dataset so skipping detection of abberations\n\n")  
     out.list <- list(badcheckz=character(0),chrN=NULL,chrLab=character(0))
@@ -7087,7 +7154,7 @@ prob.norm <- function(x,mu=0,sig=1) {
 get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
   snp.info <- toGenomeOrder(snp.info); rw.cnt <- 1
   all.fl <- matrix(ncol=4, nrow=0)
-  for(cc in chr.nums.of.info(ranged)) {
+  for(cc in chrNums(ranged)) {
     nxt.nm <- rownames(snp.info[paste(cc)]); pos <- start(snp.info[paste(cc)])
     rng <- ranged[paste(cc)]
     st.en.snp <- range.snp(snp.info,ranged=rng)
@@ -7620,16 +7687,17 @@ select.autosomes <- function(snp.info) {
 }
 
 
-chr.nums.of.info <- function(snp.info,warn=F) {
+chrNums <- function(ranged,warn=F) {
   must.use.package("genoset",bioC=T)
-  if(!is(snp.info)[1]=="RangedData") { warning("not a RangedData object"); return(NULL) }
-  txt <- rownames(chrIndices(snp.info))
+  if(!is(ranged)[1]=="RangedData") { warning("not a RangedData object"); return(NULL) }
+  txt <- chrNames(ranged)
+  txt <- gsub("chr","",txt,fixed=T)
   nums <- suppressWarnings(as.numeric(txt))
   num.na <- length(nums[is.na(nums)])
   if(num.na>0) { 
-    if(warn) { warning(paste("chr.nums requested for non-autosomes, will assign numbers >23 to letters",
+    if(warn) { warning(paste("chromosome numbers requested for non-autosomes, will assign numbers >=23 to letters",
                   paste(txt[is.na(nums)],collapse=","))) }
-    nums[is.na(nums)] <- 24:(24+num.na-1)
+    nums[is.na(nums)] <- 23:(23+num.na-1)
   }
   return(nums)
 }
@@ -7686,7 +7754,7 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
   if(!is(snp.info)[1]=="RangedData") { warning("snp.info wasn't RangedData") ; return(NULL) }
   snp.info <- select.autosomes(snp.info)
   snp.info <- toGenomeOrder(snp.info,strict=T)
-  chr.set <- chr.nums.of.info(snp.info); n.chr <- length(snp.info)
+  chr.set <- chrNums(snp.info); n.chr <- length(snp.info)
   # single core -  multicore doesn't really help much (like 5 seconds saving for 22 cores for a large dataset)
   rd <- calc.cov(snp.info, targ.int, min.snps)
   rd <- reduce(rd) # combine adjacent ranges
@@ -7738,7 +7806,7 @@ coverage.change <- function(snp.info,cnv.sizes=c(100,500),min.snps=10,dir=NULL,
   n.snps.rmv <- paste(length(which(snp.info$QCfail!=0)),"/",nrow(snp.info),sep="")
   nL <- length(cnv.sizes); all.cov <- qc.cov <- vector("list",nL)
   cat(" after SNP-QC removed",n.snps.rmv,"SNPs, coverage of the genome has decreased from: \n")
-  chr.lst <- chr.nums.of.info(snp.info)
+  chr.lst <- chrNums(snp.info)
   plot.fn <- cat.path(dir$cr,plot.fn,suf=min.snps,ext="pdf")
   if(do.plot & !is.null(dir)) { pdf(plot.fn) }
   for (j in 1:nL) {
@@ -8042,7 +8110,7 @@ random.spacing.snp.select <- function(snp.info,pc.to.keep=.05,dir,autosomes.only
   must.use.package("genoset",T)
   if(is(snp.info)[1]!="RangedData") { stop("Error: snp.info must be a RangedData object") }
   if(autosomes.only) { snp.info <- select.autosomes(snp.info); cat(" selecting only autosomes\n") }
-  skip.chr.mhc <- 6; chr.set <- chr.nums.of.info(snp.info); n.chr <- length(chr.set)
+  skip.chr.mhc <- 6; chr.set <- chrNums(snp.info); n.chr <- length(chr.set)
   mhc <- c(29500000,34000000) # ok for build 36/37
   cat("snp.info contains data for chromsomes:",paste(chr.set,collapse=","),"\n")
   ratio = min(1,(1.15*pc.to.keep))  # upward adjust to counter empty bits and exclusions
@@ -8639,7 +8707,7 @@ convert.smp.to.chr22 <- function(snpMatLst,snp.info,dir="",n.cores=1)
   dir <- validate.dir.for(dir,"cr")
   #print(snp.mat.list.type(snpMatLst,fail=T))
   HD <- switch(snp.mat.list.type(snpMatLst,fail=T),memory=F,disk=T,error=NULL)
-  chr.set <- chr.nums.of.info(snp.info); n.chr <- length(chr.set)
+  chr.set <- chrNums(snp.info); n.chr <- length(chr.set)
   #print(chr.set)
   cat("\nConverting from 'n' group list of all markers to",n.chr,"chromosome list of all samples\n")
   snpChrLst <- vector("list", n.chr)
@@ -8725,7 +8793,7 @@ convert.chr22.to.smp <- function(snpChrLst,snp.info,subIDs.actual,HD=F,group.num
   if (is(snp.info)[1]=="RangedData")
   { must.use.package("genoset",bioC=T)
   } else { stop("snp.info object was not of type 'RangedData'")}
-  chr.set <- chr.nums.of.info(snp.info); n.chr <- length(chr.set)
+  chr.set <- chrNums(snp.info); n.chr <- length(chr.set)
   cat("\nConverting from",n.chr,"chr list of all samples to 'n' group list of all markers\n")
   num.grps <- length(unique(group.nums))
   snpMatLst <- vector("list", num.grps)
@@ -8877,7 +8945,7 @@ get.gc.markers <- function(dir, snp.info=NULL, snp.fn="snpdata.map", anot="map3"
   if(is(snp.info)[1]=="RangedData") {
     uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
     snp.info <- select.autosomes(snp.info)
-    chr.set <- chr.nums.of.info(snp.info)
+    chr.set <- chrNums(snp.info)
     cat(" using UCSC build",ucsc,"and chromosomes",paste(chr.set,collapse=","),"\n")
   } else { stop("Error: GC calculation failed due to invalid snp.info object") }
   hgFn <- paste("BSgenome.Hsapiens.UCSC.",ucsc,sep="")
@@ -9399,7 +9467,7 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
   ## over-ride settings incompatible with viewing a partial chromosome if ZOOM is on:
   if(is(snp.info)[1]!="RangedData") { snp.info <- read.snp.info(dir) }
   snp.info <- toGenomeOrder(snp.info,strict=T)
-  chr.set <- chr.nums.of.info(snp.info); 
+  chr.set <- chrNums(snp.info); 
   if(any(!paste(Chr) %in% paste(chr.set))) { Chr <- Chr[paste(Chr) %in% paste(chr.set)] }
   if(length(Chr)<length(chr.set)) { rngOn <- T }
   if(length(Chr)==1 | length(chr.set)==1){
@@ -9781,7 +9849,7 @@ col.plot.lrr <- function (ID, bigMat, snp.info=NULL, centre.chr=1:22, rng.mb=NA,
     if(!isGenomeOrder(snp.info)) { warning("bigMat rows (snps) are not in genome order"); return(NULL) }
     uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
   #  if(force.autosomes) { snp.info <- select.autosomes(snp.info) }
-    chr.set <- chr.nums.of.info(snp.info); nC <- length(chr.set)
+    chr.set <- chrNums(snp.info); nC <- length(chr.set)
   } else { warning("snp.info invalid, plot skipped"); return(NULL) }
   chrLens <- get.chr.lens(dir,ucsc=ucsc)[chr.set]
   chrStarts <- c(0,cumsum((chrLens)))[1:nC] # genome position of chromosome starts
@@ -10419,9 +10487,11 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   } }
   # rel.query=T gives %'s relative to the query (e.g gene), false gives %'s relative to subject (ie, cnv)
   if(!quiet) { cat(" testing CNV set for overlaps with",ano,"...\n") }
-  mm <- overlap.pc(query=ref,subject=cnv.ranges,name.by.gene=nbg,
+ # prv(ref,cnv.ranges)
+  mm <- overlap.pc(query=ref,subj=cnv.ranges,name.by.gene=nbg,
                    rel.query=rel.ref,fill.blanks=fill.blanks, txid=txid,
                    n.cores=n.cores,none.val=none.val)
+  prv(mm)
   if(vec.out & vals.out & !ranges.out) {
     # summarise results into 1 column separated by commas(or 'delim')
     if(pc) {
@@ -10514,7 +10584,7 @@ jlapply <- function(list1, list2, FUN=NULL, select=F, pc=F, collapse=NULL) {
 plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,...) {
   # plot a set of ranges from a RangedData object
   #if(is(ranges)[1]!="RangedData") { warning("need RangedData object") ; return(NULL) }
-  chk <- chr.nums.of.info(rangedat)
+  chk <- chrNums(rangedat)
   if(length(chk)>1) { warning(length(chk)," chromosomes in 'rangedat', only using the first, chr",chk[1]) ; rangedat <- rangedat[1] }
   xl <- range(c(start(rangedat),end(rangedat)))
   xl <- xl + ((diff(xl)*0.1)*c(-1,1))
@@ -10542,47 +10612,74 @@ plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,...) {
 }
 
 
-overlap.pc <- function(query,subject,name.by.gene=F,rel.query=T,fill.blanks=T,
-                       text.out=F,delim=",",none.val=0,n.cores=1, txid=F, prog=F) {
+set.chr.to.numeric <- function(ranged,keep=T) {
+  if(suppressWarnings(any(is.na(as.numeric(chr(ranged)))))) {
+    ranged <- toGenomeOrder(ranged)
+    mychr2 <- mychr <- paste(chr(ranged))
+    all.nams <- chrNames(cy)
+    all.nums <- chrNums(cy)
+    for (cc in 1:length(all.nams)) { mychr2[mychr==all.nams[cc]] <- all.nums[cc] }
+    out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
+    if(ncol(out)>0 & keep) {
+      cn <- colnames(out)
+      for(cc in 1:ncol(out)) {
+        out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
+      }
+    }
+    return(out)
+  } else {
+    return(ranged)      # change not needed
+  }
+}
+
+
+
+overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autosomes.only=T,
+                       text.out=F,delim=",",none.val=0,n.cores=1, txid=F, prog=F, alt.name=NULL) {
   # uses 'findOverlaps' and reports the percentage overlap for each region/etc
   # most sense when: x is reference (e.g, genes); y is regions of interest, eg.  CNVs
   must.use.package(c("genoset","IRanges"),T)
-  if(is(query)[1]!="RangedData" | is(subject)[1]!="RangedData") {
-    warning("'query' and 'subject' must both be 'RangedData' type; returning null")
+  if(is(query)[1]!="RangedData" | is(subj)[1]!="RangedData") {
+    warning("'query' and 'subj' must both be 'RangedData' type; returning null")
     return(NULL)
   }  
   blnk.out <- list(ids=NULL,width=NULL,pc=NULL)
-  if(nrow(query)<1 | nrow(subject)<1) { return(blnk.out) }
+  if(nrow(query)<1 | nrow(subj)<1) { return(blnk.out) }
   # force this so order can be constructed with respect to the initial order
-  subj.nrow <- nrow(subject)
-  rownames(subject) <- paste(1:subj.nrow)
+  subj.nrow <- nrow(subj)
+  rownames(subj) <- paste(1:subj.nrow)
   # query names only matter for result text, so only add names if no text.
   # genes/exons have a separate column treated specially as otherwise there are duplicate entries not suited to rownames
 #print(length(which(is.na(rownames(query)))))
   if(is.null(rownames(query))) { rownames(query) <- paste(1:nrow(query)) }
-  ## reduce dimension of subject; 
-  to.cut <- which(tolower(colnames(subject)) %in% c("cn","numsnps","fid","score"))
-  if(length(to.cut)>0) { subject <- subject[,-to.cut] } # removing unnecessary cols speeds up
-  to.cut2 <- which(!tolower(colnames(query)) %in% c("gene","txid","txids","txname","txnames"))
+  ## reduce dimension of subj; 
+  to.cut <- which(tolower(colnames(subj)) %in% c("cn","numsnps","fid","score"))
+  if(length(to.cut)>0) { subj <- subj[,-to.cut] } # removing unnecessary cols speeds up
+  to.cut2 <- which(!tolower(colnames(query)) %in% c("gene","txid","txids","txname","txnames",alt.name))
   if(length(to.cut2)>0) { query <- query[,-to.cut2] } # removing unnecessary cols speeds up
-  xx=toGenomeOrder(select.autosomes(query),strict=T)
-  yy=toGenomeOrder(select.autosomes(subject),strict=T)
-  chr.set.x <- chr.nums.of.info(xx)
-  chr.set.y <- chr.nums.of.info(yy)
+  xx=toGenomeOrder(set.chr.to.numeric(query),strict=T)
+  yy=toGenomeOrder(set.chr.to.numeric(subj),strict=T)
+  if(autosomes.only) {
+    xx=select.autosomes(xx)
+    yy=select.autosomes(yy)
+  }
+  chr.set.x <- chrNums(xx)
+  chr.set.y <- chrNums(yy)
   common <- which(sort(chr.set.x) %in% sort(chr.set.y))
   if(length(common)<1 | nrow(xx)<1 | nrow(yy)<1) { return(blnk.out) }
-  chr.set <- paste(sort(chr.nums.of.info(xx[paste(sort(chr.set.x)[common])])))
+  chr.set <- paste(sort(chrNums(xx[paste(sort(chr.set.x)[common])])))
   x <- ranges(xx[chr.set]); y <- ranges(yy[chr.set]) # keep only common + convert to IRangeslist
   xx <- xx[chr.set]; yy <- yy[chr.set] # keep only common in originals (these store rownames, unfiltered positions)
+  print(head(rownames(xx))); print(head(rownames(yy)))
   n.chr <- length(chr.set)
   by.chr.list <- vector("list",n.chr); names(by.chr.list) <- chr.set
   if(prog) { cat("|") }
   if(n.cores>1) {
     must.use.package("multicore")
-    by.chr.list <- multicore::mclapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy, 
+    by.chr.list <- multicore::mclapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy, alt.name=alt.name,
                                        name.by.gene=name.by.gene, rel.query=rel.query, txid=txid, mc.cores=n.cores,prog=prog)
   } else {
-    by.chr.list <- lapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy, 
+    by.chr.list <- lapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy,  alt.name=alt.name,
                           name.by.gene=name.by.gene, rel.query=rel.query, txid=txid, prog=prog)
   }
   if(prog) { cat("|\n") }
@@ -10614,14 +10711,17 @@ overlap.pc <- function(query,subject,name.by.gene=F,rel.query=T,fill.blanks=T,
 }
 
 
-annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F){
+annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, ucsc="hg18"){
   ## which genes overlap with each CNV - don't forget to account for the empty ones!
   must.use.package("genoset")
+  if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(ucsc=ucsc) }
   if(is(gs)[1]!="RangedData" | is(cnvResults)[1]!="RangedData") {
     warning("'gs' and 'cnvResults' must both be 'RangedData' type; returning null")
     return(NULL)
   }
-  gene.vec <- (find.overlaps(cnvResults,db="gene",ref=gs,vec.out=T,delim=";"))
+  #gene.vec <- (find.overlaps(cnvResults,db="gene",ref=gs,vec.out=T,delim=";"))
+  gene.vec <- (find.overlaps(cnvResults,ref=gs,vec.out=T,delim=";"))
+  
   if(nrow(cnvResults)==length(gene.vec)) { cnvResults[["gene"]] <- gene.vec ; return(cnvResults) } else { 
      stop("gene vector returned doesn't match nrow of cnvResult") }
   ## aLLL the rest is useless?
@@ -10825,6 +10925,33 @@ get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=F,text=F)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- my.chr.range 
+  }
+  return(outData)
+}
+
+
+get.cyto <- function(ucsc="hg18",local.file="cyto.txt.gz",bioC=T) {
+  if(!file.exists(local.file)) {
+    golden.path <- paste("http://hgdownload.cse.ucsc.edu/goldenPath/",ucsc[1],"/database/cytoBand.txt.gz",sep="")
+    success <- tryCatch( download.file(url=golden.path,local.file,quiet=T),error=function(e) { F } )
+    if(is.logical(success)) {
+      if(!success) { warning("couldn't reach ucsc website! try sourcing cytoband data elsewhere"); return(NULL) } }
+    tt <- reader(local.file,header=FALSE)
+  } else {
+    tt <- reader(local.file)
+  }
+  colnames(tt) <- c("chr","start","end","band","negpos")
+  write.table(tt,file=local.file,col.names=T,row.names=F,sep="\t",quote=F)
+  mychr <- gsub("chr","",tt$chr,fixed=T)
+  fullbands <- paste(mychr,tt$band,sep="")
+  if(bioC ) {
+    must.use.package(c("genoset","IRanges"),bioC=T)
+    outData <- RangedData(ranges=IRanges(start=as.numeric(tt$start),end=as.numeric(tt$end),names=fullbands),space=tt$chr,
+                          negpos=tt$negpos,universe=ucsc[1])
+    outData <- toGenomeOrder(outData,strict=T)
+    #if(text) { outData <- Ranges.to.txt(outData) }
+  } else {
+    outData <- tt 
   }
   return(outData)
 }

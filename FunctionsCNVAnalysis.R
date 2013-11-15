@@ -7687,19 +7687,54 @@ select.autosomes <- function(snp.info) {
 }
 
 
-chrNums <- function(ranged,warn=F) {
+#' @param table.out logical, whether to return a lookup table of how names matched to integers
+#' @param table.in data.frame/matrix, col 1 is the raw text names, col 2 is the integer that should be assigned,
+#'  col 3 is the cleaned text (of col 1) with 'chr' removed. the required form is outputted by this function if
+#'  you set 'table.out=TRUE', so the idea is that to standardize coding amongst several RangedData objects you
+#'  can save the table each time and ensure future coding is consistent with this. Note that chromosomes 1-22, X,
+#'  Y, XY, and MT are always allocated the same integer, so table is only useful where there are extra NT, COX, HLA
+#'  regions, etc.
+chrNums <- function(ranged,warn=F,table.out=F,table.in=NULL) {
   must.use.package("genoset",bioC=T)
   if(!is(ranged)[1]=="RangedData") { warning("not a RangedData object"); return(NULL) }
-  txt <- chrNames(ranged)
-  txt <- gsub("chr","",txt,fixed=T)
+  lookup <- c("X","Y","XY","MT")
+  txt1 <- chrNames(ranged)
+  txt <- gsub("chr","",txt1,fixed=T)
   nums <- suppressWarnings(as.numeric(txt))
   num.na <- length(nums[is.na(nums)])
   if(num.na>0) { 
     if(warn) { warning(paste("chromosome numbers requested for non-autosomes, will assign numbers >=23 to letters",
                   paste(txt[is.na(nums)],collapse=","))) }
-    nums[is.na(nums)] <- 23:(23+num.na-1)
+    aux.ind <- match(txt,lookup)
+    nums[!is.na(aux.ind)] <- 22+aux.ind[!is.na(aux.ind)]
+    unmatched <- txt[is.na(nums)]
+    if(!is.null(table.in)) {
+      if((all(table.in[,1] %in% unmatched)) | (all(unmatched %in% table.in[,1]))) {
+        if(all(unmatched %in% table.in[,1])) {
+          out <- table.in[,2][match(unmatched,table.in[,1])]
+          nums[is.na(nums)] <- as.numeric(out)
+        } else {
+          out <- table.in[,2][match(unmatched,table.in[,1])]
+          nums[is.na(nums)][!is.na(out)] <- as.numeric(out)[!is.na(out)]
+          st.num <- max(c(22+length(lookup),as.numeric(table.in[,2])),na.rm=T)+1
+          nums[is.na(nums)][is.na(out)] <- st.num:(st.num+length(nums[is.na(nums)][is.na(out)])-1)
+        }
+      } else {
+        out <- table.in[,2][match(unmatched,table.in[,1])]
+        nums[is.na(nums)][!is.na(out)] <- as.numeric(out)[!is.na(out)]
+        st.num <- max(c(22+length(lookup),as.numeric(table.in[,2])),na.rm=T)+1
+        nums[is.na(nums)][is.na(out)] <- st.num:(st.num+length(nums[is.na(nums)][is.na(out)])-1)
+      }
+    } else {
+      nums[is.na(nums)] <- 27:(27+length(nums[is.na(nums)])-1)
+    }
   }
-  return(nums)
+  if(table.out) {
+    out <- cbind(txt1,nums,txt)
+    return(out)
+  } else {
+    return(sort(as.numeric(nums)))
+  }
 }
 
 
@@ -10413,6 +10448,7 @@ pheno.ratios.table <- function(dir,sum.table)
 
 find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.out=F, vals.out=F, vec.out=F, delim=",",
                           ref=NULL, none.val=0, fill.blanks=T, DEL=T, DUP=T, min.sites=0, len.lo=NA, len.hi=NA,
+                          autosomes.only=T, alt.name=NULL,
                           db=c("gene","exon","dgv"), txid=F, ucsc="hg18", n.cores=1, dir="", quiet=F) {
   # like 'findOverlaps' but according to a specific percentage
   # specify own reference comparison or use standard 'gene', 'exon' or 'dgv'
@@ -10489,9 +10525,9 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   if(!quiet) { cat(" testing CNV set for overlaps with",ano,"...\n") }
  # prv(ref,cnv.ranges)
   mm <- overlap.pc(query=ref,subj=cnv.ranges,name.by.gene=nbg,
-                   rel.query=rel.ref,fill.blanks=fill.blanks, txid=txid,
-                   n.cores=n.cores,none.val=none.val)
-  prv(mm)
+                   rel.query=rel.ref,fill.blanks=fill.blanks, txid=txid,alt.name=alt.name,
+                   n.cores=n.cores,none.val=none.val,autosomes.only=autosomes.only)
+  #prv(mm)
   if(vec.out & vals.out & !ranges.out) {
     # summarise results into 1 column separated by commas(or 'delim')
     if(pc) {
@@ -10611,23 +10647,34 @@ plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,...) {
   }
 }
 
-
-set.chr.to.numeric <- function(ranged,keep=T) {
+#' @param table.in, table.out extra parameters for chrNums (e.g, how to convert weird regions)
+set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
   if(suppressWarnings(any(is.na(as.numeric(chr(ranged)))))) {
     ranged <- toGenomeOrder(ranged)
     mychr2 <- mychr <- paste(chr(ranged))
-    all.nams <- chrNames(cy)
-    all.nums <- chrNums(cy)
-    for (cc in 1:length(all.nams)) { mychr2[mychr==all.nams[cc]] <- all.nums[cc] }
+    #all.nams <- chrNames(ranged)
+    #all.nums <- chrNums(ranged,table.in=table.in)
+    all.nums.t <- chrNums(ranged,table.in=table.in,table.out=T) 
+    all.nams <- all.nums.t[,1]
+    all.nums <- all.nums.t[,2]
+    #mychr2 <- all.nums.t[,2][match(mychr,all.nums.t[,1])]
+    for (cc in 1:length(all.nams)) { mychr2[which(mychr==all.nams[cc])] <- all.nums[cc] }
+    #print(tail(mychr2)); print((all.nums))
     out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
-    if(ncol(out)>0 & keep) {
-      cn <- colnames(out)
-      for(cc in 1:ncol(out)) {
+    out <- toGenomeOrder(out)
+    if(ncol(ranged)>0 & keep) {
+      cn <- colnames(ranged)
+      for(cc in 1:ncol(ranged)) {
         out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
       }
     }
-    return(out)
+    if(table.out) {
+      return(list(ranged=out,table.out=all.nums.t))
+    } else {
+      return(out)
+    }
   } else {
+    #cat("no change\n")
     return(ranged)      # change not needed
   }
 }
@@ -10657,20 +10704,26 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   if(length(to.cut)>0) { subj <- subj[,-to.cut] } # removing unnecessary cols speeds up
   to.cut2 <- which(!tolower(colnames(query)) %in% c("gene","txid","txids","txname","txnames",alt.name))
   if(length(to.cut2)>0) { query <- query[,-to.cut2] } # removing unnecessary cols speeds up
-  xx=toGenomeOrder(set.chr.to.numeric(query),strict=T)
-  yy=toGenomeOrder(set.chr.to.numeric(subj),strict=T)
+  xlist <- set.chr.to.numeric(query,table.out=T)
+  #prv(xlist)
+  xx <- xlist[[1]]
+  xx=toGenomeOrder(xx,strict=T)
+  yy=toGenomeOrder(set.chr.to.numeric(subj,table.in=xlist[[2]],table.out=F),strict=T)
   if(autosomes.only) {
     xx=select.autosomes(xx)
     yy=select.autosomes(yy)
   }
+#  xx=toGenomeOrder(select.autosomes(query),strict=T)
+#  yy=toGenomeOrder(select.autosomes(subj),strict=T)
   chr.set.x <- chrNums(xx)
   chr.set.y <- chrNums(yy)
+  #prv(xx,yy,chr.set.x,chr.set.y)
   common <- which(sort(chr.set.x) %in% sort(chr.set.y))
   if(length(common)<1 | nrow(xx)<1 | nrow(yy)<1) { return(blnk.out) }
   chr.set <- paste(sort(chrNums(xx[paste(sort(chr.set.x)[common])])))
   x <- ranges(xx[chr.set]); y <- ranges(yy[chr.set]) # keep only common + convert to IRangeslist
   xx <- xx[chr.set]; yy <- yy[chr.set] # keep only common in originals (these store rownames, unfiltered positions)
-  print(head(rownames(xx))); print(head(rownames(yy)))
+  #print(head(rownames(xx))); print(head(rownames(yy)))
   n.chr <- length(chr.set)
   by.chr.list <- vector("list",n.chr); names(by.chr.list) <- chr.set
   if(prog) { cat("|") }
@@ -10710,8 +10763,8 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   return(by.chr.list)
 }
 
-
-annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, ucsc="hg18"){
+# note that only a column named 'gene' will be annotated! so change the name if you want to use for something else
+annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, ucsc="hg18", autosomes.only=T, alt.name=NULL){
   ## which genes overlap with each CNV - don't forget to account for the empty ones!
   must.use.package("genoset")
   if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(ucsc=ucsc) }
@@ -10719,32 +10772,11 @@ annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, ucsc="h
     warning("'gs' and 'cnvResults' must both be 'RangedData' type; returning null")
     return(NULL)
   }
-  #gene.vec <- (find.overlaps(cnvResults,db="gene",ref=gs,vec.out=T,delim=";"))
-  gene.vec <- (find.overlaps(cnvResults,ref=gs,vec.out=T,delim=";"))
+  gene.vec <- (find.overlaps(cnvResults,db="gene",ref=gs,vec.out=T,delim=";",autosomes.only=autosomes.only,alt.name=alt.name))
+  #gene.vec <- (find.overlaps(cnvResults,ref=gs,vec.out=T,delim=";",autosomes.only=autosomes.only,alt.name=alt.name))
   
   if(nrow(cnvResults)==length(gene.vec)) { cnvResults[["gene"]] <- gene.vec ; return(cnvResults) } else { 
      stop("gene vector returned doesn't match nrow of cnvResult") }
-  ## aLLL the rest is useless?
-#   rownames(cnvResults) <- paste(1:nrow(cnvResults))
-#   olp <- findOverlaps(gs,cnvResults)
-#   gene.nums.per.cnv <- tapply(queryHits(olp),subjectHits(olp),c)
-#   match.num.to.names <- function(num) { return(gs$gene[num]) }
-#   for.exon <- function(num) { return(gs$txname[num]) }
-#   if(txid & ("txname" %in% colnames(gs))) { match.num.to.names <- for.exon }
-#   out <- sapply(gene.nums.per.cnv,match.num.to.names)
-#   # ensure a blank entry for cnvs with no overlaps
-#   no.gene.list <- which(!c(1:nrow(cnvResults)) %in% names(out))
-#   if(length(no.gene.list)>0) {
-#     none.list <- vector("list",length(no.gene.list))
-#     names(none.list) <- rownames(cnvResults)[no.gene.list]
-#     out <- c(out,none.list)
-#   }
-#   # unlist into a vector separated by eg, semicolons
-#   if(vec.out) {
-#     add.delim <- function(x) { paste(x,collapse=delim) }
-#     out <- as.character(unlist(sapply(out,add.delim)))
-#   } 
-#   return(out)
 }
 
 
@@ -10945,8 +10977,10 @@ get.cyto <- function(ucsc="hg18",local.file="cyto.txt.gz",bioC=T) {
   mychr <- gsub("chr","",tt$chr,fixed=T)
   fullbands <- paste(mychr,tt$band,sep="")
   if(bioC ) {
+    st <- as.numeric(tt$start)
+    en <- as.numeric(tt$end)
     must.use.package(c("genoset","IRanges"),bioC=T)
-    outData <- RangedData(ranges=IRanges(start=as.numeric(tt$start),end=as.numeric(tt$end),names=fullbands),space=tt$chr,
+    outData <- RangedData(ranges=IRanges(start=st,end=en,names=fullbands),space=tt$chr,
                           negpos=tt$negpos,universe=ucsc[1])
     outData <- toGenomeOrder(outData,strict=T)
     #if(text) { outData <- Ranges.to.txt(outData) }

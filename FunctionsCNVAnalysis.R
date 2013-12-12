@@ -118,13 +118,13 @@ get.baf.markers <- function(baf.des.fn, samp.list, dir, low.ram=T) {
 }
 
 
-do.scree.plots <- function(eigenv,dir="",fname="ScreePlotPCA.pdf",elbow=9,n.comp=30,printvar=T,writefig=T,nsamp=NA,...) {
+do.scree.plots <- function(eigenv,dir="",fname="ScreePlotPCA.pdf",elbow=9,n.comp=30,printvar=T,writefig=T,min.dim=NA,M=NULL,...) {
   # plumbCNV wrapper to do SCREE PLOTS AND calculate EIGENVALUE VARIANCE after a PCA
   cat(" generating scree plots for principal components analyses\n")
   dir <- validate.dir.for(dir,"pc")
   if(writefig) {  ofn <- cat.path(dir$pc,fname);   pdf(ofn) }
   out <- pca.scree.plot(eigenv=eigenv,elbow=elbow,n.comp=n.comp,
-                         printvar=printvar,min.dim=nsamp,...)
+                         printvar=printvar,min.dim=min.dim,M=M,...)
   if(writefig) { dev.off() ;  cat(paste("~wrote file:",ofn,"\n")) }
   return(out)
 }
@@ -208,7 +208,9 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
     pca.result <- big.PCA(bigMat=subset.descr,dir=dir,pcs.to.keep=n.store,
                           SVD=SVD,LAP=LAP,save.pcs=T,pcs.fn=pcs.fn,verbose=T) 
     nsamp <- length(which(sample.info$QCfail==0))
-    varz <- do.scree.plots(pca.result$Evalues,dir=dir,elbow=num.pcs,nsamp=nsamp)
+    mind <- min(Dim(get.big.matrix(subset.descr,dir$big)))
+    varz <- do.scree.plots(pca.result$Evalues,dir=dir,elbow=num.pcs,min.dim=mind)
+   # prv(nsamp,mind,varz,pca.result)
     cat("",round(cumsum(varz)[num.pcs]*100,1),"% Est. LRR variance explained by first",num.pcs,"components.\n")
     # correct using the PC-components
     corrected.ref <- PC.correct(pca.result,big.lrr.fn,dir=dir,num.pcs=num.pcs,n.cores=n.cores,
@@ -1688,7 +1690,7 @@ get.subIDs <- function(dir,ret=c("all","lists","combined","files","groups"),verb
 {
   # if separate id lists for each cohort are in 'dir' then create list of these
   dir <- validate.dir.for(dir,c("ids","col","ano"))
-  if(!auto.mode()) { warning("a subject id parameter has been set null, which is only valid in auto.mode") }
+  if(!auto.mode()) { warning("a subject id parameter has been set null, which is only recommended in auto.mode") }
   if(verbose) { cat("\nSearching for subject IDs (automatic mode)\n") }
   file.info <- get.file.specs(dir)
   if(is.null(file.info)) { stop("Error: tried to automatically find subject IDs but not in auto mode") }
@@ -2582,7 +2584,9 @@ get.snpMat.spec <- function(snpMatLst,fail=T,dir=NULL)
    {
      TF <- is.file(paste(snpMatLst[[cc]]),dir)
      if(TF) { 
-       snpMat <- get(paste(load(find.file(paste(snpMatLst[[cc]]),dir)))) 
+       fnm <- find.file(paste(snpMatLst[[cc]]),dir)
+       snpMat <- get.SnpMatrix.in.file(fnm)
+       #snpMat <- get(paste(load())) 
        list.spec[,cc] <- dim(snpMat)
      } else {
        warning(paste("invalid snpMat file",cc)) 
@@ -3973,7 +3977,8 @@ do.lens.summary <- function(lenz,dat=NULL,print.summary=T)
 
 force.pheno.codes <- function(pheno,missing=c(0,-9,-99,99),verbose=F) {
   ## try to cleverly assign phenotype codes
-  nph <- as.numeric(paste(pheno)); if(length(narm(nph))>.5*length(pheno)) { pheno <- nph }
+  nph <- suppressWarnings(as.numeric(paste(pheno)));
+  if(length(narm(nph))>.5*length(pheno)) { pheno <- nph ; pheno[is.na(pheno)] <- 0 }
   if(!is.numeric(pheno)) {
     ctrl.codes <- c("ctrl","cont","cntr","healthy","norm")
     warning("found phenotype coding as text, assuming any phenotype values are",
@@ -4058,6 +4063,8 @@ make.fam.file <- function(sample.info,dir,out.fn="plink.fam")
   search.str <- which(tolower(colnames(sample.info)) %in% c("pheno","phenotype","case"))
   if(length(search.str)>0) { 
     pheno <- sample.info[,search.str[1]]
+    cat(" phenotypes found in annotation file:\n")
+    print(table(pheno))
     PED.FAM.TEMP[,6] <- force.pheno.codes(pheno)
   } else {
     warning("no phenotype found in 'sampleinfo.tab'. All samples set to 'unaffected'")
@@ -8337,7 +8344,18 @@ make.sample.info <- function(dir="",id.list=NULL,phenotype=NULL,plate=NULL,grp=N
       if(any(colnames(sample.info) %in% "plate")) { plate <- NULL }
     }
     if(pheno.default.loc %in% list.files(dir$ano)) {
-      phenot <- read.table(file=cat.path(dir$ano,pheno.default.loc))
+      phenot <- reader(pheno.default.loc,dir$ano,h.test.p = 0.5)
+      #phenot <- read.table(file=cat.path(dir$ano,pheno.default.loc))
+      if(nrow(phenot)==(length(id.list)+1)) {
+        phenot <- reader(pheno.default.loc,dir$ano,header=T)
+      } else {
+        if(nrow(phenot)==(length(id.list)-1)) {
+          phenot <- reader(pheno.default.loc,dir$ano,header=F)
+        } else {
+          ## very likely succeeded!
+        }
+      }
+#      prv(phenot)
       sample.info <- add.to.sample.info(sample.info,phenot,"phenotype",overwrite=overwrite,verbose=verbose)
     } else {
       if(is.null(phenotype)) {
@@ -8352,7 +8370,9 @@ make.sample.info <- function(dir="",id.list=NULL,phenotype=NULL,plate=NULL,grp=N
   }
   if(!is.null(phenotype) & is.null(phenot)) {    
     sk <- F;  if(is.character(phenotype)) { if(phenotype=="") { warning("no phenotype.lookup.txt file found"); sk <- T } }
+    #prv(sample.info)
     sample.info <- add.to.sample.info(sample.info,phenotype,"phenotype",overwrite=overwrite,verbose=verbose)
+    #prv(sample.info)
   }
   if(!is.null(sex)) {
     sk <- F;  if(is.character(sex)) { if(sex=="") { warning("no sex.lookup.txt file found"); sk <- T } }
@@ -8416,7 +8436,11 @@ add.to.sample.info <- function(sample.info,more.info,to.add=NULL,overwrite=F,ver
       #only 1 var to be added, only 1 in dataframe but unnamed, so use to.add name
       to.name <- to.add
     } else {
-      to.name <- to.use
+      if(length(to.add)==1 & length(to.use)==1) {
+        to.name <- to.add # added this later - is this a good idea?
+      } else {
+        to.name <- to.use
+      }
     }
     for(jj in 1:length(to.use)) {
       # allow matching to version with any upper/lower-case configuration
@@ -8669,12 +8693,13 @@ snp.cr.summary <- function(bigMat,histo=F,print=F,n.cores=1) {
 
 
 
-list.rowsummary <- function(snpMatLst,mode="row",dir="",warn=T,n.cores=1)
+list.rowsummary <- function(snpMatLst,mode="row",dir=getwd(),warn=T,n.cores=1)
 {
   # performs 'row.summary' or 'col.summary' snpStats functions
   # on a list of snpMatrix objects
   fail <- F
   typz <- sapply(snpMatLst,is)[1,]
+  dir <- validate.dir.for(dir,c("cr"))
   if(all(typz=="SnpMatrix"))
   { HD <- F } else {
     if (all(typz=="character")) { HD <- T } else {
@@ -8683,11 +8708,31 @@ list.rowsummary <- function(snpMatLst,mode="row",dir="",warn=T,n.cores=1)
       fail <- T
     } 
   }
+  dimz <- NULL
   # this line allows this function to be either row.summary or col.summary (mode)
   if(mode!="col" & mode!="row") { mode <- "row" }
+  must.use.package("snpStats",T)
+  wgts <- numeric(length(snpMatLst)) # vector to store number of SNPs/samples in each sublist
   my.summary <- switch(mode,row=row.summary,col=col.summary)
+  dimz <- get.snpMat.spec(snpMatLst)
+  if(mode=="row") {
+    # get DIMs of separate SNP lists (e.g, chromosomes)
+    zro <- as.numeric(names(table(diff(dimz[1,]))))
+    if(length(zro)>0) { 
+      if (zro!=0) { 
+        print(table(diff(dimz[1,])))
+        print(zro)
+        print(dimz)
+        stop("SnpMatrix objects had different numbers of samples")
+      } 
+    } else {
+      stop("empty dims list") 
+    }
+  } else {
+    zro <- as.numeric(names(table(diff(dimz[1,]))))
+    if(length(zro)>0) { if (zro!=0) { stop("SnpMatrix objects had different numbers of Samples")} } else { stop("empty dims list") }
+  }
   if (!fail) {
-    must.use.package("snpStats",T)
     rowsum.list <- vector("list",length(snpMatLst))
     if(!warn) { 
       #avoid alarming user given known issue with genotypes that are uniformly zero (empty) in column mode
@@ -8704,9 +8749,10 @@ list.rowsummary <- function(snpMatLst,mode="row",dir="",warn=T,n.cores=1)
         cat(dd,"..",sep="")
         if(HD) {
           fl.nm <- cat.path(dir$cr,snpMatLst[[dd]])
-          obj.nm <- paste(load(fl.nm))
+          the.matrix <- get.SnpMatrix.in.file(file=fl.nm)
+          ##############
           #print(dim(get(obj.nm))) ; badness <- which(is.na(get(obj.nm)),arr.ind=T); print(head(badness)); print(dim(badness))
-          rowsum.list[[dd]] <- my.summary(get(obj.nm))
+          rowsum.list[[dd]] <- my.summary(the.matrix)
         } else {
           rowsum.list[[dd]] <- my.summary(snpMatLst[[dd]])
           #print(dim(snpMatLst[[dd]]))
@@ -8715,14 +8761,53 @@ list.rowsummary <- function(snpMatLst,mode="row",dir="",warn=T,n.cores=1)
     }
     cat("done\n")
     if(!warn) { options(warn=0) }
-    return(do.call("rbind",rowsum.list))
+    if(mode=="row") {
+      wgts <- as.numeric(dimz[2,])
+      if(any(is.na(wgts))) { stop("there were NAs in the list of weights (incorrect SnpMatrix dims)") }
+      wgts <- wgts/sum(wgts)
+      # now have weights (size) of each listed set
+      result <- rowsum.list[[1]]
+      samps <- rownames(result)
+      # combine the results using the weights
+      result[,1] <- result[,2] <- result[,3] <- rep(0,times=length(samps))
+      for (cc in 1:length(rowsum.list)) {
+        result[,1] <- result[,1] + (rowsum.list[[cc]][samps,"Call.rate"]*wgts[cc])
+        result[,2] <- result[,2] + (rowsum.list[[cc]][samps,"Certain.calls"]*wgts[cc])
+        result[,3] <- result[,3] + (rowsum.list[[cc]][samps,"Heterozygosity"]*wgts[cc])
+      }
+      return(result)
+    } else {
+      return(do.call("rbind",rowsum.list))
+    }
   } else {
     return(NULL)
   }
 }
 
 
-list.colsummary <- function(snpChrLst,mode="col",dir=dir,warn=F,n.cores=1)
+get.SnpMatrix.in.file <- function(file){
+  obj.nm <- paste(load(file))
+  ## NOW MAKE SURE WE HAVE EXACTLY ONE SNPMATRIX OBJECT FROM THIS FILE ##
+  if(length(obj.nm)>0) {
+    typz <- sapply(obj.nm,function(X) { is(get(X))[1] })
+    vld <- which(typz=="SnpMatrix")
+    if(length(vld)<1) { stop("no SnpMatrix objects found in file")}
+    if(length(vld)>1) {
+      warning("found multiple SnpMatrix objects in datafile, attempting to rbind() them")
+      concat.snp.matrix <- NULL; 
+      vld <- vld[order(names(vld))] # alphabetical order should ensure consistency across multiple data files
+      try(concat.snp.matrix <- do.call("rbind",args=lapply(obj.nm[vld],function(X) get(X))))
+      if(is.null(concat.snp.matrix)) { stop("SnpMatrix objects had different numbers of SNPs [cols], could not rbind")}
+      obj.nm <- "concat.snp.matrix"
+    } else {
+      obj.nm <- obj.nm[vld]
+    }
+  }
+  return(get(obj.nm[1]))
+}
+
+
+list.colsummary <- function(snpChrLst,mode="col",dir=getwd(),warn=F,n.cores=1)
 {
   # wrapper to make 'list.rowsummary' work for 'col.summary' too
   # warn=F helps to avoid alarming user given known issue with genotypes
@@ -10328,12 +10413,14 @@ do.CNV.all.overlaps.summary <- function(cnvResults,dir,comps=c(1:5),dbs=c(1:3),.
 summary.counts.table <- function(CNV.overlaps.summary, print.result=T, verbose=T) {
   # do a table for overlap with each database at a time
   # columns are type of CNV, rows are type of count
+  #prv(CNV.overlaps.summary)
   ############### start local function ###########
   summary.counts.table.1 <- function(dbz, print.result=T, verbose=T) {
     # do a table for overlap for a database
     # this is a function only used locally
     #if(verbose) {  cat("flattening dB...") }
     flat.list <- reduce.list.to.scalars.2(dbz)
+   # prv(flat.list)
     #if(verbose) {  cat("done\n") }
     # derive table size and column names
     n.rows <- length(unlist(flat.list$counts[[1]]))
@@ -10384,7 +10471,12 @@ summary.counts.table <- function(CNV.overlaps.summary, print.result=T, verbose=T
           }
         }
       }
-      r.data[,jj] <- rdat
+      #prv(rdat,nz,phenos)
+      if(Dim(rdat)==Dim(r.data[,jj])) {
+        r.data[,jj] <- rdat
+      } else {
+        warning("rdat didn't match correct dimensions")
+      }
       #if(verbose) { loop.tracker(jj,n.cols,st.t) }
     }
     Count <- gsub("number of ","",Count)
@@ -10649,8 +10741,9 @@ plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,...) {
 
 #' @param table.in, table.out extra parameters for chrNums (e.g, how to convert weird regions)
 set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
-  if(suppressWarnings(any(is.na(as.numeric(chr(ranged)))))) {
+  if(table.out | suppressWarnings(any(is.na(as.numeric(chr(ranged)))))) {
     ranged <- toGenomeOrder(ranged)
+    #prv(ranged)
     mychr2 <- mychr <- paste(chr(ranged))
     #all.nams <- chrNames(ranged)
     #all.nums <- chrNums(ranged,table.in=table.in)
@@ -10662,6 +10755,7 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
     #print(tail(mychr2)); print((all.nums))
     out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
     out <- toGenomeOrder(out)
+   # prv(out)
     if(ncol(ranged)>0 & keep) {
       cn <- colnames(ranged)
       for(cc in 1:ncol(ranged)) {
@@ -10694,6 +10788,7 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   if(nrow(query)<1 | nrow(subj)<1) { return(blnk.out) }
   # force this so order can be constructed with respect to the initial order
   subj.nrow <- nrow(subj)
+#  prv(query,subj)
   rownames(subj) <- paste(1:subj.nrow)
   # query names only matter for result text, so only add names if no text.
   # genes/exons have a separate column treated specially as otherwise there are duplicate entries not suited to rownames
@@ -10705,10 +10800,11 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   to.cut2 <- which(!tolower(colnames(query)) %in% c("gene","txid","txids","txname","txnames",alt.name))
   if(length(to.cut2)>0) { query <- query[,-to.cut2] } # removing unnecessary cols speeds up
   xlist <- set.chr.to.numeric(query,table.out=T)
-  #prv(xlist)
+#  prv(xlist)
   xx <- xlist[[1]]
   xx=toGenomeOrder(xx,strict=T)
-  yy=toGenomeOrder(set.chr.to.numeric(subj,table.in=xlist[[2]],table.out=F),strict=T)
+  ili <- set.chr.to.numeric(subj,table.in=xlist[[2]],table.out=F)
+  yy=toGenomeOrder(ili,strict=T)
   if(autosomes.only) {
     xx=select.autosomes(xx)
     yy=select.autosomes(yy)
@@ -10717,7 +10813,7 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
 #  yy=toGenomeOrder(select.autosomes(subj),strict=T)
   chr.set.x <- chrNums(xx)
   chr.set.y <- chrNums(yy)
-  #prv(xx,yy,chr.set.x,chr.set.y)
+#  prv(xx,yy,chr.set.x,chr.set.y)
   common <- which(sort(chr.set.x) %in% sort(chr.set.y))
   if(length(common)<1 | nrow(xx)<1 | nrow(yy)<1) { return(blnk.out) }
   chr.set <- paste(sort(chrNums(xx[paste(sort(chr.set.x)[common])])))
@@ -10736,6 +10832,7 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
                           name.by.gene=name.by.gene, rel.query=rel.query, txid=txid, prog=prog)
   }
   if(prog) { cat("|\n") }
+ # prv(by.chr.list)
 #  return(by.chr.list) ; # save(by.chr.list,file="by.chr.list.RData")
   namez <- as.character(unlist(sapply(lapply(by.chr.list,"[[",1),names)))
 #  namez <- as.character(unlist(sapply(by.chr.list,names)))
@@ -11617,11 +11714,18 @@ add.info.to.ranges <- function(dir,cnv.ranges,target="phenotype",info.file="phen
   if(is(cnv.ranges)[1]!="RangedData") { warning("must be a RangedData object"); return(cnv.ranges) }
   if(!"id" %in% colnames(cnv.ranges)) { warning("cnv.ranges must have column 'id'"); return(cnv.ranges) }
   phenot <- as.data.frame(reader(fn=find.file(info.file,dir$ano,dir)))
-  id.col <- find.id.col(phenot,ids=cnv.ranges$id,ret="col")
-  if(id.col==0) { idz <- rownames(phenot) } else { idz <- phenot[,id.col] }
-  if(ncol(phenot)==1) { phenoz <- phenot[,1] } else {
+  id.col <- find.id.col(phenot,ids=cnv.ranges$id,ret="col")[[1]]
+  if(id.col==0) { idz <- rownames(phenot); id.in.col <- F } else { idz <- phenot[,id.col]; id.in.col <- T }
+  if(ncol(phenot)==(1+as.numeric(id.in.col))) { 
+    # if there is only 1 column other than IDs:
+    if(id.in.col){ 
+      phenoz <- phenot[,-id.col] 
+    } else {
+      phenoz <- phenot[,1] 
+    }
+  } else {
     colz <- which(tolower(colnames(phenot)) %in% substr(rep(tolower(target),
-                                                            ((nchar(target)-min.chars)+1)), 1,(min.chars:nchar(target))) )
+       ((nchar(target)-min.chars)+1)), 1,(min.chars:nchar(target))) )
     if(length(colz)>0) { phenoz <- phenot[,colz[1]] } else { phenoz <- NULL }
   }
   if(!is.null(phenoz)) {

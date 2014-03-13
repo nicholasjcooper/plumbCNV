@@ -1,9 +1,11 @@
-options(stringsAsFactors=FALSE)
+#options(stringsAsFactors=FALSE)
 
 if(file.exists("~/github/plumbCNV/geneticsFunctions.R")) {
   source("~/github/plumbCNV/geneticsFunctions.R")
   source("~/github/plumbCNV/SimulationFunctions.R")
+  source("~/github/plumbCNV/validation.functions.R")
   source("~/github/plumbCNV/QCscripts.R")
+  library(bigpca) # will also load reader and NCmisc
 } else {
   warning("Didn't find external script files, or was run not from ~/github/plumbCNV")
 }
@@ -19,6 +21,15 @@ auto.mode <- function(on=T,set=F) {
 }
 
 
+
+#' Internal function to assess whether data is a character or list of characters
+is.ch <- function(x) { 
+  # is function for character() or list of characters
+  if(is.null(x)) { return(FALSE) }
+  pt1 <- is.character(x)
+  if(!pt1 & is.list(x)) { pt2 <- all(sapply(x,is.ch)) } else { pt2 <- pt1 }
+  return(as.logical(pt1 | pt2))
+}
 
 
 penn.name.files <- function(dir,write.files=T,ret.fn=F,relative=F) 
@@ -56,7 +67,7 @@ import.called.cnvs <- function(dir,out.format=c("Ranges","cnvGSA"),
                                cnv.result.cats=c("allCNV","allDel","allDup","rareDEL","rareDUP"),
                                pheno.file="pheno.lookup.txt",add.phenotype=T)
 {
-  dir <- validate.dir.for(dir,"cnv.plk")
+  dir <- validate.dir.for(dir,"cnv.qc")
   num.cats <- length(cnv.result.cats)
   out.format <- out.format[1]
   cnvResults <- vector("list",num.cats)
@@ -118,12 +129,12 @@ get.baf.markers <- function(baf.des.fn, samp.list, dir, low.ram=T) {
 }
 
 
-do.scree.plots <- function(eigenv,dir="",fname="ScreePlotPCA.pdf",elbow=9,n.comp=30,printvar=T,writefig=T,min.dim=NA,M=NULL,...) {
+do.scree.plots <- function(eigenv,dir="",fname="ScreePlotPCA.pdf",elbow=9,printvar=T,writefig=T,min.dim=NA,M=NULL,...) {
   # plumbCNV wrapper to do SCREE PLOTS AND calculate EIGENVALUE VARIANCE after a PCA
   cat(" generating scree plots for principal components analyses\n")
   dir <- validate.dir.for(dir,"pc")
   if(writefig) {  ofn <- cat.path(dir$pc,fname);   pdf(ofn) }
-  out <- pca.scree.plot(eigenv=eigenv,elbow=elbow,n.comp=n.comp,
+  out <- pca.scree.plot(eigenv=eigenv,elbow=elbow,
                          printvar=printvar,min.dim=min.dim,M=M,...)
   if(writefig) { dev.off() ;  cat(paste("~wrote file:",ofn,"\n")) }
   return(out)
@@ -144,7 +155,7 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
   # then stats on the resulting distributions can be calculated
   # write results to big.matrix files and pdfs, etc, then
   # returns raw, sample-QC and PC-corrected sets of stats for comparison
-  if(n.cores>1) { multi <- T; must.use.package("multicore") } else { multi <- F }
+  if(n.cores>1) { multi <- T; must.use.package("parallel") } else { multi <- F }
   load.all.libs(big=c("bigmemory","biganalytics","bigalgebra"),more.bio="irlba") # load all main plumbcnv libraries
   if(is.data.tracker(DT)) {
     DTs.required <- c("ngrps","sample.info","snp.info","big.qc","stats")
@@ -337,7 +348,7 @@ lrr.sample.dists <- function(bigMat,snp.info,dir,gc=F,dlrs=T,pref="",med.chunk.f
     c.nms <- rownames(stat.mat)[rownames(stat.mat) %in% row.names(gc.wave)]
     if(!dlrs) { stat.set <- c("Mean","StDev") } else { stat.set <- c("Mean","DLRS") }
     #c("r_GC","S_WF","S_GCWF"), so col 2=S_WF below = wave factor (not just GC wave)
-    stat.table <- as.data.frame(cbind(stat.mat[c.nms,stat.set],gc.wave[c.nms,2]))
+    stat.table <- as.data.frame(cbind(stat.mat[c.nms,stat.set],gc.wave[c.nms,2]),stringsAsFactors=FALSE)
     colnames(stat.table)[ncol(stat.table)] <- "GCWave"
   } else {
     cat(" calculating LRR stats without GC wave (faster)\n")
@@ -573,7 +584,7 @@ do.quick.LRR.snp.assocs <- function(descr.fn,sample.info=NULL,use.col="phenotype
   # break analysis into chunks that fit in memory
   # NB: avoided parallel computing - it does not seem to add any speed here
   kk <- proc.time()[3]
-  if(n.cores>1 & require(multicore)) {
+  if(n.cores>1 & require(parallel)) {
     Fvalues <- bmcapply(bigMat,1,FUN=ph.test,dir=dir$big,by=200,n.cores=n.cores,pheno=pheno)
   } else {  
     for (dd in 1:n.segs)
@@ -758,7 +769,7 @@ lrr.boundary.scatter <- function(plot.stats,pass.tab,dir,fn.pre="",fn.suf="",...
 get.plate.lrr.stats <- function(plt,stat.table,samps=NULL,type="plate")
 {
   ## table of plate-wise LRR stats
-  if(!is.data.frame(plt)) { plt <- as.data.frame(plt) }
+  if(!is.data.frame(plt)) { plt <- as.data.frame(plt,stringsAsFactors=FALSE) }
   if(colnames(plt)[1]!="id") { 
     cat(" changed column 1 (",colnames(plt)[1],") to 'id'",sep="")
     colnames(plt)[1] <- "id" 
@@ -770,7 +781,7 @@ get.plate.lrr.stats <- function(plt,stat.table,samps=NULL,type="plate")
   if(is.null(samps)) { samps <- plt$id }
   plt <- plt[plt$id %in% samps,]
   if(nrow(plt)<2) { stop("Error: no samples were found in plate index table") }
-  plate.lrr.stats <- as.data.frame(matrix(ncol=ncol(stat.table)*2,nrow=length(unique(plt$myBatch))))
+  plate.lrr.stats <- as.data.frame(matrix(ncol=ncol(stat.table)*2,nrow=length(unique(plt$myBatch))),stringsAsFactors=FALSE)
   colnames(plate.lrr.stats) <- paste(rep(colnames(stat.table),each=2),rep(c("(Av)","(SD)"),2))
   rownames(plate.lrr.stats) <- levels(as.factor(plt$myBatch))
   
@@ -1123,7 +1134,7 @@ get.plate.from.sample.info <- function(sample.info,other.cols=NULL) {
         }
       }
     }
-    return(as.data.frame(plate.lookup))
+    return(as.data.frame(plate.lookup,stringsAsFactors=FALSE))
   }  
   warning("sample.info was invalid, return NULL instead of plate.lookup")
   return(NULL)
@@ -1156,7 +1167,7 @@ get.plate.info <- function(dir, id.col=1, plate.col=2, well.col=NA,fn="plate.loo
     colnames(plate.lookup) <- c("id","plate","well")[!is.na(c(T,T,well.col))]
     counte <- table(plate.lookup[,"plate"])
     plate.lookup[["count"]] <- (counte[match(plate.lookup[,"plate"],names(counte))])
-    if(!is.data.frame(plate.lookup)) { plate.lookup <- as.data.frame(plate.lookup) }
+    if(!is.data.frame(plate.lookup)) { plate.lookup <- as.data.frame(plate.lookup,stringsAsFactors=FALSE) }
     if(anyDuplicated(plate.lookup[,1]))
     {
       warning("duplicate records found in plate info")
@@ -1207,7 +1218,7 @@ excl.bad.plates <- function(plate.qc.tab,plate.lookup,dir,badPlateThresh=0.33,
     warning(paste("couldn't find batch=",batch,", changed to 'plate'",sep=""))
     batch <- "plate" # set to plate as default if 'batch' is not in the lookup
   }
-  if(!is.data.frame(plate.lookup)) { plate.lookup <- as.data.frame(plate.lookup) }
+  if(!is.data.frame(plate.lookup)) { plate.lookup <- as.data.frame(plate.lookup,stringsAsFactors=FALSE) }
   cat("\nTesting for ",batch,"s where more than ",round(100*badPlateThresh,1),"% of samples fail QC",cr.txt,"\n",sep="")
   if(n.bad>0)
   {
@@ -1302,6 +1313,11 @@ chr.ab.report <- function(chr.stat,chrWarns,dir,writeExclList=F,makeGraphs=F,pre
 }
 
 
+chrNames2 <- function(X) {
+  XX <- chrIndices(X)
+  return(rownames(XX))
+}
+
 get.chr.stats <- function(bigMat,snp.info,dir="",allow.subset=F)
 {
  # get the LRR mean and SD for each chromosome (autosome) separately
@@ -1330,13 +1346,30 @@ get.chr.stats <- function(bigMat,snp.info,dir="",allow.subset=F)
  chr.mean <- chr.sd <- matrix(nrow=ncol(bigMat),ncol=nC,dimnames=dns) # used to be list()
  indx.first <- chrIndices(snp.info)[,"first"]
  indx.last <- chrIndices(snp.info)[,"last"]
+ #print(chrNums(snp.info))
+ #print(cbind(indx.first,indx.last))
  cat(" processing chr: ")
  for (dd in range.chr) 
  { 
   cat(chr.set[dd],"..",sep="")
-  LRR.dat <- sub.big.matrix(bigMat, firstRow=indx.first[dd], lastRow=indx.last[dd], backingpath=dir$big)
-  chr.mean[,dd] <- colmean(LRR.dat,na.rm=T) # 50 sec
-  chr.sd[,dd] <- colsd(LRR.dat,na.rm=T)
+  rows.in.next <- (indx.last[dd]-indx.first[dd]); #print(rows.in.next)
+  if(rows.in.next>1) {
+    LRR.dat <- sub.big.matrix(bigMat, firstRow=indx.first[dd], lastRow=indx.last[dd], backingpath=dir$big)
+    chr.mean[,dd] <- colmean(LRR.dat,na.rm=T) # 50 sec
+    chr.sd[,dd] <- colsd(LRR.dat,na.rm=T)
+  } else {
+    if(rows.in.next==1) {
+      # 1 row only for this chromosome
+      mm <- mean(bigMat[indx.first[dd],],na.rm=T) 
+      ss <- sd(bigMat[indx.first[dd],],na.rm=T)
+      warning("chromosome ",dd," had 1 SNP")
+    } else {
+      # no rows for this chromosome
+      warning("chromosome ",dd," had no SNPs - this shouldn't be possible"); mm <- ss <- NA
+    }
+    chr.mean[,dd] <- mm
+    chr.sd[,dd] <- ss
+  }
  }
  cat("done\n")
  out.list <- list(chr.mean,chr.sd)
@@ -1480,7 +1513,7 @@ do.median.for.ranges <- function(ranges.list,bigMat,dir,cont=T,
   jj <- proc.time()
   if(n.cores>1) { multi <- T } else { multi <- F }
   if(multi) { job.count <- 0 ; cc.collect <- numeric(n.cores)}  # start a counter for parallels (if multi)
-  # sort numranges if using multicore (ensures multi processors are working on as similar size chunks as possible)
+  # sort numranges if using parallel (ensures multi processors are working on as similar size chunks as possible)
   lens <- sapply(ranges.list,diff); sort.lens <- order(lens)
   ##unsort.lens <- order(((1:length(lens))[order(lens)])) # not needed
   ####
@@ -1490,10 +1523,10 @@ do.median.for.ranges <- function(ranges.list,bigMat,dir,cont=T,
       job.count <- job.count + 1
       cc_s <- sort.lens[cc]
       cc.collect[job.count] <- cc_s
-      runs[[job.count]] <- multicore::parallel(do.med.chunk(ranges.list[[cc_s]],(cc_s %in% use.big.list),bigMat,dir,ncb,cont))
+      runs[[job.count]] <- parallel::mcparallel(do.med.chunk(ranges.list[[cc_s]],(cc_s %in% use.big.list),bigMat,dir,ncb,cont))
       if(job.count>=n.cores | cc>=num.ranges) {
         ## collect previous #'n.cores' runs 
-        list.set <- collect(runs[1:job.count])
+        list.set <- parallel::mccollect(runs[1:job.count])
         for (dd in (which(cc.collect>0))) {
           med.store[cc.collect[dd],] <- list.set[[dd]]
         }
@@ -1667,7 +1700,7 @@ validate.samp.info <- function(sample.info,dir,QC.update=T,file.spec=F,verbose=F
   dir <- validate.dir.for(dir,c("lrr.dat","ids","ano"))
   if(!is.data.frame(sample.info)) {
     cat(" attempting to coerce sample info to data.frame\n")
-    sample.info <- as.data.frame(sample.info)
+    sample.info <- as.data.frame(sample.info,stringsAsFactors=FALSE)
   }
   if(!( "grp" %in% colnames(sample.info)))
   {
@@ -1744,9 +1777,9 @@ get.file.specs <- function(dir,fn="file.spec.txt",quiet=T)
   if (fn %in% c(list.files(dir$lrr.dat),list.files(dir$ano)))
   {
     if (fn %in% c(list.files(dir$lrr.dat))) {
-      file.info <- read.table(cat.path(dir$lrr.dat,fn),header=T) 
+      file.info <- read.table(cat.path(dir$lrr.dat,fn),header=T,stringsAsFactors=FALSE) 
     } else {
-      file.info <- read.table(cat.path(dir$ano,fn),header=T)
+      file.info <- read.table(cat.path(dir$ano,fn),header=T,stringsAsFactors=FALSE)
     }
     alph.ord <- order(file.info[,1])
     if (any(alph.ord!=1:nrow(file.info)))
@@ -1787,8 +1820,8 @@ get.file.lens <- function(dir,fn="file.lengths.txt",recalc=F,write=T)
       cat(" reading file lengths of raw datafiles from",fn,"\n")
       test.valid <- (length(readLines(lens.fn))>0)
       if(test.valid) {
-        len.tab <- read.table(lens.fn)
-        len.tab <- as.data.frame(len.tab)
+        len.tab <- read.table(lens.fn,stringsAsFactors=FALSE)
+        len.tab <- as.data.frame(len.tab,stringsAsFactors=FALSE)
         colnames(len.tab) <- c("length","file.name")
       } else {
         recalc <- T
@@ -1966,20 +1999,31 @@ check.snp.read.fn <- function()
   # if read.snps.long is ever removed (function is currently deprecated) then
   # this wrapper helps suck up redundant variables and redirect relevant ones to 'read.long'
   must.use.package("snpStats",bioC=T)
+  
   if(!exists("read.snps.long",mode="function",where="package:snpStats"))
   {
     cat("plumbCNV was designed to work with the fast 'read.snps.long' function which\n")
     cat("even at the time was listed as deprecated. It has been detected as removed from snpStats\n")
-    cat("so now redirecting to the newer (slower) function 'read.long' to work in its place.\n")
-    read.snps.long <- function(files,sample.id,snp.id,fields,codes=NA,no.call="",threshold=.9,
+    if("chopsticks" %in% rownames(installed.packages())) {
+      cat("so now redirecting to the chopsticks function 'read.snps.long' to work in its place.\n")
+      must.use.package("chopsticks",bioC=T)
+      read.snps.long <- function(...,diploid=NULL) {
+        out <- chopsticks::read.snps.long(...)
+        return(as(out,"SnpMatrix"))
+      }
+    } else {
+      cat("so now redirecting to the newer (slower) function 'read.long' to work in its place.",
+          " If this seems too slow, install the bioconductor package 'chopsticks' which allows a faster workaround\n")
+      read.snps.long <- function(files,sample.id,snp.id,fields,codes=NA,no.call="",threshold=.9,
                                diploid = NULL, lower = TRUE, sep = " ", comment = "#", skip = 0,
                                simplify = c(FALSE,FALSE),
                                verbose = FALSE, in.order=TRUE, every = 1000,...) {
-      # suck up redundant variables and redirect relevant ones to 'read.long'
-      out <- read.long(file=files, samples=sample.id, snps=snp.id,
+        # suck up redundant variables and redirect relevant ones to 'read.long'
+        out <- read.long(file=files, samples=sample.id, snps=snp.id,
                        fields = fields,split = "\t| +", gcodes=codes,
                        no.call = no.call, threshold = threshold)
-      return(out)
+        return(out)
+      }
     }
     was.there <- F
   } else {
@@ -2100,21 +2144,21 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
    options(warn = 0)
  } else {
    n.cores <- min(num.filz,n.cores); rdz <- vector("list",n.cores)
-   must.use.package("multicore"); c.u <- 0; snpMatLst <- vector("list",num.filz)
+   must.use.package("parallel"); c.u <- 0; snpMatLst <- vector("list",num.filz)
    cat(" reading",num.filz,"long format SNP files using",n.cores,"cores in parallel...\n")
    for (tt in 1:num.filz) {
      c.u <- c.u + 1
-     rdz[[tt]] <- multicore::parallel(read.snps.long(files = data[tt], sample.id = subs.list[[tt]],    
+     rdz[[tt]] <- parallel::mcparallel(read.snps.long(files = data[tt], sample.id = subs.list[[tt]],    
                                                 snp.id = snp.list, diploid = NULL, 
                                                 fields = field.list[[tt]], 
                                                 codes = "nucleotide", sep = "\t", comment = "#", 
                                                 skip = header.lens[tt], simplify = c(FALSE,FALSE),
                                                 verbose = F, in.order = TRUE, every = num.markers))
      if(c.u>=length(rdz)) { 
-       snpMatLst[(tt-length(rdz)+1):tt] <- collect(rdz) ; rdz <- vector("list",min(n.cores,num.filz-tt)) ; c.u <- 0 
+       snpMatLst[(tt-length(rdz)+1):tt] <- parallel::mccollect(rdz) ; rdz <- vector("list",min(n.cores,num.filz-tt)) ; c.u <- 0 
      }
    }	
-   #snpMatLst <- collect(snpMatLst)
+   #snpMatLst <- parallel::mccollect(snpMatLst)
  }
  setwd(old.dir) #put current directory back to where it was
  return(snpMatLst)
@@ -2237,7 +2281,7 @@ doSampQC <- function(dir, subIDs.actual, plink=T, callrate.samp.thr=.95, het.lo=
    irem.fn <- cat.path(dir$cr.plk,"snpdataout.irem")
    check.fl.rows <- file.nrow(irem.fn)
    if(check.fl.rows>0) { 
-     call.rate.excl.grp <- paste(read.table(irem.fn,header=F)[,2]) 
+     call.rate.excl.grp <- paste(read.table(irem.fn,header=F,stringsAsFactors=FALSE)[,2]) 
      sample.info[call.rate.excl.grp,"QCfail"] <- proc
    } else { 
      call.rate.excl.grp <- NULL 
@@ -2245,7 +2289,7 @@ doSampQC <- function(dir, subIDs.actual, plink=T, callrate.samp.thr=.95, het.lo=
    cat(paste(" plink sample QC removed",length(call.rate.excl.grp),"samples\n"))
    imiss.fn <- cat.path(dir$cr.plk,"snpdataout.imiss")
    check.fl.rows <- file.nrow(imiss.fn)
-   if(check.fl.rows>0) { imisser <- read.table(imiss.fn,header=T) } else { imisser <- data.frame(IID="",F_MISS="") }
+   if(check.fl.rows>0) { imisser <- read.table(imiss.fn,header=T,stringsAsFactors=FALSE) } else { imisser <- data.frame(IID="",F_MISS="") }
    sample.info[["call.rate"]] <- 1-(imisser[match(rownames(sample.info),imisser$IID),"F_MISS"])
    sample.info$call.rate[is.na(sample.info$call.rate)] <- 0
    more.fail <- which(sample.info$call.rate[!is.na(sample.info$call.rate)]<callrate.samp.thr)
@@ -2263,6 +2307,7 @@ doSampQC <- function(dir, subIDs.actual, plink=T, callrate.samp.thr=.95, het.lo=
    het.excl.grp <- paste(NULL)
  } else {
    sample.qc <- list.rowsummary(snpMatLst,dir=dir,n.cores=n.cores)
+   #print(head(sample.qc))
    sample.info[["call.rate"]] <- sample.qc[rownames(sample.info),"Call.rate"]
    sample.info$call.rate[is.na(sample.info$call.rate)] <- 0
    sample.info[["heterozygosity"]] <- sample.qc[rownames(sample.info),"Heterozygosity"]
@@ -2292,7 +2337,7 @@ get.grp.level.snp.stats <- function(snpMatLst,snp.info,sample.info,n.cores=1,plo
       # if more than one group do snp qc separately for each to test for differences between grps
       if(n.cores>1) { 
         # get SNP-qc stats summary by grp
-        snp.qc.grpwise <- multicore::mclapply(snpMatLst,colSummary,filt=rownames(snp.info),mc.cores=n.cores) 
+        snp.qc.grpwise <- parallel::mclapply(snpMatLst,colSummary,filt=rownames(snp.info),mc.cores=n.cores) 
       } else { 
         snp.qc.grpwise <- lapply(snpMatLst,colSummary,filt=rownames(snp.info)) 
       }
@@ -2340,9 +2385,9 @@ doSnpQC <- function(dir, plink=T, n.cores=1,
      stop(paste("Error: expecting plink snp-QC output file: snpdataout.lmiss, in",dir$cr.plk)) }
    if (!"snpdataout.hwe" %in% list.files(dir$cr.plk)) {
      stop(paste("Error: expecting plink snp-HWE output file: snpdataout.hwe, in",dir$cr.plk)) }
-   lmisser <- read.table(paste(dir$cr.plk,"snpdataout.lmiss",sep=""),header=T)
+   lmisser <- read.table(paste(dir$cr.plk,"snpdataout.lmiss",sep=""),header=T,stringsAsFactors=FALSE)
    snp.info[["call.rate"]] <- 1-(lmisser[match(rownames(snp.info),lmisser$SNP),"F_MISS"])
-   hweer <- read.table(paste(dir$cr.plk,"snpdataout.hwe",sep=""),header=T)
+   hweer <- read.table(paste(dir$cr.plk,"snpdataout.hwe",sep=""),header=T,stringsAsFactors=FALSE)
    pp <- snp.info[["P.hwe"]] <- hweer[match(rownames(snp.info),hweer$SNP),"P"]
    counts <- hweer[match(rownames(snp.info),hweer$SNP),"GENO"]
    three.counts <- strsplit(counts, "/",fixed=T)
@@ -2424,10 +2469,10 @@ get.hdr.lens <- function(fnz,max.feas.hdr=500,firstrowhdr=T,sep.chr="\t")
 
 
 load.all.libs <- function(big=c("bigmemory","biganalytics"),
-                          other=c("multicore","lattice","compiler","NCmisc"),...) {
+                          other=c("parallel","lattice","compiler","NCmisc"),...) {
   # loads most of the libraries required by plumbcnv in a fairly discreet manner
-  # note that lattice uses multicore function 'parallel' so should be loaded second
-  # because plumbCNV always refers to multicore::parallel to prevent confusion
+  # note that lattice uses parallel function 'parallel' so should be loaded second
+  # because plumbCNV always refers to parallel::mcparallel to prevent confusion
   ih <- F
   if(length(big)>0) { 
     if("bigalgebra" %in% big) {
@@ -2473,6 +2518,36 @@ snp.mat.list.type <- function(snpMatLst,fail=T)
    }
  }
  return(HDt)
+}
+
+
+# apply a function to each element of a snpMatLst
+fun.snpMatLst <- function(snpMatLst,fun=nrow,fail=T,dir=NULL,...)
+{
+  # ... further arguments to fun()
+  # get dimensions of snpMatLst (SnpMatrix list) regardless
+  # of whether it's a set of SnpMatrix objects or list of file locations
+  HD <- switch(snp.mat.list.type(snpMatLst,fail),memory=F,disk=T,error=NULL)
+  if(is.null(dir)) { dir <- getwd() ; warning("no directory passed to function") }
+  if(HD) {
+    n.grp <- length(snpMatLst)
+    list.spec <- vector("list",n.grp)
+    for (cc in 1:n.grp)
+    {
+      TF <- is.file(paste(snpMatLst[[cc]]),dir)
+      if(TF) { 
+        fnm <- find.file(paste(snpMatLst[[cc]]),dir)
+        snpMat <- get.SnpMatrix.in.file(fnm)
+        #snpMat <- get(paste(load())) 
+        list.spec[[cc]] <- fun(snpMat,...)
+      } else {
+        warning(paste("invalid snpMat file",cc)) 
+      }
+    }
+  } else {
+    list.spec <- lapply(snpMatLst,fun,...)
+  }
+  return(list.spec)
 }
 
 
@@ -2535,7 +2610,7 @@ lrr.stats.tab <- function(stats.table,nSD=3)
   # calculate distribution indices for each LRR-sample-statistic for the whole cohort
   if(!is.numeric(nSD)) { nSD <- 3 }; nSD <- abs(nSD) # ensure positive and numeric
 	statz <- colnames(stats.table)
-  stats.table <- as.data.frame(stats.table)  #ensure type is dataframe (eg. not matrix)
+  stats.table <- as.data.frame(stats.table,stringsAsFactors=FALSE)  #ensure type is dataframe (eg. not matrix)
 	TableRowLabels <- boundary.stats(nSD=nSD) # in function user can look at
 	nrowz <- length(TableRowLabels)
 	ncolz <- length(statz)
@@ -3250,13 +3325,17 @@ sync.snpmat.with.info <- function(snpMatLst,snp.info=NULL,sample.info=NULL,dir=N
  # file locations and act accordingly. autodetect whether snp and/or sample info inputted.
  #print(length(snpMatLst)); print(is(snpMatLst)); print(dim(snp.info)); print(dim(sample.info)); print(head(dir))
  reorder.fn <- function(snpMatPart,info,snp=T) {
-  if(snp) { nms <- colnames } else { nms <- rownames }
-  to.keep <- match(rownames(info),nms(snpMatPart))
-  to.keep <- to.keep[!is.na(to.keep)]
+  if(snp) { nms <- colnames; txt <- "columns" } else { nms <- rownames; txt <- "rows" }
+  to.keep <- match(rownames(info),nms(snpMatPart)) ; ll1 <- length(to.keep)
+  to.keep <- to.keep[!is.na(to.keep)] ; ll2 <- length(to.keep)
+  if((1-(ll2/(ll1+ll2)))>.25) {
+    warning(" discarding ",round((1-(ll2/(ll1+ll2)))*100,2),
+            "% of ",txt, "that don't match the annotation file") 
+  }
   if(snp) { return(snpMatPart[,to.keep]) } else { return(snpMatPart[to.keep,]) }
  }
  if(n.cores>1) { 
-   require(multicore); l_apply <- function(...) { multicore::mclapply(...,mc.cores=n.cores) } 
+   require(parallel); l_apply <- function(...) { parallel::mclapply(...,mc.cores=n.cores) } 
  } else { 
    l_apply <- function(...) { lapply(...) }
  }
@@ -3375,142 +3454,6 @@ sample.cnv.counts <- function(cnv.hit.list, sids, content.txt) {
 }
 
 
-reduce.list.to.scalars.old <- function(ll) {
-  if(is.list(ll)) {
-    for (cc in length(ll):1) {
-      if(is(ll[[cc]])[1]=="list") { 
-        ll[[cc]] <- reduce.list.to.scalars.old(ll[[cc]]) 
-      } else {
-        if(length(ll[[cc]])>1 | !is.numeric(ll[[cc]])) { ll[[cc]] <- NULL }
-      }
-    }
-  }
-  return(ll)
-}
-
-nmoo <- function(x) { x <- rep(NULL,1) }
-
-reduce.list.to.scalars.2 <- function(ll,max.ln=1000) {
-  if(is.list(ll)) {
-    if(length(ll)>max.ln) { return(sapply(ll,nmoo)) }
-    for (cc in length(ll):1) {
-      if(is(ll[[cc]])[1]=="list") { 
-        ll[[cc]] <- reduce.list.to.scalars.2(ll[[cc]]) 
-      } else {
-        if(length(ll[[cc]])>1 | !is.numeric(ll[[cc]])) { ll[[cc]] <- NULL }
-      }
-    }
-  }
-  return(ll)
-}
-
-rlts <- function(X) {
-  if(is(X)[1]=="list") { 
-    X <- reduce.list.to.scalars(X) 
-  } else {
-    if(length(X)>1 | !is.numeric(X)) { X <- NULL }
-  }
-  return(X)
-}
-
-reduce.list.to.scalars <- function(ll) {
-  if(is.list(ll)) {
-    ll <- rev(lapply(rev(ll),rlts))
-  }
-  return(ll)
-}
-
-
-
-get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.query=T, txid=F, prog=F, alt.name=NULL) {
-  #prv(next.chr, x, y, xx, yy)
-  ## mainly to tidy up function below - does the processing for 1 chromosome
-  olp <- findOverlaps(x[[next.chr]],y[[next.chr]])  
-  if(length(olp)==0 | length(subjectHits(olp))==0 | length(queryHits(olp))==0) {
-    return(list(NULL,NULL,NULL)) } # if no matches return list of 3 NULL elements
-  overlap.ranges <- ranges(olp,x[[next.chr]],y[[next.chr]])
-  genes.per.cnv.n <- tapply(queryHits(olp),subjectHits(olp),c)
-  match.num.to.names <- function(num,ind) { return(ind[num]) }
-  if(name.by.gene) {
-    if(txid & ("txname" %in% colnames(xx))) {
-      # transcript id when using exons
-      ind <- xx[next.chr]$txname
-      genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
-    } else {
-      ind <- xx[next.chr]$gene
-      genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
-    }
-  } else { 
-    if(T | length(grep("DGV",toupper(rownames(xx)[1:2])))>0) {
-      ind <- rownames(xx[next.chr])
-      genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
-    } else {
-      if(!is.null(alt.name)) {
-        prv.large(xx[next.chr])
-        ind <- xx[next.chr][,paste(alt.name)]
-        genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
-      } else {
-        # use row-numbers for matchs unless using DGV ids
-        genes.per.cnv <- genes.per.cnv.n 
-      }
-    }
-  }
-  gene.overlaps.per.cnv <- tapply(width(overlap.ranges),subjectHits(olp),c)
-#  if(T|paste(next.chr)=="21") { print(gene.overlaps.per.cnv) }
-  select.overlappers <- as.numeric(names(genes.per.cnv)) # there are more of these than rownames y and they are unique!
-#  print(paste("selectoverlappers",length(rownames(yy[next.chr])),length(select.overlappers),length(unique(select.overlappers))))
-  if(rel.query) {
-    # width relative to query (e.g, Gene %)
- #  gene.lengths <- width(x[[next.chr]])
-    ind <- width(xx[next.chr])
-    gene.widths <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
-    if(length(gene.widths)>=1 & length(gene.overlaps.per.cnv)>=1) {
-      pc.per.cnv <- sapply(1:length(gene.widths), function(x) { gene.overlaps.per.cnv[[x]]/gene.widths[[x]] } ,simplify=F)
-    } else {
-      pc.per.cnv <- gene.widths # i.e, make an equivalent null/na/0 value
-    }
-  } else {
-    # width relative to subject (e.g, CNV %)
-    cnv.lengths <- width(y[[next.chr]][select.overlappers])
-    if(length(cnv.lengths)>=1 & length(gene.overlaps.per.cnv)>=1) {
-      pc.per.cnv <- sapply(1:length(cnv.lengths), function(x) { gene.overlaps.per.cnv[[x]]/cnv.lengths[x] } ,simplify=F)
-    } else {
-      pc.per.cnv <- cnv.lengths # i.e, make an equivalent null/na/0 value
-    }
-  }    
- # print(tail(rownames(yy[next.chr])[select.overlappers]))
-  names(pc.per.cnv) <- names(genes.per.cnv) <- 
-    names(gene.overlaps.per.cnv) <- rownames(yy[next.chr])[select.overlappers] # the dodgy line
-  by.chr.list <- list(genes.per.cnv,gene.overlaps.per.cnv,pc.per.cnv)
- # print(head(names(by.chr.list[[1]])))
-  if(prog) { cat(".") }
-  return(by.chr.list)
-}
-
-
-
-fill.blank.matches <- function(newlist,missing.val="",full.len=NA)
-{
-  #ensure a blank entry for cnvs with no overlaps
-  # full.len is an optional desired out-length for the list (which if trailing cells are blank might differ from the guess)
-##head(paste(names(newlist)))
-  to.nums <- as.numeric(paste(names(newlist)))
-  if(length(narm(to.nums))<length(newlist)) { warning("some list names were not numbers") }
-  if(length(narm(to.nums))<1) { return(newlist) }
-  mm <- max(c(to.nums,full.len),na.rm=T);  if(is.infinite(mm)) {  warning("couldn't find end of list (empty?)"); return(newlist) }
-  no.gene.list <- which(!paste(c(1:mm)) %in% names(newlist))
-  if(length(no.gene.list)>0) {
-    none.list <- vector("list",length(no.gene.list))
-    names(none.list) <- paste(no.gene.list)
-    none.list <- sapply(none.list,function(x) { missing.val } )
-    out <- c(newlist,none.list)
-    out <- out[order(as.numeric(names(out)))]
-  } else {
-    out <- newlist
-  }
-  return(out)
-}
-
 
 add.color.to.snp.info <- function(snp.info,scheme=c("mono","alt","unique","hilite"),
                                   col1="purple",col2="orange",hilite=6) {
@@ -3523,8 +3466,8 @@ add.color.to.snp.info <- function(snp.info,scheme=c("mono","alt","unique","hilit
   snp.info <- toGenomeOrder(snp.info,strict=T)
   chr.set <- chrNums(snp.info); n.chr <- length(chr.set)
   if(n.chr<1) { stop("there seem to be no chromosomes in the snp.info object") }
-  scheme <- scheme[scheme %in% c("mono","alt","unique","hilite")][1]
   scheme[is.na(scheme)] <- "mono"
+  scheme <- scheme[scheme %in% c("mono","alt","unique","hilite")][1]
   if(scheme=="hilite") {
     if(!all(paste(hilite) %in% paste(chr.set))) { hilite <- chr.set[1]; warning("hilite value not valid, defaulting to first chr in set") }
   }
@@ -3542,12 +3485,23 @@ add.color.to.snp.info <- function(snp.info,scheme=c("mono","alt","unique","hilit
     if(length(which.chr)>0) { out[1:length(which.chr)] <- coloz22[which.chr] }
     return(out)
   }
-  hiCol <- function(x,c1,c2) { out <- monoCol(c2); out[hilite] <- c1; return(out) }
+  hiCol <- function(x,c1,c2) { out <- monoCol(x,c2,c2); out[hilite] <- c1; return(out) }
   col.func <- switch(scheme, mono=monoCol, alt=altCol, unique=uniqCol, hilite=hiCol)
   coloz <- col.func(chr.set,col1,col2)
-  repz <- table(snp.info$space)
-  repz <- as.numeric(repz); repz <- repz[!is.na(repz) & repz>0]
-  snp.info[["color"]] <- rep(coloz,times=as.numeric(repz))
+  rr <- table(snp.info$space)
+  repz <- as.numeric(rr); repz <- repz[!is.na(repz) & repz>0]
+  if(length(repz)==length(coloz)) {
+    snp.info[["color"]] <- rep(coloz,times=as.numeric(repz))
+  } else {
+    rrr <- names(rr)[!is.na(as.numeric(rr))]
+    mm <- match(rrr,paste(chr.set))
+    inss <- rep(coloz[narm(mm)],times=as.numeric(repz)[rrr %in% paste(chr.set)])
+    if(length(inss)!=nrow(snp.info)) {
+      warning("color assignment failed, ",length(coloz), " colours generated, but ",length(repz)," chromosome sizes found")
+    } else {
+      snp.info[["color"]] <- inss
+    }
+  }
   return(snp.info)
 }
 
@@ -3565,7 +3519,7 @@ add.gindx.to.Ranges <- function(snp.info,ucsc="hg18",absolute=T,label="gindx") {
   }
   uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
   num.chr <- length(snp.info)
-  which.chr <- which(paste(1:22) %in% chrNames(snp.info))
+  which.chr <- which(paste(1:22) %in% chrNames2(snp.info))
   all.chr.len <- get.chr.lens(dir,ucsc=ucsc)
   if(length(which.chr)>0) {
     chrLens <- all.chr.len
@@ -3576,7 +3530,7 @@ add.gindx.to.Ranges <- function(snp.info,ucsc="hg18",absolute=T,label="gindx") {
   } else { 
     chrLens <- chrStarts <- NULL
   }
-  which.notC <- chrOrder(chrNames(snp.info)[(!chrNames(snp.info) %in% paste(1:22))])
+  which.notC <- chrOrder(chrNames2(snp.info)[(!chrNames2(snp.info) %in% paste(1:22))])
   if(length(which.notC)>0) {
     chr.pos.not <- chrInfo(snp.info[which.notC])
     chr.indx2 <- chrIndices(snp.info[which.notC])
@@ -3730,7 +3684,7 @@ update.plate.bad.count.table <- function(dir,plate.index=NULL,plate.list="plate.
  # plate.index should contain sample ids in column 1, plate ids in column 2
  # would be easy to run for wells by switching cols 2&3
  dir <- validate.dir.for(dir,c("ano","excl"),warn=F)
- if(is.matrix(plate.index)) { plate.index <- as.data.frame(plate.index) }
+ if(is.matrix(plate.index)) { plate.index <- as.data.frame(plate.index,stringsAsFactors=FALSE) }
  plate.col <- which(tolower(colnames(plate.index)) %in% type)[1]
  is.plate <- T
  if(is.na(plate.col)) { 
@@ -3917,13 +3871,59 @@ force.sex.codes <- function(sex,missing=c(0,-9,-99,99),verbose=F) {
 }
 
 
+# read in a plink formatted pedigree/family file
+read.ped.file <- function(fn,keepsix=TRUE) {
+  rr1 <- reader(fn,header=TRUE)
+  if(ncol(rr1)<6) { stop("invalid ped/fam file, should have at least 6 columns") }
+  if(any(colnames(rr1) %in% c("X0","X1","X2"))) { rr1 <- reader(fn,header=FALSE) }
+  colnames(rr1) <- gsub("X.","",colnames(rr1))
+  if(any(colnames(rr1)[1] %in% unique(rr1[,1]))) { rr1 <- reader(fn,header=FALSE) }
+  colnames(rr1)[1:6] <- c("family","sample","father","mother","sex","phenotype")
+  if(keepsix) { rr1 <- rr1[,1:6] }
+  return(rr1)
+}
+
+
+# get table of trios from plink family file 'fn', ready to make a penn-cnv trio list file
+get.trios <- function(fn) {
+  rr <- read.ped.file(fn)
+  tr.ind <- which(rr$father!=0 & rr$mother!=0)
+  if(length(tr.ind)>0) { return(rr[tr.ind,2:4]) } else { warning("no trios found") ; return(NULL) }
+}
+
+
+make.trio.file <- function(fn,dir=NULL,trio.fn="triolist.txt") {
+  dir <- validate.dir.for(dir,c("cnv.raw","cnv.qc"))
+  dir.long <- unlist(penn.name.files(dir,write.files=F,ret.fn=F,relative=F))
+  dir.short <- basename(dir.long)
+  dir.n <- basename(dirname(dir.long))
+  tr <- get.trios(fn)
+  dd <- Dim(tr); if(!is.na(dd[2])) { if(dd[2]!=3) { stop("invalid trios list") } } else { stop("invalid trios list") }
+  valid.row <- rep(T,nrow(tr))
+  for (cc in 1:ncol(tr)) {
+    ind <- match(rmv.ext(paste(tr[,cc])),rmv.ext(dir.short))
+    sel <- !is.na(ind)
+    tr[sel,cc] <- dir.long[ind[sel]]
+    if(cc==1) { dir.num <- dir.n[ind] }
+    valid.row <- valid.row & sel
+  }
+  dir.num <- dir.num[valid.row]
+  tr <- tr[valid.row,]  # remove samples failing lookup (probably failed QC earlier)
+  ofn <- cat.path(dir$cnv.qc,trio.fn)
+  write.table(tr,file=ofn,col.names=FALSE,row.names=FALSE,sep="\t",quote=FALSE)
+  cat("wrote trio lists to ",ofn,"\n",sep="")
+  return(dir.num)
+}
+
+
+
 make.fam.file <- function(sample.info,dir,out.fn="plink.fam")
 {
   ## create plink family file using sample.info
   #Family ID,Sample ID,Paternal ID,Maternal ID,
   #Sex (1=male; 2=female; other=unknown,"\n")
   #Affection (0=unknown; 1=unaffected; 2=affected,"\n")
-  dir <- validate.dir.for(dir,"cnv.plk")
+  dir <- validate.dir.for(dir,"cnv.qc")
   PED.FAM.TEMP <- sample.info[,rep("grp",6)]
   PED.FAM.TEMP[,6] <- 1
   PED.FAM.TEMP[,c(3,4,5)] <- 0
@@ -3964,7 +3964,7 @@ filter.hifreq.plates <- function(plink.files, sample.info, rem.file=plink.files[
 {
   # filter samples with too many rare DELs/DUPs (according to specified rare rates) (poisson)
   # or filter samples with too many CNVs (normal)
-  dir <- validate.dir.for(dir,c("cnv.plk"),warn=F)
+  dir <- validate.dir.for(dir,c("cnv.qc"),warn=F)
   if(!"QCfail" %in% colnames(sample.info)) { warning("sample.info must have column 'QCfail") }
   nsamps <- length(which(sample.info$QCfail==0))
   rem.file <- paste(rem.file[1])
@@ -3973,7 +3973,7 @@ filter.hifreq.plates <- function(plink.files, sample.info, rem.file=plink.files[
   if(!is.file(rem.file,dir$cnv.qc)) { warning("'rem.file' (",rem.file,") file not found") ; return(NULL) }
   dat1 <- list()
   for (cc in 1:length(plink.files)) {
-    dat1[[cc]] <- read.table(pl.path[cc],header=T)  #; colnames(dat) <- 
+    dat1[[cc]] <- read.table(pl.path[cc],header=T,stringsAsFactors=FALSE)  #; colnames(dat) <- 
   }
   dat <- do.call(rbind,args=dat1)
   plate.list <- get.plate.info(dir,verbose=F); 
@@ -4020,21 +4020,21 @@ filter.hifreq.plates <- function(plink.files, sample.info, rem.file=plink.files[
   toohi <- cbind(ss[!pass.pos], tt[!pass.pos], nn[!pass.pos], round(uu[!pass.pos],2))
   toolo <- cbind(ss[!pass.neg], tt[!pass.neg], nn[!pass.neg], round(uu[!pass.neg],2))
   colnames(toohi) <- colnames(toolo) <- c("Plate","CNVs","Samples","CNVs.per.Sample")
-  toohi <- as.data.frame(toohi); toolo <- as.data.frame(toolo)
+  toohi <- as.data.frame(toohi,stringsAsFactors=FALSE); toolo <- as.data.frame(toolo,stringsAsFactors=FALSE)
   # mean/sd/'3'SD for dels/dups per subj
   cat("\nFiltering samples from plates with a large number of ",{if(rare) "rare " else ""},"CNVs per sample\n",sep="")
   if(rare) { cat("[NB: tagged plates may be same as filtered above for all CNVs]\n") }
   ###dat <- read.table(file.choose(),header=T)
   cat("\nPlates with too many CNVs (oversensitive)\n")
   if(nrow(toohi)>0) {
-    print(as.data.frame(toohi),quote=F,row.names=F)
+    print(as.data.frame(toohi,stringsAsFactors=FALSE),quote=F,row.names=F)
   } else {
     cat("[none exceeded boundary]\n")
   }
   
   cat("\nPlates with too few CNVs (undersensitive)\n")
   if(nrow(toolo)>0) {
-    print(as.data.frame(toolo),quote=F,row.names=F)
+    print(as.data.frame(toolo,stringsAsFactors=FALSE),quote=F,row.names=F)
   } else {
     cat("[none exceeded boundary]\n")
   }
@@ -4064,7 +4064,7 @@ filter.hifreq.cnv.samples <- function(plink.file, nsamps, rem.file=plink.file, r
 {
   # filter samples with too many rare DELs/DUPs (according to specified rare rates) (poisson)
   # or filter samples with too many CNVs (normal)
-  dir <- validate.dir.for(dir,c("cnv.plk"),warn=F)
+  dir <- validate.dir.for(dir,c("cnv.qc"),warn=F)
   if(is.null(del.rate) & is.null(ndels) | is.null(dup.rate) & is.null(ndups)) {
     stop("Error: must specify at least 1 of dup/del.rate or ndups/ndels")
   }
@@ -4076,7 +4076,7 @@ filter.hifreq.cnv.samples <- function(plink.file, nsamps, rem.file=plink.file, r
   dup.cutoff <- which(round(ppois(c(1:10),dup.rate,lower.tail=F)*ndups,4)<pval)[1]-1
   del.cutoff <- which(round(ppois(c(1:10),del.rate,lower.tail=F)*ndels,4)<pval)[1]-1
 
-  dat <- read.table(cat.path(dir$cnv.qc,plink.file,ext="cnv"),header=T)  #; colnames(dat) <- 
+  dat <- read.table(cat.path(dir$cnv.qc,plink.file,ext="cnv"),header=T,stringsAsFactors=FALSE)  #; colnames(dat) <- 
   tt <- as.numeric(table(dat$IID))[order(as.numeric(table(dat$IID)))]
   ss <- names(table(dat$IID))[order(as.numeric(table(dat$IID)))]
   if(!rare %in% c("DEL","DUP")) {
@@ -4196,6 +4196,7 @@ init.data.tracker <- function(dir,grps=NA,grp.names=NULL,raw.lrr=NULL,raw.baf=NU
   # Initialise a new DATATRACKER object
   dir <- validate.dir.for(dir,c("base","ano","col","ids","raw"))
   # Info - DESCRIPTION - BASE - DIR
+  add.dir.if.not <- reader:::add.dir.if.not # get internal function from reader
   # description can contain anything you like, e.g, text, or some settings, etc
   varlist <- c("samples","snps","map.file","plate.fn","plate.fn")
   for (cc in 1:length(varlist)) {
@@ -4583,7 +4584,7 @@ three.way.comparison <- function(clean.stats,sample.info,raw.fn="StatsPerSample"
   three.part.common <- three.part.comp
   for (jj in 1:3) {
     three.part.common[[jj]] <- 
-      as.data.frame(three.part.common[[jj]][,match(vars,colnames(three.part.common[[jj]]))])
+      as.data.frame(three.part.common[[jj]][,match(vars,colnames(three.part.common[[jj]]))],stringsAsFactors=FALSE)
   }
     if(bxplot) {
     for (dd in 1:length(batch.comps)) {
@@ -4629,7 +4630,7 @@ combine.raw.stats <- function(dir,grpnumz=NA,base.fn="StatsPerSample",pref="LRR"
     stat.table <- list()
     for (kk in 1:length(raw.stat.fn)) {
       ifn <- find.file(raw.stat.fn[kk],dir$qc.lrr,dir)
-      stat.table[[kk]] <- read.table(ifn)
+      stat.table[[kk]] <- read.table(ifn,stringsAsFactors=FALSE)
     }
     stat.table <- do.call("rbind",stat.table)
   } else {
@@ -4655,14 +4656,14 @@ combine.raw.stats <- function(dir,grpnumz=NA,base.fn="StatsPerSample",pref="LRR"
           }
         }
       }
-      stat.table <- read.table(ifn)
+      stat.table <- read.table(ifn,stringsAsFactors=FALSE)
     } else {
       # multiple groups so looking for files with suffixes
       stat.table <- list()
       for (kk in grpnumz) {
         ifn <- cat.path(dir$qc.lrr,base.fn,pref=pref[kk],ext=".tab")
         if(file.exists(ifn)) {
-          stat.table[[kk]] <- read.table(ifn)
+          stat.table[[kk]] <- read.table(ifn,stringsAsFactors=FALSE)
         } else {
           warning(paste("Didn't find expected samplewise stats file:",ifn))
         }
@@ -4682,8 +4683,8 @@ batch.box.plots <- function(plot.stats,pass.tab=NULL,lookup,batch="plate",pref="
   if(!(any(batch %in% colnames(lookup))))
   { cat("'lookup' expected to contain '",paste(batch,collapse=","),"' and 'id' named columns. No boxplot(s) produced.",sep=""); return(NULL)}
   batch <- batch[batch %in% colnames(lookup)] # at least 1 is present, remove any that aren't
-  if(is.matrix(lookup)) { lookup <- as.data.frame(lookup) }
-  if(is.matrix(plot.stats)) { plot.stats <- as.data.frame(plot.stats) }
+  if(is.matrix(lookup)) { lookup <- as.data.frame(lookup,stringsAsFactors=FALSE) }
+  if(is.matrix(plot.stats)) { plot.stats <- as.data.frame(plot.stats,stringsAsFactors=FALSE) }
   plts <- paste(unique(lookup[,batch]))
   pltnums <- 1:length(plts)
   samp.plts <- match(lookup[,batch],plts)
@@ -4804,11 +4805,12 @@ gs.bash.http <- function(repos="plumbCNV",script="getDataGS.sh") {
 
 
 init.DATA.read <- function(dir,doLRR=T,doBAF=F,plink.imp=F,n.cores=1,scr.name="getDataGS.sh",scr.dir="",
-                           hwe.thr=10^-8, callrate.samp.thr=.95, callrate.snp.thr=.95,
+                           hwe.thr=10^-8, callrate.samp.thr=.95, callrate.snp.thr=.95, manual.col.nums=NULL,
                            snp.info.sup="snpdata.map",genome.stud.file=F,combine.files=F) 
 {
   dir <- validate.dir.for(dir,c("scr","baf.col","lrr.dat","base","col","sup","raw"))
-  
+  callrate.samp.thr <- force.percentage(callrate.samp.thr,default=0.95)
+  callrate.snp.thr <- force.percentage(callrate.snp.thr,default=0.95)
   if(combine.files) {
     combin <- "CD"
   } else {
@@ -4853,11 +4855,22 @@ init.DATA.read <- function(dir,doLRR=T,doBAF=F,plink.imp=F,n.cores=1,scr.name="g
   }
   ## Process LRR import ##
   if(doLRR) {
+    colntxt <- ""
+    if(length(manual.col.nums)==4) {
+      mcn <- suppressWarnings(round(as.numeric(manual.col.nums)))
+      notna <- which(!is.na(mcn))
+      not0 <- which(mcn!=0)
+      if(anyDuplicated(narm(mcn)[narm(mcn)!=0])) { warning("Entered the same column number more than once") ; notna <- NULL }
+      if((1 %in% notna) & (1 %in% not0)) { colntxt <- paste(colntxt,"-a",mcn[1],sep=" ") }
+      if((2 %in% notna) & (2 %in% not0)) { colntxt <- paste(colntxt,"-b",mcn[2],sep=" ") }
+      if((3 %in% notna) & (3 %in% not0)) { colntxt <- paste(colntxt,"-c",mcn[3],sep=" ") }
+      if((4 %in% notna) & (4 %in% not0)) { colntxt <- paste(colntxt,"-d",mcn[4],sep=" ") }
+    }
     if(!plink.imp) {
       #import LRR for QC in R:     
       cat("\nRunning bash data import script\n")
       my.cmd <- paste(" -lSM",gs,combin," -N ",n.cores," -T 'LRR' -F '",dir$raw,"' -O '",
-                      dir$base,"' -m '",snp.info.sup,"'",sep="")
+                      dir$base,"' -m '",snp.info.sup,"'",colntxt,sep="")
       scr.file <- cat.path(scr.dir,scr.name,must.exist=T)
       cmd <- paste(scr.file,my.cmd,collapse="",sep="")
       cat(cmd,"\n")
@@ -4865,11 +4878,14 @@ init.DATA.read <- function(dir,doLRR=T,doBAF=F,plink.imp=F,n.cores=1,scr.name="g
     } else {
       #import LRR and do plink QC:  
       cat("\nRunning bash data import script and calling plink for snp QC\n")
+      # plink parameters are actually percent missing, not call rate
+      if (callrate.samp.thr > 0.5) {  callrate.samp.thr=(1-callrate.samp.thr) }
+      if (callrate.snp.thr > 0.5) {  callrate.snp.thr=(1-callrate.snp.thr) }
       my.cmd <- paste(" -SLMRPlf",gs,combin," -N ",n.cores,
                       " -T 'LRR' -F '",dir$raw,"' -O '",
                       dir$base,"' -m '",snp.info.sup,"'",
-                      " -x ",callrate.samp.thr," -y ",callrate.snp.thr," -z ",format(hwe.thr,digits=9,scientific=F),
-                      sep="")
+                      " -x ",callrate.samp.thr," -y ",callrate.snp.thr," -z ",
+                       format(hwe.thr,digits=9,scientific=F),colntxt,sep="")
       scr.file <- cat.path(scr.dir,scr.name,must.exist=T)
       cmd <- paste(scr.file,my.cmd,collapse="",sep="")
       cat(cmd,"\n")
@@ -4912,7 +4928,7 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
   #
   load.all.libs() # load all main plumbcnv libraries
   must.use.package("snpStats",bioC=T) 
-  if(n.cores>1) {  must.use.package("multicore",F) }
+  if(n.cores>1) {  must.use.package("parallel",F) }
   # test for 
   if(restore.mode & import.plink) { cat("setting RESTORE=0, not compatible with PLINK=1\n"); restore.mode <- F }
   if(HD.mode & import.plink) { cat("setting HD=0 because HD=1 is not compatible with PLINK=1\n"); HD.mode <- F }
@@ -5031,7 +5047,12 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
                            n.cores=l.cores, proc=2)
   sample.info <- samp.qc.list$SAMPLE.INFO
   # Tabulate sample call rate stats
-  if(tabulateCallRate) {  samp.result <- call.rate.summary(sample.info) }
+  if(tabulateCallRate) {  
+    samp.result <- call.rate.summary(sample.info)
+    if(samp.result$Samples>(0.5*nrow(sample.info))) { 
+      warning("very high proportion of samples failing call rate! suspected failure of data import")
+    }                 
+  }
   # write sample call rate failure lists to text file #
   ofn <- cat.path(dir$cr,"sampleqc.txt")
   write.table(sample.info,file=ofn,sep="\t",quote=F)
@@ -5056,12 +5077,17 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
   snp.info <- snp.qc.list$SNP.INFO
   
   # Tabulate snp call rate stats
-  if(tabulateCallRate) { snp.result <- call.rate.summary(snp.info) }
+  if(tabulateCallRate) {
+    snp.result <- call.rate.summary(snp.info)
+    if(snp.result$SNPs>(0.5*nrow(snp.info))) { 
+      warning("very high proportion of SNPs failing call rate! suspected failure of data import")
+    } 
+  }
   ofn <- cat.path(dir$cr,"snpqc.txt")
   rsnp.info <- snp.info
   # round before writing to file
   for (cc in 1:ncol(rsnp.info)) { if(is.numeric(rsnp.info[[cc]])) { (rsnp.info[[cc]] <- round(rsnp.info[[cc]],digits=5)) } }
-  print(colnames(rsnp.info))
+  #print(colnames(rsnp.info))
   sel.cols <- which(colnames(rsnp.info) %in% c("call.rate","P.hwe","Z.hwe",
                                    "grp.hwe.zmax","grp.miss.p","QCfail","het"))
   write.table(as.data.frame(rsnp.info[,sel.cols]),row.names=F,file=ofn,sep="\t",quote=F)
@@ -5841,6 +5867,7 @@ make.dir <- function(dir.base="plumbCNV_LRRQC",dir.raw="LRRQC_Raw_Files",no.raw=
   dir.cnv <- paste.dr(dir.base,"PENNCNV",sep="")
   dir.cnv.raw <- paste.dr(dir.cnv,"PENNRAWFILES",sep="")
   dir.cnv.pen <- paste.dr(dir.cnv,"PENNOUTPUT",sep="")
+  dir.cnv.fam <- paste.dr(dir.cnv,"PENNOUTPUTFAM",sep="")
   dir.cnv.qc <- paste.dr(dir.base,"CNVQC",sep="")
   dir.cnv.qsub <- paste.dr(dir.cnv,"PENNCLUSTER",sep="")
   dir.lrr.dat <- paste.dr(dir.base,"LRRDATA",sep="")
@@ -6016,7 +6043,7 @@ prepare.penncnv.samples <- function(dir,LRR.fn="",BAF.fn="BAFdescrFile",num.pcs=
   # penn-cnv requires the LRR and BAF data for each sample to be in a separate file
   # this function imports the BAF data if not present, then writes individual LRR,BAF files
   # for all samples
-  if(n.cores>1) { must.use.package("multicore") ; multi <- T } else { multi <- F }
+  if(n.cores>1) { must.use.package("parallel") ; multi <- T } else { multi <- F }
   dir <- validate.dir.for(dir,c("cnv","big","cnv.raw"))
   # default PENNCNV header suffixes
   baf.txt <- ".B Allele Freq"  ;  lrr.txt <- ".Log R Ratio"
@@ -6086,14 +6113,14 @@ prepare.penncnv.samples <- function(dir,LRR.fn="",BAF.fn="BAFdescrFile",num.pcs=
           if(mm < next.mm) { next } else { next.mm  <- min(dir.sizes[nn]+1,next.mm+at.once) }
           nutin <- i.nutin
           for(lll in mm:(next.mm-1)) {
-            nutin[[lll]] <- multicore::parallel(prepare.one.sample(lll=lll, set.offset=set.offset, 
+            nutin[[lll]] <- parallel::mcparallel(prepare.one.sample(lll=lll, set.offset=set.offset, 
                         baf.col.sel=baf.col.sel, lrr.col.sel=lrr.col.sel,
                         cL=cL, cB=cB, lrr.txt=lrr.txt, baf.txt=baf.txt, grand.rn=grand.rn, 
                         lrr.row.sel=lrr.row.sel, baf.row.sel=baf.row.sel, 
                         bigLRR=bigLRR, bigBAF=bigBAF, 
                         next.dir=next.dir))  #
           }
-          noob <- collect(nutin[mm:(next.mm-1)],wait=T)
+          noob <- parallel::mccollect(nutin[mm:(next.mm-1)],wait=T)
         } else {
           prepare.one.sample(lll=mm, set.offset=set.offset, 
                       baf.col.sel=baf.col.sel, lrr.col.sel=lrr.col.sel,
@@ -6170,7 +6197,70 @@ prepare.penncnv.markers <- function(snp.info,lrr.descr, baf.descr="BAFdescrFile"
 }
 
 
-get.penn.cmd <- function(dir,ndir=1,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",use.penn.gc=T,
+
+get.trios.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",ped.file="my.ped",combined.file="raw.merge2.cnv",
+                         penn.path="/usr/local/bin/penncnv/",pref="family",relative=F,hmm="hh550.hmm",joint=FALSE)
+{
+  # this function generates calls to runn penn-cnv for 'ndir' directories created by plumbcnv
+  # can run with either absolute or relative file paths. marker.fn is a list
+  #  containing elements 'baf' and 'gc' which are the files from prepare.penncnv.markers()
+  dir <- validate.dir.for(dir,c("cnv","cnv.raw","cnv.pen","cnv.qc","cnv.fam"),warn=F)
+  if(!is.file(combined.file,dir$cnv.qc)) { stop("couldn't find merged penn-cnv file: ",combined.file) } else { combined.file <- find.file(combined.file,dir$cnv.qc) }
+  if(!is.file(ped.file,dir$ano,dir)) { stop("couldn't find family file: ",ped.file) } else { ped.file <- find.file(ped.file,dir$ano,dir) }
+  if(joint) { cmd.type <- "-joint" } else { cmd.type <- "-trio" }
+  penn.cmd <- paste("perl",cat.path(penn.path,"detect_cnv.pl",must.exist=T),cmd.type)
+  if(joint) {
+    arg.nms <- c("hmm","pfb","","list","log","out")
+  } else {
+    arg.nms <- c("hmm","pfb","cnv","list","log","out")
+  }
+  num.to.chk <- c(1,2)
+  penn.args.list <- vector("list",length(arg.nms))
+  names(penn.args.list) <- arg.nms
+  penn.args.list[[1]] <- paste(penn.path,"lib/",hmm,sep="")
+  penn.args.list[[2]] <- find.file(baf.out.fn,dir$cnv,dir)
+  for (cc in num.to.chk) {
+    nf <- penn.args.list[[cc]]
+    if(!file.exists(nf)) { warning(paste("file",nf,"from PennCNV command not found")) }
+  }
+  tfn <- cat.path(dir$cnv.qc,"triolist.txt")
+  dir.names <- make.trio.file(ped.file,dir=dir,trio.fn=tfn)
+  dir.list <- unique(dir.names); dir.list <- dir.list[order(as.numeric(gsub("p","",dir.list)))]
+  if(!file.exists(tfn)) { stop("Error, could not find file ",tfn," which should have just been created")}
+  triolines <- readLines(tfn)
+  ndir <- length(dir.list) 
+  
+  penn.call <- character(ndir)
+  for (dd in 1:ndir) {
+    nxt <- which(dir.names %in% dir.list[dd])
+    if(length(nxt)==0) { 
+      warning("expected trios in directory ",dir.list[dd]," but found none")
+      penn.call[dd] <- "";  next 
+    }
+    triz <- triolines[nxt]
+    sub.fn <- cat.path(dir$cnv.fam,fn=dir.list[dd],suf="triolist",ext="txt")
+    writeLines(triz,con=sub.fn) # create the trio list file for 'child' samples in this directory
+    penn.args.list[[3]] <- cat.path(dir$cnv.qc,combined.file)
+    penn.args.list[[4]] <- sub.fn
+    penn.args.list[[5]] <- cat.path(dir$cnv.fam,paste(pref,"p",dd,".log",sep=""))
+    penn.args.list[[6]] <- cat.path(dir$cnv.fam,paste(pref,"p",dd,".triocnv",sep=""))
+    penn.args <- NULL
+    for (cc in 1:length(penn.args.list)) {
+      if(names(penn.args.list)[cc]!="") {
+        penn.args <- paste(penn.args,paste("-",names(penn.args.list)[cc]," ",penn.args.list[[cc]]," ",sep=""),sep="")
+      }
+    }
+    penn.call[dd] <- paste(penn.cmd,penn.args)
+  }
+  if(relative) {
+    # remove dir$cnv to make dirs relative rather than absolute (neater)
+    penn.call <- gsub(dir$cnv,"./",penn.call)
+  }
+  return(penn.call)
+}  
+
+
+get.penn.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",use.penn.gc=T,
                          penn.path="/usr/local/bin/penncnv/",pref="output",relative=F,hmm="hh550.hmm")
 {
   # this function generates calls to runn penn-cnv for 'ndir' directories created by plumbcnv
@@ -6190,11 +6280,12 @@ get.penn.cmd <- function(dir,ndir=1,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",
     if(!file.exists(nf)) { warning(paste("file",nf,"from PennCNV command not found")) }
   }
   #print(ndir)
+  ndir <- count.penn.dirs(dir) 
   penn.call <- character(ndir)
   for (dd in 1:ndir) {
     penn.args.list[[3]] <- cat.path(dir$cnv.raw,paste("p",dd,"names.txt",sep=""))
-    penn.args.list[[4]] <- cat.path(dir$cnv.pen,paste(pref,"p",dd,".log",sep=""))
-    penn.args.list[[5]] <- cat.path(dir$cnv.pen,paste(pref,"p",dd,".cnv",sep=""))
+    penn.args.list[[4]] <- cat.path(dir$cnv.fam,paste(pref,"p",dd,".log",sep=""))
+    penn.args.list[[5]] <- cat.path(dir$cnv.fam,paste(pref,"p",dd,".cnv",sep=""))
     penn.args <- NULL
     for (cc in 1:length(penn.args.list)) {
       penn.args <- paste(penn.args,paste("-",names(penn.args.list)[cc]," ",penn.args.list[[cc]]," ",sep=""),sep="")
@@ -6211,12 +6302,13 @@ get.penn.cmd <- function(dir,ndir=1,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",
 
 process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/penncnv/",ucsc="hg18",min.sites=10,rare.olp=.5,rare.pc=1,
                                  baf.fn="BAF.pfb",cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,rmv.low.plates=F,
-                                 raw.main="raw",plink.out="plink.cnv",rmv.bad.reg=T,bad.reg.fn="badRegions.txt",hide.plink.out=T,verbose=F) 
+                                 raw.main="raw",plink.out="plink.cnv",rmv.bad.reg=T,bad.reg.fn="badRegions.txt",hide.plink.out=T,verbose=F,
+                                 ped.file="my.ped",trio=FALSE,joint=FALSE,...)
 {
   # This function runs the penn cnv output through a series of filters from penn scripts,
   # plink commands, both utilising bash commands, and also R-functions, to end up with
   # the final QC-ed set of deletions, duplications, CNVs, both common and rare.
-  dir <- validate.dir.for(dir,c("cnv.plk","cnv.qc","excl"))
+  dir <- validate.dir.for(dir,c("cnv.qc","cnv.qc","excl"))
   ##script names##
   nn <- vector("list",10) # to store ignored plink output
   scn.scrpt <- "scan_region.pl"; cln.scrpt <- "clean_cnv.pl"
@@ -6257,6 +6349,27 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   prev.pen <- cur.pen; cur.pen <- cat.path(fn=raw.fn,suf=".merge2",ext="cnv")
   args <- paste("combineseg --signalfile ",baf.fn," --fraction 0.2 --bp ",prev.pen," > ",cur.pen,sep="")
   commands[3] <- paste(cmd,args)
+  nn[[1]] <- sapply(commands[1:3],system,intern=hide.plink.out, ignore.stderr=hide.plink.out) 
+  #####################################
+  ## trios analysis (if appropriate) ##
+  if(trio) {
+    if(!is.null(ped.file) & is.file(ped.file,dir$ano,dir)) {
+      cat(" validating CNVs using trios, using family information from:",ped.file,"\n")
+      ## ie: cur.pen <- "raw.merge2.cnv"
+      run.PENN.trios(ped.file=ped.file,combined.file=cur.pen,
+                     low.ram=T, hide.penn.out=hide.plink.out,
+                     penn.path=penn.path,ucsc=ucsc,joint=joint,...)
+                     # ... = DT=NULL,n.cores=n.cores,num.pcs=num.pcs,run.manual=run.manual,hmm=hmm,print.cmds=print.cmds,q.cores=q.cores,grid.id=grid.id,
+      cur.pen <- cat.path(dir$cnv.qc,"triocalls",ext="cnv")
+      cat.arg <- cat.path(dir$cnv.fam,"familyp*",ext="triocnv")
+      cat(" trios complete, combining results into a single file",cur.pen,"\n")
+      penn.cmb <- paste("cat",cat.arg,">",cur.pen)
+      nn[[1]] <- c(nn[[1]],system(commands[6],intern=hide.plink.out,ignore.stderr=hide.plink.out))
+    } else {
+      warning("selected 'trio=TRUE' option but did not find a ped/fam file called: ",ped.file)
+    }
+  }
+  #####################################
   cmd <- paste("perl ",penn.path,scn.scrpt,sep="")
   cnv.in.bad <- cat.path("",bad.reg.fn,pre="cnvs_in_")
   args <- paste(cur.pen,bad.reg.fn,"-minqueryfrac 0.5 > ",cnv.in.bad)
@@ -6275,7 +6388,8 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
     commands[5] <- paste("cat",prev.pen,">",cur.pen)
   } 
   # need to run these commands before processing the sample ids excluded
-  nn[[1]] <- sapply(commands[1:5],system,intern=hide.plink.out, ignore.stderr=hide.plink.out) 
+  nn[[2]] <- sapply(commands[4:5],system,intern=hide.plink.out, ignore.stderr=hide.plink.out) 
+  
   if(rmv.bad.reg) {
     tmp <- rmv.dir.penn.cnv.file(cnv.in.bad,append=".tmp",ext=T,verbose=F)
     p.file <- read.penn.cnv.file(tmp,readtable=T)
@@ -6292,11 +6406,11 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
     cmd <- paste("perl ",penn.path,conv.scrpt,sep="")
     args <- paste("-i ",cur.pen," -o ",plink.out," -c 1 ",sep="")
     commands[6] <- paste(cmd,args)
-    nn[[2]] <- system(commands[6],intern=hide.plink.out)
+    nn[[3]] <- system(commands[6],intern=hide.plink.out)
   } else {
     # do it in R instead (slower)
     cat(" converting penn-cnv file to plink format\n")
-    convert.penn.to.plink(penn.in=cur.pen,plink.out=plink.out)
+    convert.penn.to.plink(penn.in=cat.path(dir$cnv.qc,cur.pen),plink.out=cat.path(dir$cnv.qc,plink.out))
     commands[6] <- "# conversion to plink format was done in R"
   }
   # remove directory garbage from plink file
@@ -6315,7 +6429,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   commands[9] <- paste("plink --cnv-list ",plink.out," --cnv-make-map --out ",rmv.ext(plink.out),sep="")
   # check for overlapping regions (duplicates)
   commands[10] <- paste("plink --cfile",rmv.ext(plink.out),"--cnv-check-no-overlap --allow-no-sex")
-  nn[[3]] <- sapply(commands[9:10],system,intern=hide.plink.out,USE.NAMES=F)
+  nn[[4]] <- sapply(commands[9:10],system,intern=hide.plink.out,USE.NAMES=F)
   #j3 <- proc.time()[3]; print(j3-j2)
   ovlp.fn <- cat.path(dir$cnv.qc,paste(rmv.ext(plink.out),".cnv.overlap",sep=""))
   if(file.exists(ovlp.fn)) {
@@ -6338,7 +6452,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   # rare dups
   commands[13] <-paste("plink --cfile",rmv.ext(plink.rmv),
                        "--cnv-dup --cnv-sites",min.sites,"--cnv-drop-no-segment --cnv-freq-exclude-above",rare.cut,"--cnv-overlap",rare.olp,"--cnv-write --out",dupR.file,"--allow-no-sex")
-  nn[[4]] <- sapply(commands[12:13],system,intern=hide.plink.out,USE.NAMES=F)
+  nn[[5]] <- sapply(commands[12:13],system,intern=hide.plink.out,USE.NAMES=F)
   
   suf.for.rmv <- "_DUPrcnt"
   plink.rmv2 <- cat.path(dir="",plink.rmv,suf=suf.for.rmv,ext="cnv")
@@ -6398,7 +6512,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   commands[27] <- paste("plink --cfile",delR.file,"--segment-group --out ",delR.file," --cnv-overlap 0.5 --allow-no-sex")
   commands[28] <- paste("plink --cfile",dupR.file,"--segment-group --out ",dupR.file," --cnv-overlap 0.5 --allow-no-sex")
   
-  nn[[5]] <- suppressWarnings(sapply(commands[16:28],system,intern=hide.plink.out,USE.NAMES=F))
+  nn[[6]] <- suppressWarnings(sapply(commands[16:28],system,intern=hide.plink.out,USE.NAMES=F))
   #nn[[9]] <- system(commands[28],intern=hide.plink.out)
   #nn[[6]] <- sapply(commands[28],system,intern=hide.plink.out,USE.NAMES=F)
   #now nn contains all suppressed plink output
@@ -6409,8 +6523,20 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
 
 
 
+#' Internal function used by q.submit
+dir.force.slash <- function(dir) {
+  # make sure 'dir' directory specification ends in a / character
+  if(!is.null(dim(dir))) { stop("dir should be a vector") }
+  dir <- paste(dir)
+  dir.ch <- .Platform$file.sep
+  the.test <- (dir!="" & substr(dir,nchar(dir),nchar(dir))!=dir.ch)
+  dir[the.test] <- paste(dir[the.test],dir.ch,sep="")
+  return(dir)
+}
+
+
 q.submit <- function(penncmd,cc,dest,cluster.fn="q.cmd",grid.name="all.q",
-                     filepref="qsub_done_",sub.dir.nm="complete_flags/") {
+                     filepref="qsub_done_",sub.dir.nm="complete_flags/", logpref="X") {
   # make the sh file
   # make the qsub call
   # submit to queue
@@ -6419,7 +6545,7 @@ q.submit <- function(penncmd,cc,dest,cluster.fn="q.cmd",grid.name="all.q",
     dir.create(paste(sub.dir.path),showWarnings=F)
   }
   extraline <- paste("touch ",sub.dir.path,filepref,cc,sep="")
-  nxt.fn <- cat.path(dest,"penn",suf=cc,ext="sh")
+  nxt.fn <- cat.path(dest,logpref,suf=cc,ext="sh")
   next.content <- paste(c(penncmd,extraline))
   writeLines(next.content,con=nxt.fn)
   #q.call <- paste("qsub -q ",grid.name," -o ",dest," -j y ",nxt.fn,sep="")
@@ -6452,7 +6578,7 @@ q.test.done <- function(dest,filepref="qsub_done_",sub.dir.nm="complete_flags/")
 
 do.penn.qsub <- function(penn.calls, dir, hrs.guess=1, grid.name="all.q", cluster.fn="q.cmd") {
   cat("\nSubmitting PennCNV calls to grid...\n")
-  cat("\n expect HMM processing via the cluster to take roughly ",round(hrs.guess,2),"hrs ...\n",sep="")
+  cat("\n expect processing via the cluster to take roughly ",round(hrs.guess,2),"hrs ...\n",sep="")
   cat(" note that if restarting previous run, existing penn-cnv jobs should be deleted to avoid conflict\n")
   ## remove existing files
   #print("can remove this temporary assignment for next full run")
@@ -6462,20 +6588,34 @@ do.penn.qsub <- function(penn.calls, dir, hrs.guess=1, grid.name="all.q", cluste
     delete.file.list(cat.path(dir$cnv.qsub,list.files(dir$cnv.qsub)),verbose=F) # delete existing files in dir
     warning("deleted previous contents of directory: ",dir$cnv.qsub)
   }
-  
-  for (tt in 1:length(penn.calls)) {
+  out <- bash.qsub(penn.calls, dir=dir$cnv.qsub, hrs.guess=hrs.guess, grid.name=grid.name, cluster.fn=cluster.fn, logpref="penn")
+  return(out)  
+}
+
+
+
+# submit a vector of character commands to the grid
+# can write your own function that constructs the cluster command using args( file.name, output.dir, id),
+# you then pass the name of your function as a string, as the argument to 'cluster.fn'
+# log pref is just what the command files generated and submitted to the queue will look like
+bash.qsub <- function(bash.commands, dir=getwd(), hrs.guess=NA, grid.name="all.q", cluster.fn="q.cmd", interval=60, logpref="X") {
+  cat("\nSubmitting bash commands to grid...\n")
+  if(!is.na(hrs.guess)) {
+    cat("\n expect processing via the cluster to take roughly ",round(hrs.guess,2),"hrs ...\n",sep="")
+  }
+  for (tt in 1:length(bash.commands)) {
     # make the sh file
     # make the qsub call
     # q.submit(penncmd,cc,destination,dir)
-    q.submit(penncmd=penn.calls[tt],tt,dest=dir$cnv.qsub,cluster.fn=cluster.fn,grid.name=grid.name) 
+    q.submit(penncmd=bash.commands[tt],tt,dest=dir,cluster.fn=cluster.fn,grid.name=grid.name,logpref=logpref) 
   }
-  cat(" submitted",length(penn.calls),"jobs to",grid.name,"[qsub]\n")
+  cat(" submitted",length(bash.commands),"jobs to",grid.name,"[qsub]\n")
   # check whether it's actually running
-  wait(45,"s"); files.so.far <- list.files(dir$cnv.qsub)
+  wait(interval/1.33,"s"); files.so.far <- list.files(dir)
   if(length(files.so.far)==0) {
     warning("qsub command seems to have failed. You have 30 seconds to cancel and fix the issue, or\n",
-    "the PennCNV commands will be run serially (can be slow)")
-    wait(30,"s")
+            "the commands will be run serially (can be slow)")
+    wait(interval/2,"s")
     return(F)
   } else {
     not.complete <- T
@@ -6483,16 +6623,16 @@ do.penn.qsub <- function(penn.calls, dir, hrs.guess=1, grid.name="all.q", cluste
     done.now <- 0; no.act <- 0; notes.per.hr <- 2; hrs.so.far <- 0
     while(not.complete) {
       # check whether it's finished and update progress occassionally
-      cat("."); wait(60,"s") # only bother checking every 60 seconds (show a dot per minute)
-      which.done <- q.test.done(dest=dir$cnv.qsub)
+      cat("."); wait(interval,"s") # only bother checking every 60 seconds (show a dot per minute)
+      which.done <- q.test.done(dest=dir)
       if(length(which.done)>length(done.now)) {
-        cat(" completed ",length(which.done),"/",length(penn.calls)," qsub jobs\n",sep="")
+        cat(" completed ",length(which.done),"/",length(bash.commands)," qsub jobs\n",sep="")
         done.now <- which.done; no.act <- 0
-        if(length(done.now)>=length(penn.calls)) {
+        if(length(done.now)>=length(bash.commands)) {
           not.complete <- F
         }
       } else {
-        tmp <- cat.path(dir$cnv.qsub,"temp.temp")
+        tmp <- cat.path(dir,"temp.temp")
         system(paste("qstat | cat >",tmp)) # write queue status update to file
         temp <- readLines(tmp)
         unlink(tmp)
@@ -6503,20 +6643,29 @@ do.penn.qsub <- function(penn.calls, dir, hrs.guess=1, grid.name="all.q", cluste
       latest.hrs <- ((jj-kk)/3600); 
       if(floor(latest.hrs*notes.per.hr)>(hrs.so.far*notes.per.hr)) { 
         hrs.so.far <- floor(latest.hrs*notes.per.hr)/notes.per.hr
-        cat("PennCNV qsub now has been running for",hrs.so.far,"hours\n")
+        cat("qsub now has been running for",hrs.so.far,"hours\n")
       }
     }
     jj <- proc.time()[3]
-    cat(" PennCNV qsub commands processing completed in",round(((jj-kk)/3600),2),"hours\n")
+    cat(" qsub commands processing completed in",round(((jj-kk)/3600),2),"hours\n")
   }
   return(T)
 }
 
 
-run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn,BAF.fn="BAFdescrFile",
-            n.cores=3,q.cores=NA,grid.id="all.q",cluster.fn="q.cmd",relative=T,run.manual=F,low.ram=T,
+run.PENN.trios <- function(ped.file="my.ped",combined.file="raw.merge2.cnv",joint=FALSE,...) { 
+  # validate CNVs with trios if we have family data
+  # takes roughly as long as the original penn-cnv analysis
+  # only where the data is in trios of child-father-mother, runs from 6-column plink ped/fam file
+  run.PENN.cnv(...,trio=TRUE,joint=joint,restore.mode=TRUE,relative=FALSE,ped.file=ped.file,combined.file=combined.file,
+               use.penn.gc=FALSE)
+}
+
+
+run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdescrFile",
+            n.cores=1,q.cores=NA,grid.id="all.q",cluster.fn="q.cmd",relative=T,run.manual=F,low.ram=T,
             penn.path="/usr/local/bin/penncnv/",ucsc="hg18",sample.info=NULL,snp.info=NULL,
-            restore.mode=F,print.cmds=T,hide.penn.out=T,hmm="hh550.hmm",use.penn.gc=T)
+            restore.mode=F,print.cmds=T,hide.penn.out=T,hmm="hh550.hmm",use.penn.gc=T,trio=FALSE,...)
 {
   #takes PC corrected data, generates the prerequisite PENN-CNV input files
   # and runs PennCNV to detect CNVs (or gives the commands to run manually)
@@ -6591,19 +6740,29 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn,BAF.fn="BAFdescrFile
   #print(marker.fn)
   ##  need to make sure that any existing penn-cnv output files are deleted
   ext.files <- cat.path(dir$cnv.pen,list.files(dir$cnv.pen)); 
-  if(length(list.files(dir$cnv.pen))>0) { delete.file.list(ext.files,verbose=F);
+  if(length(list.files(dir$cnv.pen))>0 & !trio) { delete.file.list(ext.files,verbose=F);
                 cat(" deleting old penn-cnv output files from:\n",dir$cnv.pen,"\n") }
   
   if(!run.manual) { 
-    cat("\nRunning the PennCNV HMM - expect this to take several hours\n")
-    cat(" NB: to run with family data, press Ctrl-C and run PennCNV manually with appropriate options\n")
+    if(trio) {
+      cat("\nRunning PennCNV to validate one-at-a-time CNV calls using family/trio data\n")
+    } else {
+      cat("\nRunning the PennCNV (hidden markov model for CNV calling)\n")
+      #cat(" NB: to run with family data, press Ctrl-C and run PennCNV manually with appropriate options\n")
+    }
   }
   if(!multi & !run.manual & !qsub) cat(" may also be faster to run PennCNV manually on several computers in parallel\n")
-  ndir <- count.penn.dirs(dir) 
-  penn.calls <- get.penn.cmd(dir,ndir=ndir,gc.out.fn=marker.fn$gc,baf.out.fn=marker.fn$baf,
+  #ndir <- count.penn.dirs(dir) .
+  if(trio) {
+    penn.calls <- get.trios.cmd(dir,gc.out.fn=marker.fn$gc,baf.out.fn=marker.fn$baf,
+                                penn.path=penn.path,relative=F,hmm=hmm,...)
+                                #ped.file="my.ped",combined.file="raw.merge2.cnv")
+  } else {
+    penn.calls <- get.penn.cmd(dir,gc.out.fn=marker.fn$gc,baf.out.fn=marker.fn$baf,
                              relative=relative,penn.path=penn.path,hmm=hmm,use.penn.gc=use.penn.gc)
+  }
   n.calls <- length(penn.calls)
-  if(multi) {  must.use.package("multicore",F) } # run in parallel
+  if(multi) {  must.use.package("parallel",F) } # run in parallel
   if(relative) { 
     rel.cd <- paste("cd",dir$cnv) 
     cur.dir <- getwd(); system(rel.cd)  # use relative paths
@@ -6651,18 +6810,18 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn,BAF.fn="BAFdescrFile
     cat(paste("\n parallel PennCNV processing for",n.calls,"files initiated: "))
     for (tt in 1:n.calls) {
       cat(paste(tt,"..",sep=""))
-      nullList[[tt]] <- multicore::parallel(system(penn.calls[tt],intern=hide.penn.out, ignore.stderr=hide.penn.out))
+      nullList[[tt]] <- parallel::mcparallel(system(penn.calls[tt],intern=hide.penn.out, ignore.stderr=hide.penn.out))
     }  
-    cat("\n expect HMM processing to take roughly ",round(hrs.guess,2),"hrs ...",sep="")
+    cat("\n expect processing to take roughly ",round(hrs.guess,2),"hrs ...",sep="")
    # print(sapply(nullList,is))
    # print(penn.calls[tt])
-    nullList <- collect(nullList,wait=T)
+    nullList <- parallel::mccollect(nullList,wait=T)
     jj <- proc.time()
     cat(" parallel PennCNV took",round((jj[3]-kk[3])/60),"minutes\n")
   }
   if(relative) { setwd(cur.dir) } # go back to original directory
   # run CNV-QC on processed files
-  if(is.data.tracker(DT)) {
+  if(is.data.tracker(DT) & !trio) {
     DT <- setSlot(DT,proc.done=5,gc.marker=cat.path(dir$gc,"marker.gc.RData"),warns=F)
     return(DT)
   } else {
@@ -6671,12 +6830,15 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn,BAF.fn="BAFdescrFile
 }  
   
 
+
+
 run.CNV.qc <- function(DT=NULL,dir=NULL,num.pcs=NA,penn.path="/usr/local/bin/penncnv/",
                          ucsc="hg18",sample.info=NULL,snp.info=NULL,
                          out.format="Ranges",result.pref="cnvResults",
-                         cnv.qc=T,rare.qc=T,plate.qc=T,restore.mode=F,
+                         cnv.qc=T,rare.qc=T,plate.qc=T,restore.mode=F,trio=FALSE,joint=FALSE,ped.file="my.ped",
                          pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,rmv.low.plates=F,
-                         min.sites=10,rare.olp=.5,rare.pc=1,rmv.bad.reg=T,hide.plink.out=T,verbose=F)
+                         min.sites=10,rare.olp=.5,rare.pc=1,rmv.bad.reg=T,hide.plink.out=T,verbose=F,
+                         hmm="hh550.hmm",q.cores=NA,grid.id="all.q",n.cores=1)
 {
   #takes PC corrected data, generates the prerequisite PENN-CNV input files
   # and runs PennCNV to detect CNVs (or gives the commands to run manually)
@@ -6712,7 +6874,10 @@ run.CNV.qc <- function(DT=NULL,dir=NULL,num.pcs=NA,penn.path="/usr/local/bin/pen
                    cnv.qc=cnv.qc,rare.qc=rare.qc,plate.qc=plate.qc,pval=pval,
                    del.rate=del.rate,dup.rate=dup.rate,thr.sd=thr.sd,plate.thr=plate.thr,
                    min.sites=min.sites,rare.olp=rare.olp,rare.pc=rare.pc,rmv.low.plates=rmv.low.plates,
-                   rmv.bad.reg=rmv.bad.reg,verbose=verbose) 
+                   rmv.bad.reg=rmv.bad.reg,verbose=verbose,trio=trio,joint=joint,ped.file=ped.file,  
+                   DT=DT,num.pcs=num.pcs,run.manual=F,hmm=hmm,print.cmds=F,
+                   q.cores=q.cores,grid.id=grid.id, n.cores=n.cores)
+  
   cat("\nCNV-QC complete\n")
   penn.cmds <- my.out
   if(!out.format %in% c("cnvGSA","Ranges")) { out.format <- "Ranges" }
@@ -6866,6 +7031,8 @@ delete.file.list <- function(files,verbose=T) {
 }
 
 
+
+
 delete.all.files <- function(dir,rescue=NULL,to="~/Documents/") {
   if(!is.list(dir)) { stop("'dir' should be a list of directories specific to plumbCNV")}
   if(length(rescue)>0 & is.ch(rescue)) {
@@ -6887,12 +7054,12 @@ delete.all.files <- function(dir,rescue=NULL,to="~/Documents/") {
 }
 
 
-prv.big.matrix <- function(bigMat,dir="",name=NULL,dat=T,descr=NULL,bck=NULL,mem=F,row=3,col=2,
-                          rcap="SNPs",ccap="Samples",rlab="SNP-id",clab="Sample IDs",...) {
-  prv.big.matrix(bigMat=bigMat,dir=dir,name=name,dat=dat,descr=descr,bck=bck,
-                    mem=mem,row=row,col=col,
-                    rcap=rcap,ccap=ccap,rlab=rlab,clab=clab)
-}
+# prv.big.matrix <- function(bigMat,dir="",name=NULL,dat=T,descr=NULL,bck=NULL,mem=F,row=3,col=2,
+#                           rcap="SNPs",ccap="Samples",rlab="SNP-id",clab="Sample IDs",...) {
+#   prv.big.matrix(bigMat=bigMat,dir=dir,name=name,dat=dat,descr=descr,bck=bck,
+#                     mem=mem,row=row,col=col,
+#                     rcap=rcap,ccap=ccap,rlab=rlab,clab=clab)
+# }
 
 
 #dummylst <- Rfile.index("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
@@ -6921,7 +7088,7 @@ do.roc <- function(y=numeric(),x=numeric(),fn="ROC.pdf",plot=F) {
 qscore.cnvs <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.flank=5,snp.info=NULL,
                         col1="black",scheme="mono",LRR=T,BAF=F,bafOverlay=F,hzOverlay=F,
                         PREPOSTPC=F,baf.file="big.baf",lrr.file="big.pcc",n.cores=1,...) {
-  must.use.package(c("multicore","bigmemory","biganalytics")); must.use.package("genoset",T)
+  must.use.package(c("parallel","bigmemory","biganalytics")); must.use.package("genoset",T)
   if(is(cnv.ranges)[1]!="RangedData") { warning("not a RangedData object"); return(NULL) }
   if(any(!c("id") %in% colnames(cnv.ranges))) { warning("cnv.ranges must contain id"); return(NULL) }
   idz <- cnv.ranges$id; stz <- start(cnv.ranges); enz <- end(cnv.ranges); chrz <- chr(cnv.ranges); wz <- width(cnv.ranges)
@@ -7627,7 +7794,7 @@ read.sample.info <- function(dir,type="tab",fn="sampleinfo",verbose=F,remove.fai
   } else {
     ofn <- cat.path(dir$ano,fn,ext="tab")
     if(!file.exists(ofn)) { warning("No info tab file was found") ; return(NULL) }
-    sample.info <- read.table(file=ofn)
+    sample.info <- read.table(file=ofn,stringsAsFactors=FALSE)
   }
   if(verbose) {
     cat(paste("sample.info object read from:",ofn,"\n"))
@@ -7759,21 +7926,22 @@ print.snp.sample.summary <- function(dir) {
   
   if("grp" %in% cn) { gr <- sample.info$grp; if(length(unique(gr))>0) {
     cat("\n=== COHORT SUMMARY ===\n")
-    grp.tab <- table2d(pf,gr,row=c(0,1),col=unique(gr),rn=c("pass","fail"),cn=paste("grp",unique(gr)))
+    grp.tab <- table2d(pf,gr,row=c(0,1),col=narm(unique(gr)),rn=c("pass","fail"),cn=paste("grp",narm(unique(gr))))
     #rownames(grp.tab) <- c("pass","fail") ; colnames(grp.tab) <- paste("grp",unique(gr))
     pc.rmv <- (t(grp.tab)/colSums(grp.tab))[,2]
     print(grp.tab); cat(paste(round(100*pc.rmv,2),"% failed in grp=",
-                 unique(gr),"\n",sep=""),sep="")
+                 narm(unique(gr)),"\n",sep=""),sep="")
   }}
   if("phenotype" %in% cn) { ph <- sample.info$phenotype; if(length(unique(ph))>0) {
     cat("\n=== PHENOTYPE SUMMARY ===\n")
     #ph.tab <- table(pf,ph)
-    ph.tab <- table2d(pf,ph,row=c(0,1),col=unique(ph),rn=c("pass","fail"),cn=paste("pheno",unique(ph)))
+    #prv(ph)
+    ph.tab <- table2d(pf,ph,row=c(0,1),col=narm(unique(ph)),rn=c("pass","fail"),cn=paste("pheno",narm(unique(ph))))
     #rownames(ph.tab) <- c("pass","fail"); colnames(ph.tab) <- paste("pheno",unique(ph))
     pc.rmv <- (t(ph.tab)/colSums(ph.tab))[,2]
-    print(ph.tab)
+    print(ph.tab); cat("\n")
     cat(paste(round(100*pc.rmv,2),"% failed in phenotype=",
-                    unique(ph),"\n",sep=""),sep="")
+                    narm(unique(ph)),"\n",sep=""),sep="")
   }}
 }
 
@@ -8003,7 +8171,7 @@ samp.cr.summary <- function(bigMat,histo=F,print=F) {
 
 snp.cr.summary <- function(bigMat,histo=F,print=F,n.cores=1) {
   # calculate call rate using percentage of missing by column, in a bigmatrix
-  must.use.package(c("multicore","bigmemory"))
+  must.use.package(c("parallel","bigmemory"))
   countNA <- function(x) { length(which(is.na(x))) }
   row.ms <- multi.fn.on.big(bigMat,1,FUN=countNA,dir=dir$big,by=200,n.cores=n.cores)
   row.ms <- unlist(row.ms)
@@ -8206,7 +8374,7 @@ calcGC <- function(object, bsgenome, expand=1e6, return.bio=T, missing.as=NA, n.
   if (!requireNamespace("Biostrings",quietly=TRUE)) {
     stop("Failed to require Biostrings package.\n")
   }
-  if(n.cores>1) { must.use.package("multicore") }
+  if(n.cores>1) { must.use.package("parallel") }
   calc.one.chr <- function(chr.name) {
     range = seq.int(chr.ind[chr.name, 1], chr.ind[chr.name, 2])
     seq = bsgenome[[chr.name]]
@@ -8273,7 +8441,7 @@ get.all.samp.fails <- function(dir,verb=F)
 plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.flank=5,snp.info=NULL,
                             col1="black",scheme="mono",LRR=T,BAF=F,bafOverlay=F,hzOverlay=F,
                             PREPOSTPC=F,baf.file="big.baf",lrr.file="big.pcc",n.cores=1,n.pcs=NA,...) {
-  must.use.package(c("multicore","bigmemory","biganalytics")); must.use.package("genoset",T)
+  must.use.package(c("parallel","bigmemory","biganalytics")); must.use.package("genoset",T)
   dir <- validate.dir.for(dir,c("big","res"))
   if(is(cnv.ranges)[1]!="RangedData") { warning("not a RangedData object"); return(NULL) }
   if(any(!c("id") %in% colnames(cnv.ranges))) { warning("cnv.ranges must contain id"); return(NULL) }
@@ -8323,12 +8491,12 @@ plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.f
     while(cc <=n.to.plot) {
       nc <- nc + 1
       poz <- c( max(0,(stz[cc]-(pc.flank*wz[cc]))), min((enz[cc]+(pc.flank*wz[cc])),cL[as.numeric(chrz[cc])]) ) #; print(poz)
-      nufin[[nc]] <- multicore::parallel(suppressWarnings({
+      nufin[[nc]] <- parallel::mcparallel(suppressWarnings({
         cnv.plot(DT=DT,cnvPlotFileName=paste(file,cc,sep="."),samples=idz[cc],Chr=chrz[cc],Pos=poz,Cnv=c(stz[cc],enz[cc]),dir=dir,snp.info=snp.info,
                col1=col1,scheme=scheme,lrr.file=lrr.file,baf.file=baf.file,PREPOSTPC=PREPOSTPC,n.pcs=n.pcs,
                LRR=LRR,BAF=BAF,bafOverlay=bafOverlay,hzOverlay=hzOverlay,pfb.rng=pfb.rng,hz.rng=hz.rng,...) }))
       cc <- cc + 1
-      if(nc==n.cores | cc==n.to.plot) { nutin <- collect(nufin); nc <- 0 }
+      if(nc==n.cores | cc==n.to.plot) { nutin <- parallel::mccollect(nufin); nc <- 0 }
     }
   } else {
     pdf(ofn)
@@ -9212,12 +9380,15 @@ do.CNV.all.overlaps.summary <- function(cnvResults,dir,comps=c(1:5),dbs=c(1:3),.
     for (cc in 1:n.c) {
       tl <- paste("Running overlap analysis for:",compz[cc],"with",lab[dd])
       cat(tl,"\n")  #,paste(rep("=",nchar(tl)),collapse=""),"\n\n",sep="")
+      if(cc==1 & dd==n.d) { testtime <- T } else { testtime <- F }
       dbz[[dd]]$overlaps[[cc]] <- oo <- find.overlaps(cnvResults[[set.n[cc]]],DEL=DELs[cc],DUP=DUPs[cc],
-                                                      db=db[dd],dir=dir,quiet=T,...)
+                                                      db=db[dd],dir=dir,quiet=T,testy=testtime,...)
+      #
      # cat(".. done,")
       #print(headl(oo)); print(dim(oo)); print(length(oo)); print(is(oo))
       dbz[[dd]]$counts[[cc]] <- count.cnvs(oo,content.txt=lab[dd],cnv.sample.map=cnvResults[[set.n[cc]]],by.phenotype=T)
      # cat(" counts ... done",cc,"\n")
+      #if(cc==n.c) { prv(dbz[[dd]]$counts[[cc]]) }
     }
   }
   return(dbz)
@@ -9641,7 +9812,7 @@ q.cmd <- function(file.name,output.dir="",id="") {
 
 
 make.bad.region.file <- function(dir,ucsc="hg18",fn="badRegions.txt") {
-  dir <- validate.dir.for(dir,"cnv.plk")
+  dir <- validate.dir.for(dir,"cnv.qc")
   excl.reg <- c(get.telomere.locs(text=T,ucsc=ucsc,kb=500),
                 get.centromere.locs(text=T,ucsc=ucsc),
                 get.immunog.locs(text=T,ucsc=ucsc))  #IG must be last for ordered chr
@@ -9654,7 +9825,7 @@ add.info.to.ranges <- function(dir,cnv.ranges,target="phenotype",info.file="phen
   min.chars <- 4 # column name in 'file' must have at least the first 'min.chars' letters of 'target' 
   if(is(cnv.ranges)[1]!="RangedData") { warning("must be a RangedData object"); return(cnv.ranges) }
   if(!"id" %in% colnames(cnv.ranges)) { warning("cnv.ranges must have column 'id'"); return(cnv.ranges) }
-  phenot <- as.data.frame(reader(fn=find.file(info.file,dir$ano,dir)))
+  phenot <- as.data.frame(reader(fn=find.file(info.file,dir$ano,dir)),stringsAsFactors=FALSE)
   id.col <- find.id.col(phenot,ids=cnv.ranges$id,ret="col")[[1]]
   if(id.col==0) { idz <- rownames(phenot); id.in.col <- F } else { idz <- phenot[,id.col]; id.in.col <- T }
   if(ncol(phenot)==(1+as.numeric(id.in.col))) { 
@@ -9684,7 +9855,8 @@ plot.pheno.cnvs <- function(fn,type="DEL",pref="",dir)
   ## make plot of CNV regions across chromosomes in competing phenotypes for rare dels/dups
   if(!file.exists(fn)) { warning("cnv.summary file not found"); return(NULL) }
   if(length(grep("cnv.summary",fn))<1) { warning("doesn't look like a plink cnv.summary file: may fail") }
-  tt <- reader(fn,treatas="txt")
+  tt <- reader(fn)
+  #print(Dim(tt))
   chr.list <- unique(tt[,1])
   if(length(chr.list)>0) {
     if(pref!="") { pref <- paste(pref,"_",sep="") }
@@ -9692,8 +9864,10 @@ plot.pheno.cnvs <- function(fn,type="DEL",pref="",dir)
     pdf(ofn)
     linev <- F
     allx <- vector("list",length(chr.list)); names(allx) <- paste(chr.list)
+    #print(Dim(tt))
     for (cc in 1:length(chr.list)) {
-      xx <- tt[tt[,1]==chr.list[cc],-c(1:2)]
+      xx <- tt[tt[,1]==chr.list[cc],-c(1:2),drop=FALSE]
+     # prv(xx)
       xx <- apply(xx,2,as.numeric); allx[[paste(chr.list[cc])]] <- xx
       cnt <- xx[,3]; 
       if(linev) {
@@ -10047,7 +10221,7 @@ get.plate.snp.stats.for.big <- function(bigMat, dir, func=mean, n.cores=1,...) {
 plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.as.we.go=F,
                      dt.name="datatracker",run.mode="scratch",snp.run.mode="normal",
                      grps=NA,snp.fields=NULL,geno.file=NULL,big.lrr=NULL,big.baf=NULL,
-                     aux.files.dir=NULL,plink.imp=F,
+                     aux.files.dir=NULL,plink.imp=F,manual.col.nums=NULL,fet.analysis.p=0.05,
                      n.cores=1,q.cores=NA,grid.id="all.q",cluster.fn="q.cmd",low.ram=T,
                      start.at=0,pause.after=6,erase.previous=F,verbose=F,hide.penn.plink=T,
                      ucsc="hg18",
@@ -10061,7 +10235,8 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                      lrr.report=T,chr.ab.report=T,plate.report=T,
                      pc.to.keep=.11,assoc=F,n.store=50,correct.sex=F,add.int=F,
                      comparison=T,comp.gc=F,comps="plate",use.penn.gc=F,
-                     penn.path="/usr/local/bin/penncnv64/",hmm="hh550.hmm",relative=F,run.manual=F,print.cmds=F,
+                     penn.path="/usr/local/bin/penncnv64/",hmm="hh550.hmm",
+                     relative=F,run.manual=F,print.cmds=F,trio=F,joint=F,ped.file="my.ped",
                      result.pref="cnvResults",out.format="Ranges",results="DT",print.summary.overlaps=F,
                      cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,
                      rmv.low.plates=F,min.sites=10,rare.olp=0.5,rare.pc=0.01,rmv.bad.reg=T,settings=NULL) 
@@ -10142,7 +10317,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
     Header("0. DATA EXTRACTION","#")
     sfiles <- init.DATA.read(dir,doLRR=T,doBAF=T,plink.imp=plink.imp,n.cores=n.cores,hwe.thr=hwe.thr,
                              callrate.snp.thr=callrate.snp.thr,callrate.samp.thr=callrate.samp.thr,
-                             snp.info.sup=snp.support,genome.stud.file=gsf,combine.files=F) 
+                             snp.info.sup=snp.support,genome.stud.file=gsf,combine.files=F,manual.col.nums=manual.col.nums) 
     proc.done <- 0
   } else {
     f01 <- list.files(dir$col,pattern="LRR.dat");  f02 <- list.files(dir$baf.col,pattern="LRR.dat")
@@ -10279,7 +10454,8 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                      cnv.qc=cnv.qc,rare.qc=rare.qc,plate.qc=plate.qc,pval=pval,restore.mode=restore.mode,
                      del.rate=del.rate,dup.rate=dup.rate,thr.sd=thr.sd,plate.thr=plate.thr,
                      min.sites=min.sites,rare.olp=rare.olp,rare.pc=rare.pc,rmv.low.plates=rmv.low.plates,
-                     rmv.bad.reg=rmv.bad.reg)
+                     rmv.bad.reg=rmv.bad.reg,trio=trio,joint=joint,ped.file=ped.file,
+                     hmm=hmm,q.cores=q.cores,grid.id=grid.id,n.cores=n.cores)
     DT <- setSlot(DT,settings=settings,proc.done=6)
   }
   write.data.tracker(DT,fn=dt.name)
@@ -10314,6 +10490,18 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
         sink()
         #print(pheno.ratios.table(dir,sum.table=sct))
         cat("wrote to file:",ofn,"\n")
+        if(is.numeric(fet.analysis.p)) {
+          # produce FET analysis #
+          if(n.phenos>2) { warning("found more than 2 phenotypes!")}
+          oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+          oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+          ofn <- cat.path(dir$res,"FETsummary",suf=result.pref,ext="txt")
+          sink(ofn)
+          tts <- toptables(oo1,oo2,force.percentage(fet.analysis.p))  # to file copy
+          sink()
+          tts <- toptables(oo1,oo2,force.percentage(fet.analysis.p))  # on screen copy
+          cat("wrote to file:",ofn,"\n")
+        }
       }
     }
   }

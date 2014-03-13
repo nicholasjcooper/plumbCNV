@@ -92,7 +92,7 @@ suck.dgv.file <- function(fnd) {
     tab1 <- strsplit(fil[2:25]," ")
     tab1 <- lapply(tab1,function(X) { X[X!=""] })
     nval <- length(hdz)
-    tabmain <- t(sapply(tab1,tail,nval)); tabmain <- as.data.frame(tabmain)
+    tabmain <- t(sapply(tab1,tail,nval)); tabmain <- as.data.frame(tabmain,stringsAsFactors=FALSE)
     tabmain[,2:5] <- apply(tabmain[,2:5],2,as.numeric)
     tabrn <- lapply(tab1,function(X) { paste(X[-c(1,length(X):(length(X)-nval+1))],collapse=" ") })
     colnames(tabmain) <- hdz
@@ -298,7 +298,7 @@ get.correspondence <- function(all.runs.d,plots=F) {
   length.tab <- length.tab[order(length.tab[,2]),]
   length.tab <- length.tab[order(length.tab[,1]),]
   rownames(length.tab) <- NULL
-  range.tab <- data.frame.to.ranged(as.data.frame(length.tab))
+  range.tab <- data.frame.to.ranged(as.data.frame(length.tab),stringsAsFactors=FALSE)
   nr <- length(z1); tc <- table(all.runs.d$RUN); nc <- length(tc)
   mm <- matrix(nrow=nr,ncol=nc); colnames(mm) <- names(tc); rownames(mm) <- names(rnz)
   colvec <- 1:ncol(mm)
@@ -420,22 +420,22 @@ FET <- function(case,ctrl,dir=NULL,sample.info=NULL,case.d=NA,cont.d=NA) {
 }
 
 
-extract.cnv.regions <- function(dir, type="DEL", by.cnv=F, enriched=T, genes=T, lwr=.25,upr=4, FET=F) {
+extract.cnv.regions <- function(dir, type="DEL", by.cnv=F, enriched=T, genes=T, lwr=.25,upr=4, FET=F, prt=F) {
   #probably only work when 2 phenotypes are present
   dir <- validate.dir.for(dir,"cnv.qc")
   must.use.package("genoset",T)
   type <- toupper(type); if(type!="DUP") { type <- "DEL" }
   cnv.ov <- cat.path(dir$cnv.qc,pref="rare",fn=type,ext="cnv.overlap")
   ## read in cnv overlap file
-  print(cnv.ov)
-  tt <- read.table(cnv.ov,header=T)
+  #print(cnv.ov)
+  tt <- read.table(cnv.ov,header=T,stringsAsFactors=FALSE)
    # tt <- reader(cnv.ov)
     inter <- tt[tt[,2]=="CON",]
   un <- tt[tt[,2]=="UNION",] # CNVRs
   pp <- strsplit(un[,4],":",fixed=T)
   case <- as.numeric(sapply(pp,"[",1)); ctrl <- as.numeric(sapply(pp,"[",2))
   ii <- ((case/ctrl)[case!=0 & ctrl!=0]) #[1:100]
-  cat("Ratio summary:\n"); print(summary(ii))
+  if(prt) { cat("Ratio summary:\n"); print(summary(ii)) }
   case0 <- case; case0[case0==0] <- 0.5; ctrl0 <- ctrl; ctrl0[ctrl0==0] <- 0.5;
   ii0 <- (case0/ctrl0)
   main <- tt[tt[,2]!="UNION" & tt[,2]!="CON",]  # results for individuals
@@ -460,8 +460,10 @@ extract.cnv.regions <- function(dir, type="DEL", by.cnv=F, enriched=T, genes=T, 
       many.ctrl <- cbind(many.ctrl,substr(CNVRs$genes[indx2],1,40))[,-match(c("FID","TYPE","SCORE"),colnames(many.ctrl))]
       many.case <- cbind(many.case,substr(CNVRs$genes[indx],1,40))[,-match(c("FID","TYPE","SCORE"),colnames(many.case))]
     } 
-    cat("\nEnriched in unaffected summary:\n"); print(many.ctrl); 
-    cat("\nEnriched in affected:\n"); print(many.case) # examples where case/ctrl outnumber each other >=4:1
+    if(prt) {
+      cat("\nEnriched in unaffected summary:\n"); print(many.ctrl); 
+      cat("\nEnriched in affected:\n"); print(many.case) # examples where case/ctrl outnumber each other >=4:1
+    }
   }
   if(!by.cnv) {
     return(CNVRs)
@@ -531,43 +533,70 @@ my.manhat <- function(oo,yl=8,lab05=F,lab01=F) {
 
 
 toptables <- function(oo1,oo2,pv=0.05,prt=T) {
-  tt1 <- as.data.frame(oo1[which(oo1$sig<pv),])
-  tt2 <- as.data.frame(oo2[which(oo2$sig<pv),])
-  colnames(tt1) <- colnames(tt2) <- c("chr","start (Mb)","end (Mb)","length (Kb)",
+  sig.dels <- which(oo1$sig<pv)
+  sig.dups <- which(oo2$sig<pv)
+  tt1 <- tt2 <- NULL
+  if(prt) { cat("\nCNV-regions frequency by phenotype analysis: using Fischers Exact Test, showing results with p<",pv,"\n",sep="") }
+  if(length(sig.dels)<1) { 
+    warning("no significant DELs at p<",pv) 
+  } else {
+    tt1 <- as.data.frame(oo1[sig.dels,,drop=FALSE])
+    colnames(tt1) <- c("chr","start (Mb)","end (Mb)","length (Kb)",
                                       "n","cases","ctrls","sig","genes")
-  rownames(tt1) <- tt1[,5]; rownames(tt2) <- tt2[,5]
-  tt1 <- tt1[,-5] #-which(duplicated(tt1$genes)),-c(5)]
-  tt2 <- tt2[,-5] #-which(duplicated(tt2$genes)),-c(5)]
-  tt1[,4] <- round(tt1[,4]/1000,1)
-  tt1[,c(2,3)] <- round(tt1[,c(2,3)]/10^6,2)
-  tt2[,4] <- round(tt2[,4]/1000,1)
-  tt2[,c(2,3)] <- round(tt2[,c(2,3)]/10^6,2)
-  tt1[,7] <- format(tt1[,7],digits=3)
-  tt2[,7] <- format(tt2[,7],digits=3)
-  tt1$genes[tt1$genes==""] <- "Intergenic"
-  tt2$genes[tt2$genes==""] <- "Intergenic"
-  DELtt <- cbind(tt1[,1:7],substr(tt1[,8],1,16))
-  DUPtt <- cbind(tt2[,1:7],substr(tt2[,8],1,16))
-  colnames(DELtt)[8] <- colnames(DUPtt)[8] <- "genes"
-  if(prt) {
-    cat("DELETIONS:\n")
-    print(DELtt[order(DELtt[,6]-DELtt[,5]),])
-    cat("DUPLICATIONS:\n")
-    print(DUPtt[order(DUPtt[,6]-DUPtt[,5]),])
+    tt1[["genes"]] <- as.character(tt1[["genes"]])
+    rownames(tt1) <- tt1[,5]
+    tt1 <- tt1[,-5] #-which(duplicated(tt1$genes)),-c(5)]
+    tt1[,4] <- round(tt1[,4]/1000,1)
+    tt1[,c(2,3)] <- round(tt1[,c(2,3)]/10^6,2)
+    tt1[,7] <- format(tt1[,7],digits=3)
+    if(any(is.na(tt1$genes))) { tt1$genes[is.na(tt1$genes)] <- "Unknown" }
+    if(any(tt1$genes=="NA")) { tt1$genes[tt1$genes=="NA"] <- "Intergenic" }
+    if(any(tt1$genes=="")) { tt1$genes[tt1$genes==""] <- "Intergenic" }
+    DELtt <- cbind(tt1[,1:7],substr(tt1[,8],1,16))
+    colnames(DELtt)[8] <- "genes"
+    if(prt) {
+      cat("DELETIONS:\n")
+      print(DELtt[order(DELtt[,6]-DELtt[,5]),])
+    }
+  }
+  if(length(sig.dups)<1) { 
+    warning("no significant DUPs at p<",pv) 
+  } else {
+    tt2 <- as.data.frame(oo2[sig.dups,,drop=FALSE])
+    colnames(tt2) <- c("chr","start (Mb)","end (Mb)","length (Kb)",
+                                      "n","cases","ctrls","sig","genes")
+    tt2[["genes"]] <- as.character(tt2[["genes"]])
+    rownames(tt2) <- tt2[,5]
+    tt2 <- tt2[,-5] #-which(duplicated(tt2$genes)),-c(5)]
+    tt2[,4] <- round(tt2[,4]/1000,1)
+    tt2[,c(2,3)] <- round(tt2[,c(2,3)]/10^6,2)
+    tt2[,7] <- format(tt2[,7],digits=3)
+    if(any(is.na(tt2$genes))) { tt2$genes[is.na(tt2$genes)] <- "Unknown" }
+    if(any(tt2$genes=="NA")) { tt1$genes[tt2$genes=="NA"] <- "Intergenic" }
+    if(any(tt2$genes=="")) { tt2$genes[tt2$genes==""] <- "Intergenic" }
+    DUPtt <- cbind(tt2[,1:7],substr(tt2[,8],1,16))
+    colnames(DUPtt)[8] <- "genes"
+    if(prt) {
+      cat("DUPLICATIONS:\n")
+      print(DUPtt[order(DUPtt[,6]-DUPtt[,5]),])
+    }
   }
   return(list(DEL=tt1,DUP=tt2))
 }
 
 
 
+
 if(F) {
   #cbind(oo[[1]],oo[[2]],substr(oo[[3]],1,10))[order(oo[[1]]/oo[[2]]),]
-  pdf("qqDEL.pdf"); qqplot(x=runif(nrow(oo)),y=oo$sig,type="l",ylab="p.value",xlab="uniform distribution 0,1"); abline(a=0,b=1,lty="dotted") ;dev.off()
-  pdf("qqDEL.pdf"); qqplot(x=runif(nrow(oo)),y=oo$sig,type="l",ylab="p.value",xlab="uniform distribution 0,1"); abline(a=0,b=1,lty="dotted") ;dev.off()
-  
+
   
   oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=T)
   oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=T)
+  pdf(cat.path(dir$res,"qqDEL.pdf")); qqplot(x=runif(nrow(oo1)),y=oo1$sig,type="l",ylab="p.value",xlab="uniform distribution 0,1"); abline(a=0,b=1,lty="dotted") ;dev.off()
+  pdf(cat.path(dir$res,"qqDUP.pdf")); qqplot(x=runif(nrow(oo2)),y=oo2$sig,type="l",ylab="p.value",xlab="uniform distribution 0,1"); abline(a=0,b=1,lty="dotted") ;dev.off()
+  
+
   cnvs2 <- extract.cnv.regions(dir,type="dup",by.cnv=T,lwr=0.25,upr=4,FET=T)
   cnvs1 <- extract.cnv.regions(dir,type="del",by.cnv=T,lwr=0.25,upr=4,FET=T)
   

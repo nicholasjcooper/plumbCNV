@@ -1,6 +1,61 @@
 
 ### VERY GENERAL ###
 
+# to make plumbcnv work, need to make this tiny fix to reader's get.delim (should fix in april)
+# 
+# get.delim <- function(fn,n=10,comment="#",skip=0,
+#                       delims=c("\t"," ","\t| +",";",","),large=10,one.byte=TRUE)  
+# {
+#   # test top 'n' lines to determine what delimeter the file uses
+#   if(!file.exists(fn)) { stop(paste("cannot derive delimiter as file",fn,"was not found"))}
+#   test.bit <- n.readLines(fn=fn,n=n,comment=comment,skip=skip)
+#   #print(test.bit)
+#   num.del <- list()
+#   if(any(nchar(delims)>1) & one.byte) { delims <- delims[-which(nchar(delims)>1)] }
+#   for (cc in 1:length(delims)) {
+#     fff <- nchar(delims[[cc]])==1
+#     num.del[[cc]] <- sapply(strsplit(test.bit,delims[[cc]],fixed=fff),length)
+#   }
+#   #prv(num.del)
+#   if(all(unlist(num.del)==1)) { 
+#     warning("not a delimited file, probably a vector file")
+#     return(NA)
+#   }
+#   # are there some delimiters that produce consistent ncol between rows?
+#   need.0 <- sapply(num.del,function(X) { sum(diff(X)) })
+#   num.del <- sapply(num.del,"[",1)
+#   if(any(!need.0)) {
+#     #rng <- range(num.del)
+#     candidates <- which(num.del>1 & num.del<=large & !need.0)
+#     #print(candidates)
+#     if(length(candidates)>0) { out <- candidates[1] 
+#     } else {
+#       candidates <- which(num.del>large & !need.0)
+#       if(length(candidates)>0) { out <- candidates[1]
+#       } else {
+#         candidates <- which(num.del==1 & !need.0)
+#         if(length(candidates)>0) { out <- candidates[1]
+#         } else {
+#           warning("no delimiters tried were able to produce a valid file spec")
+#           out <- NULL
+#         }
+#       }
+#     }
+#   } else {
+#     warning("no delimiters tried were able to produce a valid file spec")
+#     out <- NULL
+#   }
+#   #print(delims)
+#   return(delims[out])
+# }
+
+
+
+# internal function
+# normal sort function excludes NAs without asking, this keeps them in
+sortna <- function(...) {
+  sort(..., na.last=TRUE)
+}
 
 clean.fn <- function(x,fail=NA,fn=function(x) { x }) {
   # allows an sapply style function to only work on valid values
@@ -81,7 +136,9 @@ jlapply <- function(list1, list2, FUN=NULL, select=F, pc=F, collapse=NULL) {
 
 
 ## forces a 2d table with every possible cell (allow zero counts)
-table2d <- function(...,col,row,rn=NULL,cn=NULL) {
+table2d <- function(...,col,row,rn=NULL,cn=NULL,remove.na=TRUE) {
+  clmn <- paste(col); rowe <- paste(row)
+  if(remove.na) { clmn <- narm(clmn); rowe <- narm(rowe); rn <- narm(rn); cn <- narm(cn) }
   inp <- list(...); bad1 <- F 
   if(length(inp)<2) { bad1 <- T } else { 
     if(length(inp[[1]])!=length(inp[[2]])) { bad1 <- T 
@@ -91,14 +148,16 @@ table2d <- function(...,col,row,rn=NULL,cn=NULL) {
     warning("at least 2 arguments of equal length required for table2d, passing to table")
     return(table(...)) 
   }
-  rr <- inp[[1]]; cc <- inp[[2]]
+  rrr <- inp[[1]]; ccc <- inp[[2]]
   # add 1 of each possible cell to the 2 vectors, to ensure each table cell is represented
-  rr <- c(rep(sort(row),each=length(col)),rr)
-  cc <- c(rep(sort(col),length(row)),cc)
+  rrr <- c(rep(sortna(rowe),each=length(clmn)),rrr)
+  ccc <- c(rep(sortna(clmn),length(rowe)),ccc)
+  #prv(rrr,ccc)
   nmz <- sapply(match.call(expand.dots=TRUE)[-1], deparse) # get ... arg names
-  TT <- table(rr,cc,dnn=nmz[1:2])-1
-  if(is.character(rn)) { if(length(rn)==length(row)) { rownames(TT) <- rn } }
-  if(is.character(cn)) { if(length(cn)==length(col)) { colnames(TT) <- cn } }
+  TT <- table(rrr,ccc,dnn=nmz[1:2])-1
+  #prv(TT,rn) ; print(cn)
+  if(is.character(rn)) { if(length(rn)==length(rowe)) { rownames(TT) <- rn[1:nrow(TT)] } }
+  if(is.character(cn)) { if(length(cn)==length(clmn)) { colnames(TT) <- cn[1:ncol(TT)] } }
   return(TT)    
 }
 
@@ -149,7 +208,7 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
   ## abandon longer names as they clash with function names
   st <- paste(start); en <- paste(end); ch <- paste(chr); wd <- paste(width)
   must.use.package(c("genoset","IRanges"),T)
-  if(is.matrix(dat)) { dat <- as.data.frame(dat) }
+  if(is.matrix(dat)) { dat <- as.data.frame(dat,stringsAsFactors=FALSE) }
   if(!is.data.frame(dat)) { stop("Error: not a dataframe")}
   key.nms <- c(ids,st,en,ch,wd)
   tries <- 0
@@ -183,11 +242,12 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
       id <- paste(1:nrow(dat)) 
     }
   }
-  if(length(ch)>0) { ch <- gsub("chr","",dat[[ch]],ignore.case=T) } else { ch <- NULL }
-  if(length(st)>0) { st <- dat[[st]] } else { st <- NULL }
-  if(length(en)>0) { en <- dat[[en]] } else { en <- NULL }
-  if(length(wd)>0) { wd <- dat[[wd]] } else { wd <- NULL }
-  outData <- RangedData(ranges=IRanges(start=st,end=en,names=id),space=ch,universe=ucsc[1])
+  if(length(ch)>0) { ch1 <- gsub("X","chrX",gsub("chr","",dat[[ch]],ignore.case=T)) } else { ch1 <- NULL }
+  if(length(st)>0) { st1 <- as.numeric(dat[[st]]) } else { st1 <- NULL }
+  if(length(en)>0) { en1 <- as.numeric(dat[[en]]) } else { en1 <- NULL }
+  if(length(wd)>0) { en1 <- st1+as.numeric(dat[[wd]]) } # { en1 <- st1+dat[[wd]] }
+  #print(length(st1)); print(head(st1))
+  outData <- RangedData(ranges=IRanges(start=st1,end=en1,names=id),space=ch1,universe=ucsc[1])
   outData <- toGenomeOrder(outData,strict=T)
   # note when adding data subsequently that 'RangedData' sorts by genome order, so need
   # to resort any new data before adding.
@@ -204,18 +264,19 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
 }
 
 
-
+# reads snp matrices from RData binary file. if it finds multiple, will attempt to join them together
+# can also handle an XSnpMatrix
 get.SnpMatrix.in.file <- function(file){
   obj.nm <- paste(load(file))
   ## NOW MAKE SURE WE HAVE EXACTLY ONE SNPMATRIX OBJECT FROM THIS FILE ##
   if(length(obj.nm)>0) {
     typz <- sapply(obj.nm,function(X) { is(get(X))[1] })
-    vld <- which(typz=="SnpMatrix")
+    vld <- which(typz %in% c("XSnpMatrix","SnpMatrix"))
     if(length(vld)<1) { stop("no SnpMatrix objects found in file")}
     if(length(vld)>1) {
       warning("found multiple SnpMatrix objects in datafile, attempting to rbind() them")
       concat.snp.matrix <- NULL; 
-      vld <- vld[order(names(vld))] # alphabetical order should ensure consistency across multiple data files
+      vld <- vld[order(names(typz)[vld])] # alphabetical order should ensure consistency across multiple data files
       try(concat.snp.matrix <- do.call("rbind",args=lapply(obj.nm[vld],function(X) get(X))))
       if(is.null(concat.snp.matrix)) { stop("SnpMatrix objects had different numbers of SNPs [cols], could not rbind")}
       obj.nm <- "concat.snp.matrix"
@@ -223,7 +284,9 @@ get.SnpMatrix.in.file <- function(file){
       obj.nm <- obj.nm[vld]
     }
   }
-  return(get(obj.nm[1]))
+  ret.out <- get(obj.nm[1])
+  if(is(ret.out)[1]=="XSnpMatrix") { warning("read XSnpMatrix from ",file) }
+  return(ret.out)
 }
 
 
@@ -242,7 +305,7 @@ chrNums <- function(ranged,warn=F,table.out=F,table.in=NULL) {
   must.use.package("genoset",bioC=T)
   if(!is(ranged)[1]=="RangedData") { warning("not a RangedData object"); return(NULL) }
   lookup <- c("X","Y","XY","MT")
-  txt1 <- chrNames(ranged)
+  txt1 <- chrNames2(ranged)
   txt <- gsub("chr","",txt1,fixed=T)
   nums <- suppressWarnings(as.numeric(txt))
   num.na <- length(nums[is.na(nums)])
@@ -277,7 +340,7 @@ chrNums <- function(ranged,warn=F,table.out=F,table.in=NULL) {
     out <- cbind(txt1,nums,txt)
     return(out)
   } else {
-    return(sort(as.numeric(nums)))
+    return(sortna(as.numeric(nums)))
   }
 }
 
@@ -295,7 +358,7 @@ range.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,nearest=T) {
 
 
 get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
-  snp.info <- toGenomeOrder(snp.info); rw.cnt <- 1
+  snp.info <- toGenomeOrder(snp.info,strict=TRUE); rw.cnt <- 1
   all.fl <- matrix(ncol=4, nrow=0)
   for(cc in chrNums(ranged)) {
     nxt.nm <- rownames(snp.info[paste(cc)]); pos <- start(snp.info[paste(cc)])
@@ -384,7 +447,7 @@ start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,neare
 
 
 get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
-  snp.info <- toGenomeOrder(snp.info); rw.cnt <- 1
+  snp.info <- toGenomeOrder(snp.info,strict=T); rw.cnt <- 1
   all.fl <- matrix(ncol=4, nrow=0)
   for(cc in chrNums(ranged)) {
     nxt.nm <- rownames(snp.info[paste(cc)]); pos <- start(snp.info[paste(cc)])
@@ -538,10 +601,10 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
   must.use.package("genoset",bioC=T)
   if(!is(ranged)[1]=="RangedData") { warning("not a RangedData object"); return(NULL) }
   if(!all(unique(chr(select.autosomes(ranged))) %in% paste("chr",1:22,sep=""))) {
-    ranged <- toGenomeOrder(ranged)
+    ranged <- toGenomeOrder(ranged,strict=TRUE)
     #prv(ranged)
     mychr2 <- mychr <- paste(chr(ranged))
-    #all.nams <- chrNames(ranged)
+    #all.nams <- chrNames2(ranged)
     #all.nums <- chrNums(ranged,table.in=table.in)
     all.nums.t <- chrNums(select.autosomes(ranged),table.in=NULL,table.out=T) 
     all.nams <- all.nums.t[,1]
@@ -557,7 +620,7 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
     #print(tail(mychr2)); print((all.nums))
     #prv(mychr2)
     out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
-    out <- toGenomeOrder(out)
+    out <- toGenomeOrder(out,strict=TRUE)
     # prv(out)
     if(ncol(ranged)>0 & keep) {
       cn <- colnames(ranged)
@@ -575,10 +638,12 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
 #' @param table.in, table.out extra parameters for chrNums (e.g, how to convert weird regions)
 set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
   if(table.out | suppressWarnings(any(is.na(as.numeric(chr(ranged)))))) {
-    ranged <- toGenomeOrder(ranged)
+    silly.name <- "adf89734t5b"
+    ranged <- toGenomeOrder(ranged,strict=T)
+    ranged[[silly.name]] <- paste(1:nrow(ranged))
     #prv(ranged)
     mychr2 <- mychr <- paste(chr(ranged))
-    #all.nams <- chrNames(ranged)
+    #all.nams <- chrNames2(ranged)
     #all.nums <- chrNums(ranged,table.in=table.in)
     all.nums.t <- chrNums(ranged,table.in=table.in,table.out=T) 
     all.nams <- all.nums.t[,1]
@@ -586,8 +651,14 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
     #mychr2 <- all.nums.t[,2][match(mychr,all.nums.t[,1])]
     for (cc in 1:length(all.nams)) { mychr2[which(mychr==all.nams[cc])] <- all.nums[cc] }
     #print(tail(mychr2)); print((all.nums))
-    out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
-    out <- toGenomeOrder(out)
+    out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2,silly.name=ranged[[silly.name]])
+    out <- toGenomeOrder(out,strict=T)
+    if(all(!is.na(out[["silly.name"]]))) {
+      rn <- narm(rownames(ranged)[match(out[["silly.name"]],ranged[[silly.name]])])
+      if(nrow(out)==length(rn) ) { rownames(out) <- rn } else { warning("rownames did not match number of rows") }
+    } else {
+      warning("index column was corrupted")
+    }
     # prv(out)
     if(ncol(ranged)>0 & keep) {
       cn <- colnames(ranged)
@@ -610,7 +681,7 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
 
 find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.out=F, vals.out=F, vec.out=F, delim=",",
                           ref=NULL, none.val=0, fill.blanks=T, DEL=T, DUP=T, min.sites=0, len.lo=NA, len.hi=NA,
-                          autosomes.only=T, alt.name=NULL,
+                          autosomes.only=T, alt.name=NULL, testy=F,
                           db=c("gene","exon","dgv"), txid=F, ucsc="hg18", n.cores=1, dir="", quiet=F) {
   # like 'findOverlaps' but according to a specific percentage
   # specify own reference comparison or use standard 'gene', 'exon' or 'dgv'
@@ -678,6 +749,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
     # ref is already a ranges object for comparison passed in by parameter
     if(any(tolower(db) %in% c("exon","gene","dgv")))  { ano <- db } else { ano <- "custom ranges" ; txid <- F }
   }
+  do.check <- testy
   if(ano=="gene" | ano=="exon") { nbg <- T } else { nbg <- F } # use gene names if gene or exon
   if(ano=="dgv") { if(!(DUP & DEL)) {
     if(!DUP) { if("Loss" %in% colnames(ref)) { ref <- ref[!is.na(ref$Loss),] } else { cat("Loss column not found\n")} }
@@ -685,11 +757,12 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   } }
   # rel.query=T gives %'s relative to the query (e.g gene), false gives %'s relative to subject (ie, cnv)
   if(!quiet) { cat(" testing CNV set for overlaps with",ano,"...\n") }
-  # prv(ref,cnv.ranges)
+ # if(do.check) { prv(ref,cnv.ranges) }
   mm <- overlap.pc(query=ref,subj=cnv.ranges,name.by.gene=nbg,
                    rel.query=rel.ref,fill.blanks=fill.blanks, txid=txid,alt.name=alt.name,
                    n.cores=n.cores,none.val=none.val,autosomes.only=autosomes.only)
-  #prv(mm)
+
+#  if(do.check) { prv(mm) }
   if(vec.out & vals.out & !ranges.out) {
     # summarise results into 1 column separated by commas(or 'delim')
     if(pc) {
@@ -722,6 +795,142 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
 }
 
 
+get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.query=T, txid=F, prog=F, alt.name=NULL) {
+  #prv(next.chr, x, y, xx, yy)
+  ## mainly to tidy up function below - does the processing for 1 chromosome
+  olp <- findOverlaps(x[[next.chr]],y[[next.chr]])  
+  if(length(olp)==0 | length(subjectHits(olp))==0 | length(queryHits(olp))==0) {
+    return(list(NULL,NULL,NULL)) } # if no matches return list of 3 NULL elements
+  overlap.ranges <- ranges(olp,x[[next.chr]],y[[next.chr]])
+  genes.per.cnv.n <- tapply(queryHits(olp),subjectHits(olp),c)
+  match.num.to.names <- function(num,ind) { return(ind[num]) }
+  if(name.by.gene) {
+    if(txid & ("txname" %in% colnames(xx))) {
+      # transcript id when using exons
+      ind <- xx[next.chr]$txname
+      genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
+    } else {
+      ind <- xx[next.chr]$gene
+      genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
+    }
+  } else { 
+    if(T | length(grep("DGV",toupper(rownames(xx)[1:2])))>0) {
+     # if(next.chr %in% c(1,11)) { prv(xx[next.chr]) }
+      ind <- rownames(xx[next.chr])
+      genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
+    } else {
+      if(!is.null(alt.name)) {
+        #prv.large(xx[next.chr])
+        ind <- xx[next.chr][,paste(alt.name)]
+        genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
+      } else {
+        # use row-numbers for matchs unless using DGV ids
+        genes.per.cnv <- genes.per.cnv.n 
+      }
+    }
+  }
+  gene.overlaps.per.cnv <- tapply(width(overlap.ranges),subjectHits(olp),c)
+  #  if(T|paste(next.chr)=="21") { print(gene.overlaps.per.cnv) }
+  select.overlappers <- as.numeric(names(genes.per.cnv)) # there are more of these than rownames y and they are unique!
+  #  print(paste("selectoverlappers",length(rownames(yy[next.chr])),length(select.overlappers),length(unique(select.overlappers))))
+  if(rel.query) {
+    # width relative to query (e.g, Gene %)
+    #  gene.lengths <- width(x[[next.chr]])
+    ind <- width(xx[next.chr])
+    gene.widths <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
+    if(length(gene.widths)>=1 & length(gene.overlaps.per.cnv)>=1) {
+      pc.per.cnv <- sapply(1:length(gene.widths), function(x) { gene.overlaps.per.cnv[[x]]/gene.widths[[x]] } ,simplify=F)
+    } else {
+      pc.per.cnv <- gene.widths # i.e, make an equivalent null/na/0 value
+    }
+  } else {
+    # width relative to subject (e.g, CNV %)
+    cnv.lengths <- width(y[[next.chr]][select.overlappers])
+    if(length(cnv.lengths)>=1 & length(gene.overlaps.per.cnv)>=1) {
+      pc.per.cnv <- sapply(1:length(cnv.lengths), function(x) { gene.overlaps.per.cnv[[x]]/cnv.lengths[x] } ,simplify=F)
+    } else {
+      pc.per.cnv <- cnv.lengths # i.e, make an equivalent null/na/0 value
+    }
+  }    
+  # print(tail(rownames(yy[next.chr])[select.overlappers]))
+  names(pc.per.cnv) <- names(genes.per.cnv) <- 
+    names(gene.overlaps.per.cnv) <- rownames(yy[next.chr])[select.overlappers] # the dodgy line
+  by.chr.list <- list(genes.per.cnv,gene.overlaps.per.cnv,pc.per.cnv)
+  # print(head(names(by.chr.list[[1]])))
+  if(prog) { cat(".") }
+  return(by.chr.list)
+}
+
+
+
+reduce.list.to.scalars.old <- function(ll) {
+  if(is.list(ll)) {
+    for (cc in length(ll):1) {
+      if(is(ll[[cc]])[1]=="list") { 
+        ll[[cc]] <- reduce.list.to.scalars.old(ll[[cc]]) 
+      } else {
+        if(length(ll[[cc]])>1 | !is.numeric(ll[[cc]])) { ll[[cc]] <- NULL }
+      }
+    }
+  }
+  return(ll)
+}
+
+nmoo <- function(x) { x <- rep(NULL,1) }
+
+reduce.list.to.scalars.2 <- function(ll,max.ln=1000) {
+  if(is.list(ll)) {
+    if(length(ll)>max.ln) { return(sapply(ll,nmoo)) }
+    for (cc in length(ll):1) {
+      if(is(ll[[cc]])[1]=="list") { 
+        ll[[cc]] <- reduce.list.to.scalars.2(ll[[cc]]) 
+      } else {
+        if(length(ll[[cc]])>1 | !is.numeric(ll[[cc]])) { ll[[cc]] <- NULL }
+      }
+    }
+  }
+  return(ll)
+}
+
+rlts <- function(X) {
+  if(is(X)[1]=="list") { 
+    X <- reduce.list.to.scalars(X) 
+  } else {
+    if(length(X)>1 | !is.numeric(X)) { X <- NULL }
+  }
+  return(X)
+}
+
+reduce.list.to.scalars <- function(ll) {
+  if(is.list(ll)) {
+    ll <- rev(lapply(rev(ll),rlts))
+  }
+  return(ll)
+}
+
+
+fill.blank.matches <- function(newlist,missing.val="",full.len=NA)
+{
+  #ensure a blank entry for cnvs with no overlaps
+  # full.len is an optional desired out-length for the list (which if trailing cells are blank might differ from the guess)
+  ##head(paste(names(newlist)))
+  to.nums <- as.numeric(paste(names(newlist)))
+  if(length(narm(to.nums))<length(newlist)) { warning("some list names were not numbers") }
+  if(length(narm(to.nums))<1) { return(newlist) }
+  mm <- max(c(to.nums,full.len),na.rm=T);  if(is.infinite(mm)) {  warning("couldn't find end of list (empty?)"); return(newlist) }
+  no.gene.list <- which(!paste(c(1:mm)) %in% names(newlist))
+  if(length(no.gene.list)>0) {
+    none.list <- vector("list",length(no.gene.list))
+    names(none.list) <- paste(no.gene.list)
+    none.list <- sapply(none.list,function(x) { missing.val } )
+    out <- c(newlist,none.list)
+    out <- out[order(as.numeric(names(out)))]
+  } else {
+    out <- newlist
+  }
+  return(out)
+}
+
 
 overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autosomes.only=T,
                        text.out=F,delim=",",none.val=0,n.cores=1, txid=F, prog=F, alt.name=NULL) {
@@ -747,10 +956,13 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   if(length(to.cut)>0) { subj <- subj[,-to.cut] } # removing unnecessary cols speeds up
   to.cut2 <- which(!tolower(colnames(query)) %in% c("gene","txid","txids","txname","txnames",alt.name))
   if(length(to.cut2)>0) { query <- query[,-to.cut2] } # removing unnecessary cols speeds up
+  #print(head(query))
   xlist <- set.chr.to.numeric(query,table.out=T)
+ # print(head(xlist[[1]]))
   #  prv(xlist)
   xx <- xlist[[1]]
   xx=toGenomeOrder(xx,strict=T)
+  #print(head(xx))
   ili <- set.chr.to.numeric(subj,table.in=xlist[[2]],table.out=F)
   yy=toGenomeOrder(ili,strict=T)
   if(autosomes.only) {
@@ -762,9 +974,10 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   chr.set.x <- chrNums(xx)
   chr.set.y <- chrNums(yy)
   #  prv(xx,yy,chr.set.x,chr.set.y)
-  common <- which(sort(chr.set.x) %in% sort(chr.set.y))
+  common <- which(sortna(chr.set.x) %in% sortna(chr.set.y))
   if(length(common)<1 | nrow(xx)<1 | nrow(yy)<1) { return(blnk.out) }
-  chr.set <- paste(sort(chrNums(xx[paste(sort(chr.set.x)[common])])))
+  chr.set <- paste(sortna(chrNums(xx[paste(sortna(chr.set.x)[common])])))
+  #print(head(rownames(xx))); print(head(rownames(yy)),7)
   x <- ranges(xx[chr.set]); y <- ranges(yy[chr.set]) # keep only common + convert to IRangeslist
   xx <- xx[chr.set]; yy <- yy[chr.set] # keep only common in originals (these store rownames, unfiltered positions)
   #print(head(rownames(xx))); print(head(rownames(yy)))
@@ -772,8 +985,8 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   by.chr.list <- vector("list",n.chr); names(by.chr.list) <- chr.set
   if(prog) { cat("|") }
   if(n.cores>1) {
-    must.use.package("multicore")
-    by.chr.list <- multicore::mclapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy, alt.name=alt.name,
+    must.use.package("parallel")
+    by.chr.list <- parallel::mclapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy, alt.name=alt.name,
                                        name.by.gene=name.by.gene, rel.query=rel.query, txid=txid, mc.cores=n.cores,prog=prog)
   } else {
     by.chr.list <- lapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy,  alt.name=alt.name,
@@ -785,7 +998,7 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   namez <- as.character(unlist(sapply(lapply(by.chr.list,"[[",1),names)))
   #  namez <- as.character(unlist(sapply(by.chr.list,names)))
   idz <- unlist(sapply(by.chr.list,"[[",1),recursive=F)
-  if(is.null(idz)) { if(name.by.gene) { warning("blank names: nb: name.by.gene should be false if gene names not present") } }
+  if(all(is.null(idz))) { if(name.by.gene) { warning("blank names: nb: name.by.gene should be false if gene names not present") } }
   widz <- unlist(sapply(by.chr.list,"[[",2),recursive=F)
   pcz <- unlist(sapply(by.chr.list,"[[",3),recursive=F)
   if(is.null(widz) | is.null(pcz)) { nomatches <- T } else { nomatches <- F }
@@ -828,7 +1041,7 @@ get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=F,text=F) {
     must.use.package(c("genoset","IRanges"),bioC=T)
     outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=chr,
                           reg=reg.dat,universe=ucsc[1])
-    outData <- toGenomeOrder(outData)
+    outData <- toGenomeOrder(outData,strict=T)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- vector("list",nchr); names(outData) <- paste("chr",1:nchr,sep="")
@@ -842,17 +1055,17 @@ get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=F,text=F) {
 }
 
 
-get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=F,text=F)
+get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=FALSE,text=FALSE)
 {
-  dir <- validate.dir.for(dir,c("ano"),warn=F); success <- T
+  dir <- validate.dir.for(dir,c("ano"),warn=FALSE); success <- TRUE
   local.file <- paste(dir$ano,"cytoBand.txt.gz",sep="")
   if(!file.exists(local.file)) {
     golden.path <- paste("http://hgdownload.cse.ucsc.edu/goldenPath/",ucsc[1],"/database/cytoBand.txt.gz",sep="")
-    success <- tryCatch( download.file(url=golden.path,local.file,quiet=T),error=function(e) { F } )
+    success <- tryCatch( download.file(url=golden.path,local.file,quiet=T),error=function(e) { FALSE } )
   }
   if(is.logical(success)) {
     if(!success) { warning("couldn't reach ucsc website! try sourcing cytoband data elsewhere"); return(NULL) } }
-  tt <- read.table(local.file)
+  tt <- read.table(local.file,stringsAsFactors=FALSE)
   nchr <- 22 #default
   my.chr.range <- vector("list",nchr)
   names(my.chr.range) <- paste("chr",1:nchr,sep="")
@@ -866,10 +1079,10 @@ get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=F,text=F)
   stz <- sapply(my.chr.range,"[[",1)
   enz <- sapply(my.chr.range,"[[",2)
   if(bioC | text) {
-    must.use.package(c("genoset","IRanges"),bioC=T)
+    must.use.package(c("genoset","IRanges"),bioC=TRUE)
     outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=1:nchr,
                           reg=reg.dat,universe=ucsc[1])
-    outData <- toGenomeOrder(outData,strict=T)
+    outData <- toGenomeOrder(outData,strict=TRUE)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- my.chr.range 
@@ -1208,7 +1421,7 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
     # add gaps before the first snp and after the last snp for each chr
     chr.lens <- chr.lens.full 
     stz <- sapply(snp.info,function(x) { min(start(x)) }) #- (targ.int)
-    enz  <- (chr.lens.full - sapply(snp.info,function(x) { rev(sort(start(x)))[min.snps-1] })) - (targ.int)
+    enz  <- (chr.lens.full - sapply(snp.info,function(x) { rev(sortna(start(x)))[min.snps-1] })) - (targ.int)
     rd2 <- RangedData(IRanges(start=rep(1,n.chr)[stz>0],end=stz[stz>0]),space=chr.set[stz>0])
     rd3 <- RangedData(IRanges(start=(chr.lens.full-enz-targ.int)[enz>0],end=(chr.lens.full-targ.int)[enz>0]),space=chr.set[enz>0])
     rd  <- rbind(toGenomeOrder(rd,strict=T),toGenomeOrder(rd2,strict=T),toGenomeOrder(rd3,strict=T))
@@ -1278,18 +1491,18 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
 }
 
 
-get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=T,text=F,shortenID=T, compact=F, alt.url=NULL)
+get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=TRUE,text=FALSE,shortenID=TRUE, compact=FALSE, alt.url=NULL)
 {
   ## download or use local version of DGV (database for Genomic Variants)
-  from.scr <- T
-  dir <- validate.dir.for(dir,c("ano"),warn=F)
+  from.scr <- TRUE
+  dir <- validate.dir.for(dir,c("ano"),warn=FALSE)
   old.colnm.core <- c("VariationID","Start","End","Chr","Gain","Loss") # order: ids,st,en,chr,...
   colnm.core <- c("variantaccession","start","end","chr","observedgains","observedlosses") # order: ids,st,en,chr,...
   if(!is.null(dir)) {
     dg.fn <- cat.path(dir$ano,"dgvAnnot.RData")
     if(file.exists(dg.fn)) {
       tt <- get(paste(load(dg.fn)))
-      from.scr <- F 
+      from.scr <- FALSE
     }
   }
   if(from.scr) {
@@ -1299,8 +1512,8 @@ get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=T,text=F,shortenID=T, compa
                        hg18="http://dgv.tcag.ca/dgv/docs/NCBI36_hg18_variants_2013-05-31.txt")
     if(!is.null(alt.url)) { dgv.path <- alt.url }
     downloc <- cat.path(dir$ano,"DGV.variants.txt")
-    download.file(url=dgv.path,downloc,quiet=T)
-    tt <- read.delim(downloc,header=T)
+    download.file(url=dgv.path,downloc,quiet=TRUE)
+    tt <- read.delim(downloc,header=TRUE,stringsAsFactors=FALSE)
     if(!any(colnames(tt) %in% c(colnm.core,old.colnm.core))) {
       warning("the URL or file format for the DGV seems to have changed. Go to http://dgv.tcag.ca/\n",
               "to find the latest url, and then run get.dgv.ranges() using alt.url to create a\n",
@@ -1392,10 +1605,11 @@ draw.cnv.bounds <- function(cnv,chr.offset=NA,pos=NA,cnv.lty="dashed",cnv.col="o
   return(cnv)
 }
 
-read.penn.cnv.file <- function(filename,readtable=T) {
+read.penn.cnv.file <- function(filename,readtable=TRUE) {
   cN <- c("coords","n.snps","length","copy.number","file","first.snp","last.snp")
+  if(!file.exists(filename)) { stop("specified penn-cnv file did not exist") }
   if(readtable) {
-    file.out <- read.table(filename,header=F)
+    file.out <- read.table(filename,header=FALSE,stringsAsFactors=FALSE)
     colnames(file.out) <- cN
   } else {
     raw.dat <- readLines(filename)
@@ -1460,7 +1674,7 @@ plink.to.Ranges <- function(plink.cnv) {
     warning(paste("this function is meant for importing plink *.cnv files so using a file with",
                   "extension",get.ext(plink.cnv),"may cause unpredictable results\n"))
   }
-  dat <- read.table(plink.cnv,header=T)
+  dat <- read.table(plink.cnv,header=TRUE,stringsAsFactors=FALSE)
   # Plink format:
   #FID  IID  CHR  BP1  BP2  TYPE	SCORE	SITES
   outData <- RangedData(ranges=IRanges(start=dat$BP1,end=dat$BP2),id=dat$IID,space=dat$CHR,
@@ -1637,7 +1851,7 @@ rmv.dir.penn.cnv.file <- function(filename,append=".nodir",ext=F,verbose=F,
 stats.on.CNV.file <- function(fn,use.dat=F) 
 {
   ## return detailed summary of CNVs in a plink .cnv file
-  dat <- read.table(fn,header=T)  
+  dat <- read.table(fn,header=TRUE,stringsAsFactors=FALSE)  
   tt <- as.numeric(table(dat$IID))[order(as.numeric(table(dat$IID)))]
   # headers in file
   #FID  IID  CHR  BP1  BP2	TYPE	SCORE	SITES
@@ -1684,7 +1898,8 @@ convert.penn.to.plink <- function(penn.in,plink.out=NULL,fixed.width=F) {
   penn <- read.penn.cnv.file(penn.in)
   if(ncol(penn)<1 | nrow(penn)<1) { stop("file ",penn.in," was empty, returning NULL") }
   colnames(penn) <- c("location","numsnp","length","cn","id","startsnp","endsnp")
-  loc <- as.data.frame(convert.textpos.to.data(penn$location))
+  #prv(penn$location)
+  loc <- as.data.frame(convert.textpos.to.data(penn$location),stringsAsFactors=FALSE)
   plink <- data.frame(FID=1,IID=penn$id,CHR=loc$chr,BP1=loc$start,BP2=loc$end,
                       TYPE=extract.val.penn(penn$cn),SCORE=0,
                       SITES=extract.val.penn(penn$numsnp))
@@ -1701,10 +1916,10 @@ convert.penn.to.plink <- function(penn.in,plink.out=NULL,fixed.width=F) {
   }
 }
 
-read.plink.file <- function(filename,readtable=T) {
+read.plink.file <- function(filename,readtable=TRUE) {
   cN <- c("FID","IID","CHR","BP1","BP2","TYPE","SCORE","SITES")
   if(readtable) {
-    file.out <- read.table(filename,header=T)
+    file.out <- read.table(filename,header=T,stringsAsFactors=FALSE)
     if(any(!colnames(file.out) %in% cN)) { 
       warning("column names [",colnames(fileout),"]did not match expected")  
       colnames(file.out) <- cN
@@ -1730,7 +1945,7 @@ read.plink.file <- function(filename,readtable=T) {
     } else {
       # unfortunately file type seems to have changed
       warning("plink file format has not imported as expected, using slower method to parse")
-      file.out <- read.table(filename)
+      file.out <- read.table(filename,stringsAsFactors=FALSE)
     }
   }
   return(file.out)

@@ -49,7 +49,7 @@ call.rate.summary <- function(s.info=NULL,snp=(is(s.info)[1]=="RangedData"),cr.v
   if(!is.null(s.info)) { if ("call.rate" %in% colnames(s.info)) {
     crs.o <- s.info$call.rate
   } else {
-    s.info <- column.salvage(cs,"call.rate",c("Call.rate","callrate"),ignore.case=T)
+    s.info <- column.salvage(s.info,"call.rate",c("Call.rate","callrate"),ignore.case=T)
     crs.o <- s.info$call.rate
   }}
   if(is.null(crs.o)) { warning("need an object with column 'call.rate' or cr.vec of callrates") ; return(NULL) }
@@ -97,6 +97,68 @@ colSummary <- function(X,filt=NULL) {
   }
 }
 
+
+# detect the format of a snpMatLst (SnpMatrix list)
+# returns snpSubGroups, sampleSubGroups, or singleEntry (else error)
+get.split.type <- function(snpMatLst,dir=NULL) {
+  typz <- sapply(snpMatLst,is)[1,]
+  dir <- validate.dir.for(dir,c("cr"))
+  if(all(typz=="SnpMatrix"))
+  { HD <- F } else {
+    if (all(typz=="character")) { HD <- T } else {
+      stop("snpMatLst doesn't appear to be a list of SnpMatrix objects",
+              "or a list of file locations, row.summary impossible")
+    } 
+  }
+  dimz <- get.snpMat.spec(snpMatLst,dir=dir)
+  if(ncol(dimz)==1) { return("singleEntry") }
+  # get DIMs of separate SNP lists (e.g, chromosomes)
+  zroSNP <- as.numeric(names(table(diff(dimz[2,]))))
+  zroSMP <- as.numeric(names(table(diff(dimz[1,]))))
+  #prv(dimz,zroSNP,zroSMP)
+  same.num.snps <- same.num.samples <- TRUE
+  if(length(zroSNP)>0) { 
+    if (any(zroSNP!=0)) { 
+      same.num.snps <- FALSE
+    } 
+  } else {
+    stop("empty dims list") 
+  }
+  if(length(zroSMP)>0) { 
+    if (any(zroSMP!=0)) { 
+      same.num.samples <- FALSE
+    } 
+  } else {
+    stop("empty dims list") 
+  }
+  if(same.num.snps & same.num.samples) {
+    ## need to investigate further
+    rows.equal <- cols.equal <- FALSE
+    dn <- fun.snpMatLst(snpMatLst,fun=dimnames,fail=T,dir=dir)
+    LL <- length(dn)
+    rn.first <- dn[[1]][[1]]; rn.last <- dn[[LL]][[1]]
+    cn.first <- dn[[1]][[2]]; cn.last <- dn[[LL]][[2]] 
+    if(all(rn.first==rn.last)) { rows.equal <- TRUE  }
+    if(all(cn.first==cn.last)) { cols.equal <- TRUE  }
+    if(rows.equal & !cols.equal) { return("snpSubGroups") }
+    if(!rows.equal & cols.equal) { return("sampleSubGroups") }
+    if(!rows.equal & !cols.equal) { stop("inconsistent ids in snpMatLst object") }
+    if(rows.equal & cols.equal) {
+      if(length(snpMatLst)>1) { 
+        stop("duplicate entries in snpMatLst") 
+      } else {
+        return("singleEntry")
+      }
+    }                
+  } else {
+    if(same.num.snps & !same.num.samples) { return("sampleSubGroups") }
+    if(!same.num.snps & same.num.samples) { return("snpSubGroups") }
+    if(!same.num.snps & !same.num.samples) { stop("invalid/incomplete snpMatLst object") }
+  }
+}
+
+
+
 list.rowsummary <- function(snpMatLst,mode="row",dir=getwd(),warn=T,n.cores=1)
 {
   # performs 'row.summary' or 'col.summary' snpStats functions
@@ -109,7 +171,7 @@ list.rowsummary <- function(snpMatLst,mode="row",dir=getwd(),warn=T,n.cores=1)
     if (all(typz=="character")) { HD <- T } else {
       warning("snpMatLst doesn't appear to be a list of SnpMatrix objects",
               "or a list of file locations, row.summary impossible")
-      fail <- T
+      return(NULL)
     } 
   }
   dimz <- NULL
@@ -118,74 +180,78 @@ list.rowsummary <- function(snpMatLst,mode="row",dir=getwd(),warn=T,n.cores=1)
   must.use.package("snpStats",T)
   wgts <- numeric(length(snpMatLst)) # vector to store number of SNPs/samples in each sublist
   my.summary <- switch(mode,row=row.summary,col=col.summary)
-  dimz <- get.snpMat.spec(snpMatLst)
-  if(mode=="row") {
-    # get DIMs of separate SNP lists (e.g, chromosomes)
-    zro <- as.numeric(names(table(diff(dimz[1,]))))
-    if(length(zro)>0) { 
-      if (zro!=0) { 
-        print(table(diff(dimz[1,])))
-        print(zro)
-        print(dimz)
-        stop("SnpMatrix objects had different numbers of samples")
-      } 
-    } else {
-      stop("empty dims list") 
-    }
-  } else {
-    zro <- as.numeric(names(table(diff(dimz[1,]))))
-    if(length(zro)>0) { if (zro!=0) { stop("SnpMatrix objects had different numbers of Samples")} } else { stop("empty dims list") }
+  dimz <- get.snpMat.spec(snpMatLst,dir=dir)
+  mat.typez <- c("sampleSubGroups","snpSubGroups","singleEntry")
+  mat.type <- get.split.type(snpMatLst,dir=dir)
+  if(mat.type==mat.typez[3]) { return(my.summary(snpMatLst[[1]])) } # a list length 1!
+  rowsum.list <- vector("list",length(snpMatLst))
+  if(!warn) { 
+    #avoid alarming user given known issue with genotypes that are uniformly zero (empty) in column mode
+    options(warn=-1) 
   }
-  if (!fail) {
-    rowsum.list <- vector("list",length(snpMatLst))
-    if(!warn) { 
-      #avoid alarming user given known issue with genotypes that are uniformly zero (empty) in column mode
-      options(warn=-1) 
+  if(n.cores>1 & !HD) {
+    must.use.package("parallel")
+    cat(" processing elements in",min(n.cores,length(snpMatLst)),"parallel cores ...")
+    rowsum.list <- mclapply(snpMatLst,my.summary)
+  } else {
+    cat(" processing element ")
+    for (dd in 1:length(snpMatLst))
+    {
+      cat(dd,"..",sep="")
+      if(HD) {
+        fl.nm <- cat.path(dir$cr,snpMatLst[[dd]])
+        the.matrix <- get.SnpMatrix.in.file(file=fl.nm)
+        ##############
+        #print(dim(get(obj.nm))) ; badness <- which(is.na(get(obj.nm)),arr.ind=T); print(head(badness)); print(dim(badness))
+        rowsum.list[[dd]] <- my.summary(the.matrix)
+      } else {
+        rowsum.list[[dd]] <- my.summary(snpMatLst[[dd]])
+        #print(dim(snpMatLst[[dd]]))
+      }
     }
-    if(n.cores>1 & !HD) {
-      must.use.package("multicore")
-      cat(" processing elements in",min(n.cores,length(snpMatLst)),"parallel cores ...")
-      rowsum.list <- mclapply(snpMatLst,my.summary)
-    } else {
-      cat(" processing element ")
-      for (dd in 1:length(snpMatLst))
-      {
-        cat(dd,"..",sep="")
-        if(HD) {
-          fl.nm <- cat.path(dir$cr,snpMatLst[[dd]])
-          the.matrix <- get.SnpMatrix.in.file(file=fl.nm)
-          ##############
-          #print(dim(get(obj.nm))) ; badness <- which(is.na(get(obj.nm)),arr.ind=T); print(head(badness)); print(dim(badness))
-          rowsum.list[[dd]] <- my.summary(the.matrix)
+  }
+  cat("done\n")
+  if(!warn) { options(warn=0) }
+  if(mode=="row" & mat.type==mat.typez[1]) {
+    #sample summary on sampleSubGrps
+    return(do.call("rbind",rowsum.list))
+  }
+  if(mode!="row" & mat.type==mat.typez[2]) {
+    #snp summary on snpSubGrps
+    return(do.call("rbind",rowsum.list))
+  }
+  wgts <- NA
+  if(mode=="row" & mat.type==mat.typez[2]) {
+    #sample summary on snpSubGrps
+    wgts <- as.numeric(dimz[2,]) ; snpOnSamp <- FALSE
+  }
+  if(mode!="row" & mat.type==mat.typez[1]) {
+    #snp summary on sampleSubGrps
+    wgts <- as.numeric(dimz[1,]) ; snpOnSamp <- TRUE
+  }
+  if(any(is.na(wgts))) { stop("there were NAs in the list of weights (incorrect SnpMatrix dims)") }
+  wgtsR <- wgts/sum(wgts)
+  # now have weights (size) of each listed set
+  result <- rowsum.list[[1]]; result[is.na(result)] <- 0; result <- result*0
+  sampsorsnps <- rownames(result)
+  # combine the results using the weights
+  for (cc in 1:length(rowsum.list)) {
+    for (dd in 1:ncol(result)) {
+      subanalysis <- (rowsum.list[[cc]][sampsorsnps,dd]*wgtsR[cc])
+      if(snpOnSamp & dd==1) { subanalysis <- subanalysis/wgtsR[cc] } # (this is 'calls' which is a count!)
+      if(any(is.na(subanalysis))) {
+        ## often due to non-called snps, need to avoid adding NAs, or everything will get set to NA
+        if(dd==ncol(result)) {
+          subanalysis[is.na(subanalysis)] <- result[is.na(subanalysis),dd]
         } else {
-          rowsum.list[[dd]] <- my.summary(snpMatLst[[dd]])
-          #print(dim(snpMatLst[[dd]]))
+          subanalysis[is.na(subanalysis)] <- 0
         }
       }
+      result[,dd] <- result[,dd] + subanalysis
+     # prv(result[,dd])
     }
-    cat("done\n")
-    if(!warn) { options(warn=0) }
-    if(mode=="row") {
-      wgts <- as.numeric(dimz[2,])
-      if(any(is.na(wgts))) { stop("there were NAs in the list of weights (incorrect SnpMatrix dims)") }
-      wgts <- wgts/sum(wgts)
-      # now have weights (size) of each listed set
-      result <- rowsum.list[[1]]
-      samps <- rownames(result)
-      # combine the results using the weights
-      result[,1] <- result[,2] <- result[,3] <- rep(0,times=length(samps))
-      for (cc in 1:length(rowsum.list)) {
-        result[,1] <- result[,1] + (rowsum.list[[cc]][samps,"Call.rate"]*wgts[cc])
-        result[,2] <- result[,2] + (rowsum.list[[cc]][samps,"Certain.calls"]*wgts[cc])
-        result[,3] <- result[,3] + (rowsum.list[[cc]][samps,"Heterozygosity"]*wgts[cc])
-      }
-      return(result)
-    } else {
-      return(do.call("rbind",rowsum.list))
-    }
-  } else {
-    return(NULL)
   }
+  return(result)
 }
 
 
@@ -271,7 +337,7 @@ convert.smp.to.chr22 <- function(snpMatLst,snp.info,dir="",n.cores=1)
   ## run for each chromosome in serial or parallel mode
   if(n.cores>1) {
     cat(" processing chromosomes",paste(range(chr.set),collapse="-"))
-    must.use.package("multicore"); snpChrLst <- mclapply(1:n.chr,one.chr,mc.cores=min(n.cores,4))
+    must.use.package("parallel"); snpChrLst <- mclapply(1:n.chr,one.chr,mc.cores=min(n.cores,4))
     cat(" .. done\n")
   } else {
     cat(" processing chromosome "); snpChrLst <- vector("list",n.chr)

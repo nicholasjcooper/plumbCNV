@@ -4,7 +4,7 @@
 ## Bash Script for Extracting LRR/BAF data from Genome Studio Files  ##
 #######################################################################
 
-# By: Nicholas Cooper, JDRF/WT DIL, CIMR Cambridge, Nov 2013 #
+# By: Nicholas Cooper, JDRF/WT DIL, CIMR Cambridge, Nov 2012 #
 
 ### INSTRUCTIONS ###
 # Firstly, in the directory this script is run from, make sure there is 
@@ -21,12 +21,12 @@
 #
 # set output directory:
 #
-    outdir=./
+    outdir=/chiswick/data/ncooper/metabochipCNVanalysis2012/   #../../
 #
 # set directory of source files (typically read-only)
 #
     #loco=/ipswich/data/Immunochip/FinalReports/
-    loco=./
+    loco=/chiswick/data/store/metabochip/FinalReports/
 #
 # Need to create a file called file.spec.txt which contains each file name with variable locations
 # in the genome studio file (or equivalent), spec which columns are sample ids, and which snp ids:
@@ -94,26 +94,21 @@
 #
 # file name with chromosome, position and snp data for making a map file
 # file name with the snp,chr and pos data in cols 2,3,4 #
+  #  mfnm=$(echo $loco | sed 's/[/]$//g')/support.txt
   # be wary of trailing spaces!
 
-    mfnm=$(echo $loco | sed 's/[/]$//g')/support.txt
+    mfnm=$"/chiswick/data/store/metabochip/PLINK/Metabo_20100426_58C.bim"
 #
 # Further parameters for reading data for the map file:
   mSampCol=1  # column with sample label
   mSnpCol=2  # column with snp label
-  mchrCol=1  # column with chr number in 'B' = bim file, map3 file
-  mposCol=3  # column with snp position
-  mchrColG=3  # column with chr in gs file
-  mposColG=4  # column with snp position in gs file
-  mposColB=4  # column with snp position in 'B' = bim file
-  customSamp=0  # 0 means use default, or this will be replaced if argument 'a' is entered
-  customSnp=0  # 0 means use default, or this will be replaced if argument 'b' is entered
-  customChr=0  # 0 means use default, or this will be replaced if argument 'c' is entered
-  customPos=0  # 0 means use default, or this will be replaced if argument 'd' is entered
+  mchrCol=3  # column with chr number
+  mchrColB=1  # column with chr number in 'B' = bim file
+  mposCol=4  # column with snp position
   mnexttype="txt"  # file with snp,chr,pos data is gzip or txt?
   gs="no"  # 'yes' if genome studio file or 'no' if a proper snp support file (e.g, bim)
 #
-# set rmv23= "yes" or "no"; whether to remove chromosome 23, X,Y,MT from map3 file
+# set rmv23= "yes" or "no"; whether to remove chromosome 23, X,Y,MT from map file
 # probably should set to "yes" if plinkQC="yes", or "no" if plinkQC="no".
 #
     rmv23="no"  #yes
@@ -126,14 +121,17 @@
 #
     sampcr=.05
     snpcr=.05
-    hwe=.000001
+    hwe=.00000001
 #
+# set your email address for notifications of the script finishing
+#
+    mymail=nick.cooper@cimr.cam.ac.uk
 #
 ######### END USER OPTIONS ##########
 
 ### HELP TEXT ### 
 USAGE="Script to convert genome studio files into long format files for fast R,Plink import.
-Usage: getDataGS [-h] [-B] [-T] [-N] [-S] [-L] [-F] [-l] [-C] [-D] [-M] [-m] [-R] [-P] [-x] [-y] [-z] [-a] [-b] [-c] [-d]
+Usage: getDataGS [-h] [-B] [-T] [-N] [-S] [-L] [-F] [-l] [-C] [-D] [-M] [-m] [-R] [-P] [-E] [-x] [-y] [-z]
     -h      Shows this help
     -B      Set maximum possible number of unique SNPs to search for [eg 2 million]
     -T      Set to LRR or BAF (which to import)
@@ -153,13 +151,10 @@ Usage: getDataGS [-h] [-B] [-T] [-N] [-S] [-L] [-F] [-l] [-C] [-D] [-M] [-m] [-R
     -G      Whether the -m file is a genome studio (long) file
     -R      Remove non-autosome SNPs before doing sample callrate QC
     -P      Do sample and SNP QC in plink - requires less memory,disk usage than R (but may be slower)
+    -E      Email address to send notification emails
     -x      Sample call rate for plink (default 0.05 = 95%)
     -y      Snp call rate for plink (default 0.05 = 95%)
-    -z      Hardy Weinberg Equilibrium p threshold (default 0.000001)
-    -a      Column number of sample IDs in a genome studio file or other support file [default is 1]
-    -b      Column number of SNP IDs in a genome studio file or other support file [default is 2]
-    -c      Column number of chromosome in a genome studio file or other support file [default is 1, or 3 when a GS file]
-    -d      Column number of position in a genome studio file or other support file [default is 3, or 4 when a GS file or BIM file]
+    -z      Hardy Weinberg Equilibrium p threshold (default 0.00000001)
  Examples:
     make file.spec.txt template:  ./getDataGS.sh -t -F '/Raw/GenomeStudio' -O '/MyCNV'
     generate subject,snp lists:   ./getDataGS.sh -XS -F '/Raw/GenomeStudio' -O '/MyCNV/'
@@ -169,7 +164,7 @@ Usage: getDataGS [-h] [-B] [-T] [-N] [-S] [-L] [-F] [-l] [-C] [-D] [-M] [-m] [-R
 
 ### parse command line options ###
 
-while getopts B:T:N:m:F:O:x:y:z:a:b:c:d:hfltLSCDMGRPX OPT;
+while getopts B:T:N:E:m:F:O:x:y:hzfltLSCDMGRPX OPT;
 do
     case $OPT in
     h)  echo "$USAGE"
@@ -180,13 +175,10 @@ do
     F)  loco=$OPTARG ;;
     O)  outdir=$OPTARG ;;
     m)  mfnm=$OPTARG ;;
+    E)  mymail=$OPTARG ;;
     x)  sampcr=$OPTARG ;;
     y)  snpcr=$OPTARG ;;
     z)  hwe=$OPTARG ;;
-    a)  customSamp=$OPTARG ;;
-    b)  customSnp=$OPTARG ;;
-    c)  customChr=$OPTARG ;;
-    d)  customPos=$OPTARG ;;
     S)  getSnpSub="yes" ;;
     L)  lgen="yes" ;;
     f)  fakefam="yes" ;;
@@ -255,6 +247,7 @@ echo Generate Plink .Map file using support filename above?: $mapfromafile
 echo SNP location support file is in genome studio format?: $gs
 echo "Location of main CNV directory (output then to /...DATA/RAWDATA/): $outdir "
 echo Directory containing raw data files: $loco
+echo Email for notifications: $mymail
 echo Get SNP/Sample IDs?: $getSnpSub
 echo Make Plink LGEN file?: $lgen
 echo Make fake Plink family file?: $fakefam
@@ -264,13 +257,8 @@ echo If combining, delete separate files?: $delseps
 echo Skip main extraction?: $skipmain
 echo Remove non-autosomes prior to sample QC in Plink?: $rmv23
 echo Do QC in Plink?: $plinkQC
-if [ "$plinkQC" = "yes" ]
-then
-   echo sample call rate threshold: $sampcr
-   echo snp call rate threshold: $snpcr
-   echo HWE p threshold: $hwe
-fi
 echo
+
 
 ### Warn if other options don't make sense when Plink-QC is selected ###
 
@@ -470,7 +458,7 @@ then
         sed -e '1,/\[Data\]/d' $loco/$file | sed 1d | cut -f "$SampCol,$SnpCol,$A1,$A2" > $file.lgen
        fi
   done
-
+  mailx -s DONE_MAINLGENS $mymail < "."
   #### UP  TO  HERE ####
   wc -l *.lgen > filelensNEGL.txt
   ## combine into a single file
@@ -489,9 +477,8 @@ then
   paste fams.txt combined.lgen > snpdata.temp
   rm *.lgen
   mv snpdata.temp snpdata.lgen 
-  rm fams.txt 
-  # rm 0s.txt 1s.txt
-
+  rm fams.txt 0s.txt 1s.txt
+  mailx -s DONE_RESTLGEN $mymail < "." 
 fi
 
 
@@ -521,6 +508,7 @@ rm *.TMP
 
 echo 'complete!'
 
+mailx -s DONE $mymail < "."
 
 # END main extraction #
 
@@ -534,21 +522,6 @@ then
   if [ "$gs" = "yes" ]
   then
   echo "Extracting SNP info from genome studio type file"
-    # determine whether text or zip format
-    if [[ $mfnm = *.tar.gz ]]
-     then
-       mnexttype = "gzip"
-     else
-       mnexttype = "txt"
-    fi
-    mchrCol=$mchrColG
-    mposCol=$mposColG
-    # same code as just below
-    echo "applying any custom custom column settings -abcd if they exist"
-    if [[ $customSamp != 0 ]] ; then mSampCol=$customSamp ; fi
-    if [[ $customSnp != 0 ]]  ; then mSnpCol=$customSnp   ; fi
-    if [[ $customChr != 0 ]]  ; then mchrCol=$customChr   ; fi
-    if [[ $customPos != 0 ]]  ; then mposCol=$customPos   ; fi
     echo "parsing $mnexttype file."
     echo "[assuming sample-id in $mSampCol, chr in col $mchrCol, pos in col $mposCol, snp-label in col $mSnpCol]"
     echo "if any of these column numbers are wrong please modify mSampCol, mchrCol, mposCol, mSnpCol in this script"
@@ -568,17 +541,11 @@ then
     echo "Extracting SNP support from support file, e.g, bim, vcf, map, etc."
     if [[ $mfnm = *.bim ]]
     then
-     echo $(basename $mfnm) seems to be a bim file so changing pos column from $mposCol to $mposColB 
-     mposCol=$mposColB
+     echo $(basename $mfnm) seems to be a bim file so changing chr column from $mchrCol to $mchrColB
+     mchrCol=$mchrColB
     else
-     echo "current file is not a bim file so using default column numbers for map3 format"
+     echo "current file is not a bim file so using default column numbers for vcf/map"
     fi
-    # same code as just above
-    echo "applying any custom custom column settings -abcd if they exist"
-    if [[ $customSamp != 0 ]] ; then mSampCol=$customSamp ; fi
-    if [[ $customSnp != 0 ]]  ; then mSnpCol=$customSnp   ; fi
-    if [[ $customChr != 0 ]]  ; then mchrCol=$customChr   ; fi
-    if [[ $customPos != 0 ]]  ; then mposCol=$customPos   ; fi
     echo "[assuming chr in col $mchrCol, pos in col $mposCol, snp-label in col $mSnpCol]"
     echo "if any of these column numbers are wrong please modify mchrCol, mposCol, mSnpCol in this script"
     cut -f $mchrCol $mfnm > snpdata1.temp
@@ -586,8 +553,7 @@ then
     cut -f $mposCol $mfnm > snpdata3.temp
   fi
   paste snpdata1.temp snpdata2.temp snpdata3.temp > snpdata.map
-  echo snpdata.map file created successfully, preview:
-  head snpdata.map
+  echo snpdata.map file created successfully
   cp snpdata.map $outdir/ANNOTATION/snpdata.map
   rm snpdata*temp
   if [ "$plinkQC" = "no" ]  
@@ -625,8 +591,7 @@ then
       exit
     fi
   fi
-  # create blank file for samples to remove (in case none are)
-  touch snpdata.irem
+
   plink --lfile snpdata  --map3 --missing --hardy --missing-genotype '-' --out snpdataout --noweb --geno "$snpcr" --hwe "$hwe" --mind "$sampcr"
 
   mv snpdataout.hwe snpdataout.hwe.messy
@@ -647,7 +612,7 @@ then
   if [ "$whichmode" = "local" ]
   then
     echo "moving output files to /SNPQC/PLINK/"
-    #mkdir $outdir/SNPQC/PLINK/ # should exist already
+    mkdir $outdir/SNPQC/PLINK/
     mv snpdata* $outdir/SNPQC/PLINK/
     echo "complete"
   else

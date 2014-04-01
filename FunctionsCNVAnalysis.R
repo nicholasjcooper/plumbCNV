@@ -5,6 +5,7 @@ if(file.exists("~/github/plumbCNV/geneticsFunctions.R")) {
   source("~/github/plumbCNV/SimulationFunctions.R")
   source("~/github/plumbCNV/validation.functions.R")
   source("~/github/plumbCNV/QCscripts.R")
+  source("~/github/plumbCNV/tdtFunctions.R")
   library(bigpca) # will also load reader and NCmisc
 } else {
   warning("Didn't find external script files, or was run not from ~/github/plumbCNV")
@@ -30,6 +31,34 @@ is.ch <- function(x) {
   if(!pt1 & is.list(x)) { pt2 <- all(sapply(x,is.ch)) } else { pt2 <- pt1 }
   return(as.logical(pt1 | pt2))
 }
+
+
+
+
+update.cnvrs.with.cn <- function(cnv.list,double.table,DEL=TRUE) {  
+  if(!is(cnv.list)[1]=="RangedData" | !is(double.table)[1]=="RangedData") { stop("both arguments must be RangedData in type") }
+  colnames(double.table) <- tolower(colnames(double.table))
+  colnames(cnv.list) <- tolower(colnames(cnv.list))
+  if(!all(c("id") %in% colnames(double.table))) { stop("double table must contain column 'id'")}
+  if(!all(c("id","cnvr") %in% colnames(cnv.list))) { stop("cnv.list must contain columns 'cnvr','id'")}
+  cnv.list[["copy"]] <- if(DEL) { 1 } else { 3 }
+  for (dd in 1:nrow(double.table)) { 
+    ii <- subsetByOverlaps(cnv.list,double.table[dd,])
+    if(nrow(ii)>0) {
+      targs <- which(ii$id %in% double.table$id[dd])
+      if(length(targs)>0) {
+        idz <- ii$id[targs]; cnvz <- ii$cnvr[targs]
+        # cat("found target(s)",paste(idz,collapse=","),paste(cnvz,collapse=","),"\n")
+        for (jj in 1:length(idz)) { 
+          cnv.list$copy[cnv.list$cnvr==cnvz[jj] & cnv.list$id==idz[jj]] <- if(DEL) { 0 } else { 4 }
+        }
+      }
+    }
+    #loop.tracker(dd,nrow(double.table))
+  }
+  return(cnv.list)
+}
+
 
 
 penn.name.files <- function(dir,write.files=T,ret.fn=F,relative=F) 
@@ -135,7 +164,7 @@ do.scree.plots <- function(eigenv,dir="",fname="ScreePlotPCA.pdf",elbow=9,printv
   dir <- validate.dir.for(dir,"pc")
   if(writefig) {  ofn <- cat.path(dir$pc,fname);   pdf(ofn) }
   out <- pca.scree.plot(eigenv=eigenv,elbow=elbow,
-                         printvar=printvar,min.dim=min.dim,M=M,...)
+                         printvar=printvar,min.dim=min.dim,M=M,return.data=TRUE,...)
   if(writefig) { dev.off() ;  cat(paste("~wrote file:",ofn,"\n")) }
   return(out)
 }
@@ -1994,7 +2023,7 @@ time.est.snps <- function(tab,lines.per.min=12*10^6)
 }
 
 
-check.snp.read.fn <- function()
+get.snp.read.fn <- function()
 {
   # if read.snps.long is ever removed (function is currently deprecated) then
   # this wrapper helps suck up redundant variables and redirect relevant ones to 'read.long'
@@ -2007,30 +2036,36 @@ check.snp.read.fn <- function()
     if("chopsticks" %in% rownames(installed.packages())) {
       cat("so now redirecting to the chopsticks function 'read.snps.long' to work in its place.\n")
       must.use.package("chopsticks",bioC=T)
-      read.snps.long <- function(...,diploid=NULL) {
-        out <- chopsticks::read.snps.long(...)
-        return(as(out,"SnpMatrix"))
-      }
+      read.snps.long <- function(...,sample.id,simplify=c(F,F),field.list=NULL,verbose=F,diploid=NULL,in.order=TRUE) {
+        out <- chopsticks::read.snps.long(...,sample.id=sample.id,simplify=simplify,fields=field.list,verbose=F)
+        out <- as(out,"SnpMatrix")
+        detach(package:chopsticks)
+        return(out)
+      } 
     } else {
       cat("so now redirecting to the newer (slower) function 'read.long' to work in its place.",
           " If this seems too slow, install the bioconductor package 'chopsticks' which allows a faster workaround\n")
-      read.snps.long <- function(files,sample.id,snp.id,fields,codes=NA,no.call="",threshold=.9,
+      read.snps.long <- function(files,sample.id,snp.id,field.list,codes=NA,no.call="",threshold=.9,
                                diploid = NULL, lower = TRUE, sep = " ", comment = "#", skip = 0,
                                simplify = c(FALSE,FALSE),
                                verbose = FALSE, in.order=TRUE, every = 1000,...) {
         # suck up redundant variables and redirect relevant ones to 'read.long'
         out <- read.long(file=files, samples=sample.id, snps=snp.id,
-                       fields = fields,split = "\t| +", gcodes=codes,
+                       fields = field.list,split = "\t| +", gcodes=codes,
                        no.call = no.call, threshold = threshold)
         return(out)
       }
     }
-    was.there <- F
+    #was.there <- F
   } else {
-    was.there <- T
-    read.snps.long <- ""
+    #was.there <- F
+    read.snps.long <- function(...,sample.id,simplify=c(F,F),field.list=NULL,verbose=F) {
+      out <- snpStats::read.snps.long(...,sample.id=sample.id,simplify=simplify,
+                                      fields=field.list,verbose=F)
+      return(out)
+    } 
   }
-  return(list(was.there,read.snps.long))
+  return(read.snps.long)
 }
 
 
@@ -2045,8 +2080,8 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
  # generate locations of the data files:
  dir <- validate.dir.for(dir,c("raw","col","cr","lrr.dat","ano"),warn=T)
  must.use.package("snpStats",bioC=T)
- redirect.fn <- check.snp.read.fn()
- if(!redirect.fn[[1]]) { read.snps.long <- redirect.fn[[2]] }
+ read.snps.long <- get.snp.read.fn()
+ #if(!redirect.fn[[1]]) { read.snps.long <- redirect.fn[[2]] }
  # dir$raw should be the location of the raw data files specified by
  ### locations of files specifying raw data (separate file for zipped/unzipped data)
  if(is.null(data)) {
@@ -2082,7 +2117,8 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
      #defined using columns of 'file.spec.txt'
      for (cc in 1:num.filz) {
        field.list[[cc]] <- c(sample = file.info$SAMP[cc], snp = file.info$SNP[cc], 
-                          allele1 = file.info$A1[cc], allele2 = file.info$A2[cc]) }
+                          allele1 = file.info$A1[cc], allele2 = file.info$A2[cc]) 
+     }
    } else {
     cat("Error: import requires setup file 'file.spec.txt or else 'field.list': a list for each file,\n")
      cat("with elements: sample,snp,allele1,allele2; giving columns numbers for each in the datafile\n")
@@ -2146,18 +2182,29 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
    n.cores <- min(num.filz,n.cores); rdz <- vector("list",n.cores)
    must.use.package("parallel"); c.u <- 0; snpMatLst <- vector("list",num.filz)
    cat(" reading",num.filz,"long format SNP files using",n.cores,"cores in parallel...\n")
-   for (tt in 1:num.filz) {
-     c.u <- c.u + 1
-     rdz[[tt]] <- parallel::mcparallel(read.snps.long(files = data[tt], sample.id = subs.list[[tt]],    
-                                                snp.id = snp.list, diploid = NULL, 
-                                                fields = field.list[[tt]], 
-                                                codes = "nucleotide", sep = "\t", comment = "#", 
-                                                skip = header.lens[tt], simplify = c(FALSE,FALSE),
-                                                verbose = F, in.order = TRUE, every = num.markers))
-     if(c.u>=length(rdz)) { 
-       snpMatLst[(tt-length(rdz)+1):tt] <- parallel::mccollect(rdz) ; rdz <- vector("list",min(n.cores,num.filz-tt)) ; c.u <- 0 
-     }
-   }	
+   n.grpz <- length(data) 
+   #sss <- list() ; for (jj in 1:n.grpz) { sss[[jj]] <- c(FALSE,FALSE) } # mapply needs this vector repeated n times
+  # dipl <- rep(list(NULL), <- )
+   snpMatLst <- parallel::mcmapply(read.snps.long,files = data, sample.id = subs.list,    
+                                                   snp.id = list(snp.list),  
+                                                   field.list = field.list, 
+                                                   codes = "nucleotide", sep = "\t", comment = "#", 
+                                                   skip = header.lens, 
+                                                   verbose = verbose, in.order = TRUE, 
+                                                   every = num.markers, SIMPLIFY=FALSE,mc.cores=n.cores)
+#   for (tt in 1:num.filz) {
+#     c.u <- c.u + 1
+#     rdz[[tt]] <- parallel::mcparallel(read.snps.long(files = data[tt], sample.id = subs.list[[tt]],    
+#                                                snp.id = snp.list, diploid = NULL, 
+#                                                fields = field.list[[tt]], 
+#                                                codes = "nucleotide", sep = "\t", comment = "#", 
+#                                                skip = header.lens[tt], simplify = c(FALSE,FALSE),
+#                                                verbose = F, in.order = TRUE, every = num.markers))
+#     if(c.u>=length(rdz)) { 
+#       snpMatLst[(tt-length(rdz)+1):tt] <- parallel::mccollect(rdz) 
+#       rdz <- vector("list",min(n.cores,num.filz-tt)) ; c.u <- 0 
+#     }
+#   }	
    #snpMatLst <- parallel::mccollect(snpMatLst)
  }
  setwd(old.dir) #put current directory back to where it was
@@ -2254,6 +2301,8 @@ doSampQC <- function(dir, subIDs.actual, plink=T, callrate.samp.thr=.95, het.lo=
  # if the QC has already been performed in plink)
  ## get sample call rates ##
  dir <- validate.dir.for(dir,c("ano","cr.plk"),warn=F)
+ if(is.character(subIDs.actual)) { 
+   if(length(subIDs.actual)>0) { names(subIDs.actual) <- NULL } } # prevent names convolving with contents
  if(is(snpMatLst[[1]])[1]=="SnpMatrix") {
    group.nums <- rep(c(1:length(snpMatLst)),sapply(snpMatLst,dim)[1,])
    if(length(group.nums)!=length(subIDs.actual)) {
@@ -2272,6 +2321,7 @@ doSampQC <- function(dir, subIDs.actual, plink=T, callrate.samp.thr=.95, het.lo=
  if(length(group.nums)!=length(subIDs.actual)) { stop(paste("Error: group was length",length(group.nums),
  	"but IDs had length",length(subIDs.actual),"so couldn't construct a data.frame"))}
  sample.info <- data.frame(grp=group.nums,row.names=subIDs.actual,QCfail=rep(0,times=length(group.nums)))
+ #print(head(sample.info))
  if (plink | is.null(snpMatLst)){
    if(!plink) { cat(" snpMatLst is NULL but plink=FALSE, trying to see whether plink QC data is available\n") }
    if (!"snpdataout.irem" %in% list.files(dir$cr.plk)) {
@@ -2307,7 +2357,8 @@ doSampQC <- function(dir, subIDs.actual, plink=T, callrate.samp.thr=.95, het.lo=
    het.excl.grp <- paste(NULL)
  } else {
    sample.qc <- list.rowsummary(snpMatLst,dir=dir,n.cores=n.cores)
-   #print(head(sample.qc))
+   #save(sample.info,dir,snpMatLst,sample.qc,file="fuckedupSQC.RData")
+   #prv(sample.qc,sample.info)
    sample.info[["call.rate"]] <- sample.qc[rownames(sample.info),"Call.rate"]
    sample.info$call.rate[is.na(sample.info$call.rate)] <- 0
    sample.info[["heterozygosity"]] <- sample.qc[rownames(sample.info),"Heterozygosity"]
@@ -3321,7 +3372,7 @@ remove.boundary.snps.window <- function(snp.info,window=0,ucsc="hg18",chrLens=NU
 
 sync.snpmat.with.info <- function(snpMatLst,snp.info=NULL,sample.info=NULL,dir=NULL,n.cores=1)
 {
- # auto detect whether snpMatLst is a list of SnpMatrix objects or a list of RData
+ # auto det2ect whether snpMatLst is a list of SnpMatrix objects or a list of RData
  # file locations and act accordingly. autodetect whether snp and/or sample info inputted.
  #print(length(snpMatLst)); print(is(snpMatLst)); print(dim(snp.info)); print(dim(sample.info)); print(head(dir))
  reorder.fn <- function(snpMatPart,info,snp=T) {
@@ -3975,7 +4026,7 @@ filter.hifreq.plates <- function(plink.files, sample.info, rem.file=plink.files[
   for (cc in 1:length(plink.files)) {
     dat1[[cc]] <- read.table(pl.path[cc],header=T,stringsAsFactors=FALSE)  #; colnames(dat) <- 
   }
-  dat <- do.call(rbind,args=dat1)
+  dat <- do.call(rbind,args=dat1) # #do.call("rbind",args=list(dat1,deparse.level=0))
   plate.list <- get.plate.info(dir,verbose=F); 
   if(is.null(plate.list)) { stop("couldn't do plate QC as 'plate' column not found in sample.info") }
   plate.lookup <- plate.list[[1]];  n.per.plate <- plate.list[[3]]
@@ -4632,7 +4683,7 @@ combine.raw.stats <- function(dir,grpnumz=NA,base.fn="StatsPerSample",pref="LRR"
       ifn <- find.file(raw.stat.fn[kk],dir$qc.lrr,dir)
       stat.table[[kk]] <- read.table(ifn,stringsAsFactors=FALSE)
     }
-    stat.table <- do.call("rbind",stat.table)
+    stat.table <- do.call("rbind",stat.table) #do.call("rbind",args=list(stat.table,deparse.level=0))
   } else {
     if(all(is.na(grpnumz))) { warning("need parameter 'grpnumz' for combine.raw.stats(), failure likely") }
     if(length(grpnumz)==1) {
@@ -4668,7 +4719,7 @@ combine.raw.stats <- function(dir,grpnumz=NA,base.fn="StatsPerSample",pref="LRR"
           warning(paste("Didn't find expected samplewise stats file:",ifn))
         }
       }
-      stat.table <- do.call("rbind",stat.table)
+      stat.table <- do.call("rbind",stat.table)  #do.call("rbind",args=list(stat.table,deparse.level=0))
     }
   }
   return(stat.table)
@@ -5041,6 +5092,11 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
   }
   # move inputted sample info 
   orig.sample.info <- sample.info; rm(sample.info)
+  arg.list <- list(dir=dir, subIDs.actual=subIDs.actual, plink=import.plink,
+                           callrate.samp.thr=callrate.samp.thr, snpMatLst=snpMatLst,
+                           het.lo=het.lo,het.hi=het.hi,
+                           n.cores=l.cores, proc=2)
+  save(arg.list,file=cat.path(dir$ano,"arguments.RData"))
   samp.qc.list <- doSampQC(dir=dir, subIDs.actual=subIDs.actual, plink=import.plink,
                            callrate.samp.thr=callrate.samp.thr, snpMatLst=snpMatLst, 
                            het.lo=het.lo,het.hi=het.hi,
@@ -5049,7 +5105,7 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
   # Tabulate sample call rate stats
   if(tabulateCallRate) {  
     samp.result <- call.rate.summary(sample.info)
-    if(samp.result$Samples>(0.5*nrow(sample.info))) { 
+    if(samp.result$Samples[1]>(0.5*nrow(sample.info))) { 
       warning("very high proportion of samples failing call rate! suspected failure of data import")
     }                 
   }
@@ -6284,8 +6340,8 @@ get.penn.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",use.pen
   penn.call <- character(ndir)
   for (dd in 1:ndir) {
     penn.args.list[[3]] <- cat.path(dir$cnv.raw,paste("p",dd,"names.txt",sep=""))
-    penn.args.list[[4]] <- cat.path(dir$cnv.fam,paste(pref,"p",dd,".log",sep=""))
-    penn.args.list[[5]] <- cat.path(dir$cnv.fam,paste(pref,"p",dd,".cnv",sep=""))
+    penn.args.list[[4]] <- cat.path(dir$cnv.pen,paste(pref,"p",dd,".log",sep=""))
+    penn.args.list[[5]] <- cat.path(dir$cnv.pen,paste(pref,"p",dd,".cnv",sep=""))
     penn.args <- NULL
     for (cc in 1:length(penn.args.list)) {
       penn.args <- paste(penn.args,paste("-",names(penn.args.list)[cc]," ",penn.args.list[[cc]]," ",sep=""),sep="")
@@ -6303,7 +6359,7 @@ get.penn.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",use.pen
 process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/penncnv/",ucsc="hg18",min.sites=10,rare.olp=.5,rare.pc=1,
                                  baf.fn="BAF.pfb",cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,rmv.low.plates=F,
                                  raw.main="raw",plink.out="plink.cnv",rmv.bad.reg=T,bad.reg.fn="badRegions.txt",hide.plink.out=T,verbose=F,
-                                 ped.file="my.ped",trio=FALSE,joint=FALSE,...)
+                                 ped.file="my.ped",trio=FALSE,joint=FALSE,restore.mode=FALSE,...)
 {
   # This function runs the penn cnv output through a series of filters from penn scripts,
   # plink commands, both utilising bash commands, and also R-functions, to end up with
@@ -6356,15 +6412,38 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
     if(!is.null(ped.file) & is.file(ped.file,dir$ano,dir)) {
       cat(" validating CNVs using trios, using family information from:",ped.file,"\n")
       ## ie: cur.pen <- "raw.merge2.cnv"
-      run.PENN.trios(ped.file=ped.file,combined.file=cur.pen,
+      first.pen <- cat.path(dir$cnv.qc,"triocalls",ext="cnv")
+      if(!file.exists(first.pen) | !restore.mode) {
+        run.PENN.trios(ped.file=ped.file,combined.file=cur.pen,
                      low.ram=T, hide.penn.out=hide.plink.out,
                      penn.path=penn.path,ucsc=ucsc,joint=joint,...)
                      # ... = DT=NULL,n.cores=n.cores,num.pcs=num.pcs,run.manual=run.manual,hmm=hmm,print.cmds=print.cmds,q.cores=q.cores,grid.id=grid.id,
-      cur.pen <- cat.path(dir$cnv.qc,"triocalls",ext="cnv")
+      }
       cat.arg <- cat.path(dir$cnv.fam,"familyp*",ext="triocnv")
-      cat(" trios complete, combining results into a single file",cur.pen,"\n")
-      penn.cmb <- paste("cat",cat.arg,">",cur.pen)
-      nn[[1]] <- c(nn[[1]],system(commands[6],intern=hide.plink.out,ignore.stderr=hide.plink.out))
+      cat(" trios complete, combining results into a single file",first.pen,"\n")
+      penn.cmb <- character()
+      penn.cmb[1] <- paste("cat",cat.arg,">",first.pen)
+      cur.pen <- cat.path(dir$cnv.qc,"triocalls_remvdp",ext="cnv")
+      if(!check.linux.install(c("awk"))) { 
+        warning("awk command missing, didn't remove duplicates") 
+        penn.cmb[2] <- paste("cat",first.pen,">",cur.pen)
+      } else {
+        cat("removed duplicates from ",first.pen,", and wrote to",cur.pen,"\n")
+        penn.cmb[2] <- paste("awk '!a[$0]++'",first.pen,">",cur.pen) 
+      }
+      prev.pen <- cur.pen; cur.pen <- cat.path(fn=prev.pen,suf=".merge",ext="cnv")
+      args <- paste("combineseg --signalfile ",baf.fn," --fraction 0.2 --bp ",prev.pen," > ",cur.pen,sep="")
+      penn.cmb[3] <- paste(cmd,args)
+      prev.pen2 <- cur.pen; cur.pen <- cat.path(fn=prev.pen,suf=".merge2",ext="cnv")
+      args <- paste("combineseg --signalfile ",baf.fn," --fraction 0.2 --bp ",prev.pen2," > ",cur.pen,sep="")
+      penn.cmb[4] <- paste(cmd,args)
+      prev.pen2 <- cur.pen; cur.pen <- cat.path(fn=prev.pen,suf=".merge3",ext="cnv")      
+      args <- paste("combineseg --signalfile ",baf.fn," --fraction 0.2 --bp ",prev.pen2," > ",cur.pen,sep
+="")
+      penn.cmb[5] <- paste(cmd,args)
+      nn[[1]] <- c(nn[[1]],sapply(penn.cmb,system,intern=hide.plink.out,ignore.stderr=hide.plink.out))
+      remain.lines <- file.nrow(cur.pen)
+      if(remain.lines<1) { stop("file ",cur.pen," was empty. No trios were called successfully, please review input file names and parameters and try again") }
     } else {
       warning("selected 'trio=TRUE' option but did not find a ped/fam file called: ",ped.file)
     }
@@ -6386,6 +6465,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   } else {
     cat(" NB: did not remove CNVs in known low quality call regions (immunoglobin, centromere, telomere)\n")
     commands[5] <- paste("cat",prev.pen,">",cur.pen)
+    #cat(" copied from ",prev.pen,", and wrote to ",cur.pen,"\n",sep="")
   } 
   # need to run these commands before processing the sample ids excluded
   nn[[2]] <- sapply(commands[4:5],system,intern=hide.plink.out, ignore.stderr=hide.plink.out) 
@@ -6410,7 +6490,9 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   } else {
     # do it in R instead (slower)
     cat(" converting penn-cnv file to plink format\n")
-    convert.penn.to.plink(penn.in=cat.path(dir$cnv.qc,cur.pen),plink.out=cat.path(dir$cnv.qc,plink.out))
+    prev.pen <- cat.path(dir$cnv.qc,cur.pen)
+    #cat(" read from ",prev.pen,", and wrote to ",plink.out,"\n",sep="")
+    convert.penn.to.plink(penn.in=prev.pen,plink.out=cat.path(dir$cnv.qc,plink.out))
     commands[6] <- "# conversion to plink format was done in R"
   }
   # remove directory garbage from plink file
@@ -6434,8 +6516,15 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   ovlp.fn <- cat.path(dir$cnv.qc,paste(rmv.ext(plink.out),".cnv.overlap",sep=""))
   if(file.exists(ovlp.fn)) {
     nr <- file.nrow(ovlp.fn)
-    if(nr>1) { warning("Found ",nr-1," overlapping CNV segments within same sample(s). See file\n",
-                       ovlp.fn,"\nWARNING! This is potentially a critical problem, please check the data for a systematic error")}
+    if(nr>1) { 
+      if(nr>50) {
+        warning("Found ",nr-1," overlapping CNV segments within same sample(s). See file\n",
+                       ovlp.fn,"\nWARNING! This is potentially a segment merging/duplicates problem, please check the data for a systematic error")
+      } else {
+        warning("Found ",nr-1," overlapping CNV segments within same sample(s). See file\n",
+                ovlp.fn,"\n Likely to do with some overlapping segments not being merged by penn-cnv thresholds")
+      }
+    }
   }
   filter.hifreq.cnv.samples(plink.out, nsamps=nsamps, rem.file=plink.out, rare="",
                             dir=dir, thr.sd=thr.sd, QC.ON=cnv.qc, pval=pval,
@@ -6599,9 +6688,9 @@ do.penn.qsub <- function(penn.calls, dir, hrs.guess=1, grid.name="all.q", cluste
 # you then pass the name of your function as a string, as the argument to 'cluster.fn'
 # log pref is just what the command files generated and submitted to the queue will look like
 bash.qsub <- function(bash.commands, dir=getwd(), hrs.guess=NA, grid.name="all.q", cluster.fn="q.cmd", interval=60, logpref="X") {
-  cat("\nSubmitting bash commands to grid...\n")
+  cat(" submitting bash commands to grid...\n")
   if(!is.na(hrs.guess)) {
-    cat("\n expect processing via the cluster to take roughly ",round(hrs.guess,2),"hrs ...\n",sep="")
+    cat(" expect processing via the cluster to take roughly ",round(hrs.guess,2),"hrs ...\n",sep="")
   }
   for (tt in 1:length(bash.commands)) {
     # make the sh file
@@ -6657,15 +6746,15 @@ run.PENN.trios <- function(ped.file="my.ped",combined.file="raw.merge2.cnv",join
   # validate CNVs with trios if we have family data
   # takes roughly as long as the original penn-cnv analysis
   # only where the data is in trios of child-father-mother, runs from 6-column plink ped/fam file
-  run.PENN.cnv(...,trio=TRUE,joint=joint,restore.mode=TRUE,relative=FALSE,ped.file=ped.file,combined.file=combined.file,
-               use.penn.gc=FALSE)
+  run.PENN.cnv(...,trio=TRUE,joint=joint,restore.mode=TRUE,relative=FALSE,ped.file=ped.file,
+               combined.file=combined.file,use.penn.gc=FALSE)
 }
 
 
 run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdescrFile",
             n.cores=1,q.cores=NA,grid.id="all.q",cluster.fn="q.cmd",relative=T,run.manual=F,low.ram=T,
             penn.path="/usr/local/bin/penncnv/",ucsc="hg18",sample.info=NULL,snp.info=NULL,
-            restore.mode=F,print.cmds=T,hide.penn.out=T,hmm="hh550.hmm",use.penn.gc=T,trio=FALSE,...)
+            restore.mode=F,print.cmds=F,hide.penn.out=T,hmm="hh550.hmm",use.penn.gc=T,trio=FALSE,...)
 {
   #takes PC corrected data, generates the prerequisite PENN-CNV input files
   # and runs PennCNV to detect CNVs (or gives the commands to run manually)
@@ -6742,7 +6831,6 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
   ext.files <- cat.path(dir$cnv.pen,list.files(dir$cnv.pen)); 
   if(length(list.files(dir$cnv.pen))>0 & !trio) { delete.file.list(ext.files,verbose=F);
                 cat(" deleting old penn-cnv output files from:\n",dir$cnv.pen,"\n") }
-  
   if(!run.manual) { 
     if(trio) {
       cat("\nRunning PennCNV to validate one-at-a-time CNV calls using family/trio data\n")
@@ -6773,7 +6861,9 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
   if(qsub) { tot.to.proc <- (tot.to.proc/(n.calls*.9)) }
   per.hr <- 250; hrs.guess <- tot.to.proc/per.hr
   # create multi parallel dir structure and name files for penn
-  subj.in.each <- penn.name.files(dir,write.files=T,ret.fn=F,relative=relative)
+  if(!trio) {
+   subj.in.each <- penn.name.files(dir,write.files=T,ret.fn=F,relative=relative)
+  }
   if(print.cmds) { cat("\nCalls sent to PennCNV:\n\n"); print(penn.calls) }
   if(run.manual) { 
     cat("\n\nCOPY AND PASTE COMMANDS BELOW TO RUN MANUALLY IN TERMINAL\n\n")
@@ -6876,7 +6966,7 @@ run.CNV.qc <- function(DT=NULL,dir=NULL,num.pcs=NA,penn.path="/usr/local/bin/pen
                    min.sites=min.sites,rare.olp=rare.olp,rare.pc=rare.pc,rmv.low.plates=rmv.low.plates,
                    rmv.bad.reg=rmv.bad.reg,verbose=verbose,trio=trio,joint=joint,ped.file=ped.file,  
                    DT=DT,num.pcs=num.pcs,run.manual=F,hmm=hmm,print.cmds=F,
-                   q.cores=q.cores,grid.id=grid.id, n.cores=n.cores)
+                   q.cores=q.cores,grid.id=grid.id, n.cores=n.cores,restore.mode=restore.mode)
   
   cat("\nCNV-QC complete\n")
   penn.cmds <- my.out
@@ -7833,7 +7923,7 @@ get.PCA.subset <- function(dir,pc.to.keep=.13,assoc=F,autosomes=T,big.fn="combin
   #sample.info <- validate.samp.info(sample.info,QC.update=F,verbose=F) #this done done later anyway
   #samp.fn <- "combined.samples.txt"
   if(use.current & is.file(snp.sub.fn,dir$ano,dir)) {
-    snps.to.keep <- get.vec.multi.type(snp.sub.fn,dir=dir)
+    snps.to.keep <- force.vec(snp.sub.fn,dir=dir)
   } else {
     snps.to.keep <- extract.snp.subset(snp.info,sample.info,pc.to.keep=pc.to.keep,assoc=assoc,autosomes=autosomes,
                                        writeResultsToFile=T,big.fn=big.fn,out.fn=snp.sub.fn,dir=dir, n.cores=n.cores)
@@ -8489,10 +8579,11 @@ plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.f
   if(n.cores>1 & n.to.plot>1) {
     cc <- 1; nc <- 0; nutin <- nufin <- list()
     while(cc <=n.to.plot) {
-      nc <- nc + 1
+-      nc <- nc + 1
       poz <- c( max(0,(stz[cc]-(pc.flank*wz[cc]))), min((enz[cc]+(pc.flank*wz[cc])),cL[as.numeric(chrz[cc])]) ) #; print(poz)
       nufin[[nc]] <- parallel::mcparallel(suppressWarnings({
-        cnv.plot(DT=DT,cnvPlotFileName=paste(file,cc,sep="."),samples=idz[cc],Chr=chrz[cc],Pos=poz,Cnv=c(stz[cc],enz[cc]),dir=dir,snp.info=snp.info,
+        cnv.plot(DT=DT,cnvPlotFileName=paste(file,cc,sep="."),samples=paste(idz[cc]),Chr=chrz[cc],
+                 Pos=poz,Cnv=c(stz[cc],enz[cc]),dir=dir,snp.info=snp.info,
                col1=col1,scheme=scheme,lrr.file=lrr.file,baf.file=baf.file,PREPOSTPC=PREPOSTPC,n.pcs=n.pcs,
                LRR=LRR,BAF=BAF,bafOverlay=bafOverlay,hzOverlay=hzOverlay,pfb.rng=pfb.rng,hz.rng=hz.rng,...) }))
       cc <- cc + 1
@@ -8502,10 +8593,11 @@ plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.f
     pdf(ofn)
     for(cc in 1:n.to.plot) {
       poz <- c( max(0,(stz[cc]-(pc.flank*wz[cc]))), min((enz[cc]+(pc.flank*wz[cc])),cL[as.numeric(chrz[cc])]) ) #; print(poz)
-      suppressWarnings({
-        cnv.plot(DT=DT,samples=idz[cc],Chr=chrz[cc],Pos=poz,Cnv=c(stz[cc],enz[cc]),dir=dir,snp.info=snp.info,
+    #  suppressWarnings({
+        cnv.plot(DT=DT,samples=paste(idz[cc]),Chr=chrz[cc],Pos=poz,Cnv=c(stz[cc],enz[cc]),dir=dir,snp.info=snp.info,
                col1=col1,scheme=scheme,lrr.file=lrr.file,baf.file=baf.file,PREPOSTPC=PREPOSTPC,n.pcs=n.pcs,
-               LRR=LRR,BAF=BAF,bafOverlay=bafOverlay,hzOverlay=hzOverlay,pfb.rng=pfb.rng,hz.rng=hz.rng,...) })
+               LRR=LRR,BAF=BAF,bafOverlay=bafOverlay,hzOverlay=hzOverlay,pfb.rng=pfb.rng,hz.rng=hz.rng,...) 
+        #})
     }
     dev.off()
   }
@@ -8627,7 +8719,7 @@ get.snpqc.ranges <- function(dir,col="het",def=NA) {
 
 cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
                      chr.expand=0,Chr=1:22,Pos=NA,Cnv=Pos,scl=10^6,
-                     tag.cnvs=F,medSmooth=F,med.rat=10,gcOverlay=F,geneOverlay=F,exons=F,
+                     tag.cnvs=T,medSmooth=F,med.rat=10,gcOverlay=F,geneOverlay=F,exons=F,
                      bafOverlay=F,pfb.rng=NULL,hzOverlay=F,hz.rng=NULL,
                      cnvPlotFileName="",show.fail=F,
                      lrr.file="LRRFiltSortdescrFile",baf.file="BAFFiltSortdescrFile",
@@ -10389,7 +10481,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   if(snp.run.mode!="skip" & start.at<3) { 
     Header("2. SNP QUALITY CONTROL","#")
     DT <- run.SNP.qc(DT=DT,import.plink=(snp.run.mode=="plink"),HD.mode=HD.mode,
-                     restore.mode=restore.mode,ucsc=ucsc,
+                     restore.mode=restore.mode,ucsc=ucsc,verbose=verbose,
                      callrate.samp.thr=callrate.samp.thr,callrate.snp.thr=callrate.snp.thr, min.snps=min.sites,
                      hwe.thr=hwe.thr,group.miss=snp.grp.miss,grp.hwe.z.thr=grp.hwe.z.thr, grp.cr.thr=grp.cr.thr,
                      het.lo=het.lo,het.hi=het.hi,autosomes.only=T,n.cores=n.cores, low.ram=low.ram)
@@ -10458,6 +10550,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                      hmm=hmm,q.cores=q.cores,grid.id=grid.id,n.cores=n.cores)
     DT <- setSlot(DT,settings=settings,proc.done=6)
   }
+  doneCNVR <- FALSE
   write.data.tracker(DT,fn=dt.name)
   if(delete.as.we.go) { remove.for.step(DT,6,n.pcs=num.pcs) }
   prt <- sct <- CNVR <- NULL # initialise for 'return'
@@ -10495,6 +10588,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
           if(n.phenos>2) { warning("found more than 2 phenotypes!")}
           oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
           oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+          doneCNVR <- TRUE
           ofn <- cat.path(dir$res,"FETsummary",suf=result.pref,ext="txt")
           sink(ofn)
           tts <- toptables(oo1,oo2,force.percentage(fet.analysis.p))  # to file copy
@@ -10517,19 +10611,33 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   if(any(file.exists(fn)) & n.phenos>1) {
     cnvr.del <- plot.pheno.cnvs(fn[1],type="DEL",pref=result.pref,dir=dir)
     cnvr.dup <- plot.pheno.cnvs(fn[2],type="DUP",pref=result.pref,dir=dir)
-    CNVR <- list(cnvr.del,cnvr.dup) 
+    if(doneCNVR & exists("oo1") & exists("oo2")) { 
+      CNVR <- list(deletions=oo1,duplications=oo2) 
+    } else {
+      CNVR <- list(deletions=cnvr.del,duplications=cnvr.dup) 
+    }
+  }    
+  if(trio) {
+    # if using family data/trios, then run a TDT analysis
+    resultz <- trio.analysis(dir,cnvResults, ped.file)
+    if(!is.null(resultz)) { CNVR <- resultz } # add the tdt pvalues to the CNVR object
   }
   
   ## need to decide what to do about multiple sets of pca, eigen, cnv.result...? still allow it????
   setwd(orig.dir) # no matter where we've ended up, reset to the original directory  
-  cat("\nplumbCNV pipeline complete\n")
-  cat(" resulting *.cnv files: allCNV, allDel, allDup, rareDEL, rareDUP contain, respectively:\n")
-  cat(" all CNVs, all deletions, all duplications, rare deletions, rare duplications. \n")
-  cat(" These files can be processed and analysed using plink, or using R packages such as:\n")
-  cat(" cnvGSA (association tests) or genoset (using the saved RangedData object, with \n")
-  cat(" plumbCNV plot LRR/BAF functions and bioconductor overlap functions, etc)\n")
-  cat(" thankyou for using plumbCNV.\n\n")
-  
+  cat("\n\nplumbCNV pipeline complete\n")
+  cat(" Resulting *.cnv files: allCNV, allDel, allDup, rareDEL, rareDUP contain, respectively:\n",
+  ("  all CNVs, all deletions, all duplications, rare deletions, rare duplications. \n"),
+  ("These files can be processed and analysed using plink. \n Subfolders of the working plumbCNV"),
+  ("directory now contain:\n   datasets, annotation, plots, tables, generated during intermediate steps.\n"),
+  ("The list object returned by plumbCNV() contains: \n"),
+  ("  the same CNVs lists as above (in RangedData objects), overlap summaries, CNV-ratios by \n"),
+  ("  phenotype, CNV-regions with Fishers exact tests [or TDT test for family data]. \n"),
+  ("These can be further explored using R packages such as:\n"),
+  ("  cnvGSA (association tests), genoset (using the saved RangedData objects, plumbCNV LRR/BAF\n"),
+  ("  plotting functions and bioconductor overlap functions, etc).\n"),
+  ("Thankyou for using plumbCNV.\n\n"))
+
   if(tolower(results)=="dt") {
     return(DT)
   }
@@ -10541,6 +10649,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   }
   return(list(ranges=cnvResults,overlaps=big.summary,table=sct,ratios=prt,cnvr=CNVR,DT=DT))
 }
+
 
 
 ## version where any number of settings can be entered as a list ##

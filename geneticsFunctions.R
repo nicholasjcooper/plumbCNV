@@ -192,11 +192,22 @@ select.autosomes <- function(snp.info,deselect=FALSE) {
 }
 
 
-ranged.to.data.frame <- function(ranged) {
+ranged.to.data.frame <- function(ranged,include.cols=FALSE) {
   # note that this will preserve only chr,start,end, nothing else including rownames
-  u <- Ranges.to.txt(ranged)
-  v <- convert.textpos.to.data(u)
-  return(v)
+  if(!include.cols) {
+    u <- Ranges.to.txt(ranged)
+    v <- convert.textpos.to.data(u)
+    return(v)
+  } else {
+    u <- as(ranged,"data.frame")
+    cn <- tolower(colnames(u))
+    if("names" %in% cn) { 
+      rownames(u) <- u[["names"]]
+      u <- u[,-which(cn=="names")]
+    }
+    if("space" %in% cn) { colnames(u)[which(cn=="space")] <- "chr" }
+    return(u)
+  }
 }
 
 
@@ -261,6 +272,42 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
     }
   }
   return(outData)
+}
+
+
+# convert snpStats:SnpMatrix object nicely to a dataframe where coding becomes 0,1,2,NA
+SnpMatrix.to.data.frame <- function(SnpMat) {
+  cov.data <- as.data.frame(SnpMat)
+  for(jj in 1:ncol(cov.data)) { 
+    nuxt <- as.numeric(cov.data[,jj])-1
+    nuxt[nuxt<0] <- NA
+    cov.data[,jj] <- nuxt
+    # assign(colnames(cov.data)[jj], nuxt)
+  }
+  return(cov.data)
+}
+
+# convert from a dataframe to a SnpMatrix
+data.frame.to.SnpMatrix <- function(X){
+  must.use.package("snpStats",T)
+  if(is.data.frame(X)) {
+    if(any(sapply(lapply(X,is),"[",1) %in% c("character","factor"))) {
+      for(cc in 1:ncol(X)) {
+        X[[cc]] <- as.numeric(X[[cc]])
+      }
+    }
+  }
+  ## Test whether there are any valid values in X
+  if(!all(is.na(X))) {
+    mxx <- max(X,na.rm=TRUE)
+    if(mxx>3) { warning("Dataframe does not appear to contain allele codes") }
+    X <- round(X)
+    if(mxx==3) { X <- X-1 ; X[X<0] <- NA }
+  }
+  NN <- as.matrix(X)
+  #NN <- round(NN)
+  SS <- as(NN,"SnpMatrix")
+  return(SS)
 }
 
 
@@ -1915,6 +1962,152 @@ convert.penn.to.plink <- function(penn.in,plink.out=NULL,fixed.width=F) {
     return(plink)
   }
 }
+
+
+get.pedData <- function(file,correct.codes=TRUE,silent=FALSE) {
+  rr <- read.ped.file(file,keepsix = TRUE)
+  want <- c("familyid","individual","father","mother","sex","affected")
+  #ignore <- c("sex","gender","mf")
+  #to.ignore <- tolower(colnames(rr)) %in% ignore
+  #if(any(to.ignore)) {
+  #  rr <- rr[,-which(to.ignore)]
+  #}
+  have <- colnames(rr)
+  if(!silent) { cat(paste("mapping column",have,"==>",want,"\n"),sep="") }
+  if(ncol(rr)>6) { warning("expected 6 columns in pedfile, unexpected behaviour could result") }
+  if(ncol(rr)<6) { stop("need at least 6 columns in pedfile to map to headings ",paste(want,collapse="")) }
+  colnames(rr)[1:length(want)] <- want
+  rr <- rr[order(rr$familyid),]
+  rr[["member"]] <- unlist(tapply(rep(1,nrow(rr)),factor(rr$familyid),cumsum))
+  rr <- rr[,c(2,1,7,3:6)]
+  rr <- shift.rownames(rr,T)
+  rr[["father"]] <- rr$member[match(rr$father,rownames(rr))]
+  rr[["mother"]] <- rr$member[match(rr$mother,rownames(rr))]
+  if(correct.codes) {
+    badz <- with(rr,which(father==1 & mother==1))
+    rr[badz,"mother"] <- 2
+    badz <- with(rr,which(father==2 & mother==2))
+    rr[badz,"father"] <- 1
+  }
+  #print(head(rr))
+  return(rr)
+}
+
+
+
+tdt.snp2 <- function (ped, id, father, mother, affected, data = sys.parent(), 
+    snp.data, rules = NULL, snp.subset = NULL, check.inheritance = TRUE, 
+    robust = FALSE, uncertain = FALSE, score = FALSE) 
+{
+    if (!is.null(rules) || !check.inheritance) 
+        robust <- TRUE
+    mcall <- match.call()
+    if (!is(snp.data, "SnpMatrix")) 
+        stop("snp.data argument must be of class SnpMatrix")
+    if (missing(data)) {
+        ped <- as.character(ped)
+        nped <- length(ped)
+        if (nped != nrow(snp.data)) 
+            stop("length of `ped' argument incompatible with `snp.data'")
+        id <- as.character(id)
+        if (length(id) != nped) 
+            stop("incompatible length for `id' and `ped' arguments")
+        father <- as.character(father)
+        if (length(father) != nped) 
+            stop("incompatible length for `father' and `ped' arguments")
+        mother <- as.character(mother)
+        if (length(mother) != nped) 
+            stop("incompatible length for `mother' and `ped' arguments")
+        affected <- as.logical(affected)
+        if (length(affected) != nped) 
+            stop("incompatible length for `affected' and `ped' arguments")
+        subject.names <- rownames(snp.data)
+        in.snp <- 1:nped
+        have.snps <- rep(TRUE, nped)
+       print("here")
+    }
+    else {
+        data <- as.data.frame(data)
+        nped <- nrow(data)
+        subject.names <- rownames(data)
+        if (missing(ped)) 
+            ped <- as.character(data[, 1])
+        else ped <- as.character(eval(mcall$ped, envir = data))
+        if (is.null(ped)) 
+            stop("pedigree identifiers not found in data frame")
+        if (missing(id)) 
+            id <- as.character(data[, 2])
+        else id <- as.character(eval(mcall$id, envir = data))
+        if (is.null(id)) 
+            stop("subject identifiers not found in data frame")
+        if (missing(father)) 
+            father <- as.character(data[, 3])
+        else father <- as.character(eval(mcall$father, envir = data))
+        if (is.null(father)) 
+            stop("father identifiers not found in data frame")
+        if (missing(mother)) 
+            mother <- as.character(data[, 4])
+        else mother <- as.character(eval(mcall$mother, envir = data))
+        if (is.null(mother)) 
+            stop("mother identifiers not found in data frame")
+        if (missing(affected)) 
+            affected <- (data[, 6] == 2)
+        else affected <- as.logical(eval(mcall$affected, envir = data))
+        if (is.null(affected)) 
+            stop("disease status not found in data frame")
+        in.snp <- match(subject.names, rownames(snp.data))
+        have.snps <- !is.na(in.snp)
+        print("there")
+    }
+    affected[is.na(affected)] <- FALSE
+    s.unique <- paste(ped, id, sep = ":")
+    if (any(duplicated(s.unique))) 
+        warning("Combination of pedigree ID and ID within pedigree does not generate unique IDs")
+    f.unique <- paste(ped, father, sep = ":")
+    fpos <- match(f.unique, s.unique)
+    m.unique <- paste(ped, mother, sep = ":")
+    mpos <- match(m.unique, s.unique)
+    prv(have.snps,affected,fpos,mpos)
+
+    trio <- have.snps & affected & (!is.na(fpos)) & (have.snps[fpos]) & 
+        (!is.na(mpos)) & (have.snps[mpos])
+    ntrio <- sum(trio, na.rm = TRUE)
+    if (ntrio == 0) {
+        cat("No potentially complete trios to analyse\n")
+        return(NULL)
+    }
+    pd.snps <- in.snp[trio]
+    fr.snps <- in.snp[fpos[trio]]
+    mr.snps <- in.snp[mpos[trio]]
+    clust <- as.integer(factor(ped[trio]))
+    cord <- order(clust)
+    cat("Analysing", ntrio, "potentially complete trios in", 
+        max(clust), "different pedigrees\n")
+    scores <- .Call("score_tdt", pd.snps[cord], fr.snps[cord], 
+        mr.snps[cord], clust[cord], snp.data, rules, snp.subset, 
+        check.inheritance, robust, uncertain, PACKAGE = "snpStats")
+    chisq <- .Call("chisq_single", scores, PACKAGE = "snpStats")
+    if (is.null(rules)) {
+        if (is.null(snp.subset)) 
+            tested <- colnames(snp.data)
+        else tested <- colnames(snp.data)[snp.subset]
+    }
+    else {
+        if (is.null(snp.subset)) 
+            tested <- names(rules)
+        else tested <- names(rules)[snp.subset]
+    }
+    if (score) 
+        res <- new("SingleSnpTestsScore", snp.names = tested, 
+            chisq = chisq, N = scores$N, N.r2 = scores$N.r2, 
+            U = scores$U, V = scores$V)
+    else res <- new("SingleSnpTests", snp.names = tested, chisq = chisq, 
+        N = scores$N, N.r2 = scores$N.r2)
+    res
+}
+
+
+
 
 read.plink.file <- function(filename,readtable=TRUE) {
   cN <- c("FID","IID","CHR","BP1","BP2","TYPE","SCORE","SITES")

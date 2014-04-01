@@ -5,13 +5,14 @@ plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 5
+my.st <- 4
 my.end <- 6
 do.cnv <- F
 comp <- F
 samp.set <- "light"
 pca.set <- 24
-restore <- T
+restore <- F
+cov.for.sex <- F
 
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
 source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
@@ -118,16 +119,16 @@ samp.settings <- list(nSD=99,mean.thr=c(NA,NA),dlrs.thr=c(NA,NA),gc.thr=c(NA,NA)
 
 
 if(pca.set==0) {
-  pca.settings <- list(num.pcs=0,pc.to.keep=.20,assoc=F,n.store=50,correct.sex=F,
+  pca.settings <- list(num.pcs=0,pc.to.keep=.20,assoc=F,n.store=50,correct.sex=cov.for.sex,
                        comparison=F,comp.gc=F,comps="plate")
 } else {
   if(pca.set==6) {
     
-    pca.settings <- list(num.pcs=6,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=T,
+    pca.settings <- list(num.pcs=6,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=cov.for.sex,
                          comparison=T,comp.gc=T,comps="plate")
   } else {
     #24
-    pca.settings <- list(num.pcs=24,pc.to.keep=.30,assoc=F,n.store=50,correct.sex=T,
+    pca.settings <- list(num.pcs=24,pc.to.keep=.30,assoc=F,n.store=50,correct.sex=cov.for.sex,
                          comparison=T,comp.gc=T,comps="plate")
   }
 }
@@ -151,6 +152,7 @@ settings <- c(chip.settings,base.settings,snp.settings,samp.settings,pca.setting
 ###################
 
 dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies/")
+
 
 
 if(plumber) {

@@ -214,11 +214,25 @@ list.rowsummary <- function(snpMatLst,mode="row",dir=getwd(),warn=T,n.cores=1)
   if(!warn) { options(warn=0) }
   if(mode=="row" & mat.type==mat.typez[1]) {
     #sample summary on sampleSubGrps
-    return(do.call("rbind",rowsum.list))
+    jj <- unlist(sapply(as.list(rowsum.list),rownames))
+    out <- do.call("rbind",args=(rowsum.list))
+    if(!all(rownames(out) %in% jj)) { 
+      warning("sample-rownames were corrupted, fixing:\n",
+              (paste(rownames(out)[1:3],"==>",jj[1:3],"\n")),"...\n",sep="")
+      rownames(out) <- jj
+    } 
+    return(out)
   }
   if(mode!="row" & mat.type==mat.typez[2]) {
     #snp summary on snpSubGrps
-    return(do.call("rbind",rowsum.list))
+    jj <- unlist(sapply(as.list(rowsum.list),rownames))
+    out <- do.call("rbind",args=(rowsum.list))
+    if(!all(rownames(out) %in% jj)) { 
+      warning("sample-rownames were corrupted, fixing:\n",
+              (paste(rownames(out)[1:3],"==>",jj[1:3],"\n")),"...\n",sep="")
+      rownames(out) <- jj
+    } 
+    return(out)
   }
   wgts <- NA
   if(mode=="row" & mat.type==mat.typez[2]) {
@@ -288,7 +302,7 @@ convert.smp.to.chr22 <- function(snpMatLst,snp.info,dir="",n.cores=1)
   }
   must.use.package("snpStats",bioC=T)
   list.spec <- get.snpMat.spec(snpMatLst,dir=dir)
-  rownames(list.spec) <- c("Samples","SNPs")
+  rownames(list.spec) <- c("Samples","SNPs"); colnames(list.spec) <- basename(colnames(list.spec))
   cat("\n"); print(list.spec); cat("\n")
   #e.g, sanger    t1d    uva
   #[1,]   4537   6808   5461   --> samples

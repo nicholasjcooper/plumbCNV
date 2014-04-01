@@ -456,7 +456,7 @@ extract.cnv.regions <- function(dir, type="DEL", by.cnv=F, enriched=T, genes=T, 
     if(genes) {
       UNAFFECTED.REG <- many.ctrl[,"POOL"]; indx2 <- match(UNAFFECTED.REG,rownames(CNVRs))
       AFFECTED.REG <- many.case[,"POOL"]; indx <- match(AFFECTED.REG,rownames(CNVRs))
-      CNVRs[["genes"]] <- (find.overlaps(CNVRs,db="gene",vec.out=T,delim=";"))
+      CNVRs[["genes"]] <- (find.overlaps(CNVRs,db="gene",vec.out=T,delim=";",quiet=TRUE))
       many.ctrl <- cbind(many.ctrl,substr(CNVRs$genes[indx2],1,40))[,-match(c("FID","TYPE","SCORE"),colnames(many.ctrl))]
       many.case <- cbind(many.case,substr(CNVRs$genes[indx],1,40))[,-match(c("FID","TYPE","SCORE"),colnames(many.case))]
     } 
@@ -536,7 +536,7 @@ toptables <- function(oo1,oo2,pv=0.05,prt=T) {
   sig.dels <- which(oo1$sig<pv)
   sig.dups <- which(oo2$sig<pv)
   tt1 <- tt2 <- NULL
-  if(prt) { cat("\nCNV-regions frequency by phenotype analysis: using Fischers Exact Test, showing results with p<",pv,"\n",sep="") }
+  if(prt) { cat("\nCNV-regions frequency by phenotype analysis: using Fishers Exact Test, showing results with p<",pv,"\n",sep="") }
   if(length(sig.dels)<1) { 
     warning("no significant DELs at p<",pv) 
   } else {

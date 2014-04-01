@@ -5,13 +5,13 @@ plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 0
+my.st <- 4
 my.end <- 6
 do.cnv <- F
 comp <- F
 samp.set <- "light"
 pca.set <- 24
-restore <- F
+restore <- T
 
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
 source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
@@ -62,7 +62,7 @@ base.settings <- list(dt.name="datatracker",
                       ucsc="hg18",erase.previous=F,verbose=F)
 
 
-penn.settings <- list(hmm="hh550.hmm",relative=T,run.manual=F,print.cmds=F,q.cores=NA,
+penn.settings <- list(hmm="hh550.hmm",relative=F,run.manual=F,print.cmds=F,q.cores=100,
                       grid.id="all.q",cluster.fn="q.cmd",use.penn.gc=F)
 
 

@@ -1,5 +1,5 @@
 
-suffix <- 19
+suffix <- 45
 metabo <- F
 plumber <- T
 dgv.valid <- F
@@ -12,7 +12,7 @@ comp <- F
 samp.set <- "light"
 pca.set <- 24
 restore <- F
-cov.for.sex <- F
+cov.for.sex <- T
 
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
 source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
@@ -75,7 +75,7 @@ base.settings <- list(dt.name="datatracker",
                       plink.imp=T,fet.analysis.p=0.05,HD.mode=F,
                       n.cores=22,low.ram=F,
                       hide.penn.plink=T,penn.path="/usr/local/bin/penncnv64/",
-                      ucsc="hg18",erase.previous=F,verbose=F)
+                      ucsc="hg18",erase.previous=T,verbose=F)
 
 
 penn.settings <- list(hmm="hh550.hmm",relative=T,run.manual=F,print.cmds=F,q.cores=100,
@@ -120,16 +120,16 @@ samp.settings <- list(nSD=99,mean.thr=c(NA,NA),dlrs.thr=c(NA,NA),gc.thr=c(NA,NA)
 
 if(pca.set==0) {
   pca.settings <- list(num.pcs=0,pc.to.keep=.20,assoc=F,n.store=50,correct.sex=cov.for.sex,
-                       comparison=F,comp.gc=F,comps="plate")
+                       comparison=F,comp.gc=F,comps="plate",exclude.bad.reg=F)
 } else {
   if(pca.set==6) {
     
     pca.settings <- list(num.pcs=6,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=cov.for.sex,
-                         comparison=T,comp.gc=T,comps="plate")
+                         comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   } else {
     #24
     pca.settings <- list(num.pcs=24,pc.to.keep=.30,assoc=F,n.store=50,correct.sex=cov.for.sex,
-                         comparison=T,comp.gc=T,comps="plate")
+                         comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   }
 }
 
@@ -138,8 +138,8 @@ if(pca.set==0) {
 if(!do.cnv) {
   #none
   cnv.settings <- list(out.format="Ranges",results="everything",print.summary.overlaps=T,
-                     cnv.qc=F,rare.qc=F,plate.qc=F,pval=0.01,del.rate=2,dup.rate=2,thr.sd=5,plate.thr=5,
-                     rmv.low.plates=F,min.sites=4,rare.olp=0.5,rare.pc=0.01,rmv.bad.reg=F)
+                     cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.01,del.rate=2,dup.rate=2,thr.sd=4,plate.thr=4,
+                     rmv.low.plates=F,min.sites=4,rare.olp=0.5,rare.pc=0.02,rmv.bad.reg=F)
 } else {
   #normal
   cnv.settings <- list(out.format="Ranges",results="everything",print.summary.overlaps=T,

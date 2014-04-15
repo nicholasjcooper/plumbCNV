@@ -166,7 +166,7 @@ table2d <- function(...,col,row,rn=NULL,cn=NULL,remove.na=TRUE) {
 Ranges.to.txt <- function(chr.list) {
   ## takes a RangedData object from some annotation lookup functions and converts to standard text positions
   if(is(chr.list)[1]!="RangedData") { stop("Not a RangedData object")}
-  text.out <- paste("chr",chr(chr.list),":",format(start(chr.list),scientific=F,trim=T),"-",
+  text.out <- paste("chr",chr2(chr.list),":",format(start(chr.list),scientific=F,trim=T),"-",
                     format(end(chr.list),scientific=F,trim=T),sep="")
   return(text.out)
 }
@@ -182,11 +182,11 @@ select.autosomes <- function(snp.info,deselect=FALSE) {
     #  chromosomes still has empty chr slots from previous object
     snp.info <- snp.info[as.numeric(unique(space(snp.info)))]
   }
-  select <- which(rownames(chrInfo(snp.info)) %in% paste(1:22))
+  select <- which(rownames(chrInfo2(snp.info)) %in% paste(1:22))
   if(deselect) {
-    ok.chrs <- rownames(chrInfo(snp.info))[!select]
+    ok.chrs <- rownames(chrInfo2(snp.info))[!select]
   } else {
-    ok.chrs <- rownames(chrInfo(snp.info))[select]
+    ok.chrs <- rownames(chrInfo2(snp.info))[select]
   }
   return(snp.info[ok.chrs])
 }
@@ -208,6 +208,64 @@ ranged.to.data.frame <- function(ranged,include.cols=FALSE) {
     if("space" %in% cn) { colnames(u)[which(cn=="space")] <- "chr" }
     return(u)
   }
+}
+
+
+toGenomeOrder2 <- function(X,...) {
+  if(has.method("toGenomeOrder",X)) {
+    return(toGenomeOrder(X))
+  } else {
+    alreadyThere <-("strand" %in% colnames(X))
+    out <- toGenomeOrder(as(X,"GRanges"),strict=T)
+    X <- as(out,"RangedData")
+    if(("strand" %in% colnames(X)) & !alreadyThere) {
+      X <- X[,-which(colnames(X) %in% "strand")]
+    }
+    return(X)
+  }
+}
+
+chrInfo2 <- function(X) {
+  if(has.method("chrInfo",X)) {
+    return(chrInfo(X))
+  } else {
+    out <- chrInfo(as(X,"GRanges"))
+    return(out)
+  }
+}
+
+chrIndices2 <- function(X,...) {
+  if(has.method("chrIndices",X)) {
+    return(chrIndices(X,...))
+  } else {
+    out <- chrIndices(as(X,"GRanges"))
+    return(out)
+  }
+}
+
+chr2 <- function(X) {
+  if(has.method("chr",X)) {
+    return(chr(X))
+  } else {
+    if(is(X)[1]=="RangedData") {
+      return(space(X))
+    } else {
+      warning("chr2() function applies only to RangedData objects, attempting to pass to chr()")
+      return(chr(X))
+    }
+  }
+}
+
+# enter a function as a character or function
+# if class is a string, will look for that name, else if an object, will search the class() of that object
+has.method <- function(FUN,CLASS) {
+  if(!is.character(CLASS)) { CLASS <- class(CLASS) }
+  if(!is.character(FUN) & !is.function(FUN)) { stop("FUN must be an R function, as a string or function") }
+  test <- showMethods(FUN,classes=CLASS,printTo=F)
+  if(length(grep("not an S4 generic function",test))>0) {
+    stop(FUN," was not an S4 generic function")
+  }
+  return(!(length(grep("No methods",test))>0))
 }
 
 
@@ -259,7 +317,7 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
   if(length(wd)>0) { en1 <- st1+as.numeric(dat[[wd]]) } # { en1 <- st1+dat[[wd]] }
   #print(length(st1)); print(head(st1))
   outData <- RangedData(ranges=IRanges(start=st1,end=en1,names=id),space=ch1,universe=ucsc[1])
-  outData <- toGenomeOrder(outData,strict=T)
+  outData <- toGenomeOrder2(outData,strict=T)
   # note when adding data subsequently that 'RangedData' sorts by genome order, so need
   # to resort any new data before adding.
   if(is.null(rownames(outData))) { rownames(outData) <- paste(1:nrow(outData)) }
@@ -405,7 +463,7 @@ range.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,nearest=T) {
 
 
 get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
-  snp.info <- toGenomeOrder(snp.info,strict=TRUE); rw.cnt <- 1
+  snp.info <- toGenomeOrder2(snp.info,strict=TRUE); rw.cnt <- 1
   all.fl <- matrix(ncol=4, nrow=0)
   for(cc in chrNums(ranged)) {
     nxt.nm <- rownames(snp.info[paste(cc)]); pos <- start(snp.info[paste(cc)])
@@ -443,7 +501,7 @@ start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,neare
       stop("if not using 'ranged', then chr and pos must be valid")
     }
   } else {
-    st <- start(ranged); en <- end(ranged); chr <- chr(ranged)
+    st <- start(ranged); en <- end(ranged); chr <- chr2(ranged)
     nmz <- rownames(ranged)
   }
   if(!is(snp.info)[1]=="RangedData") {
@@ -494,7 +552,7 @@ start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,neare
 
 
 get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
-  snp.info <- toGenomeOrder(snp.info,strict=T); rw.cnt <- 1
+  snp.info <- toGenomeOrder2(snp.info,strict=T); rw.cnt <- 1
   all.fl <- matrix(ncol=4, nrow=0)
   for(cc in chrNums(ranged)) {
     nxt.nm <- rownames(snp.info[paste(cc)]); pos <- start(snp.info[paste(cc)])
@@ -647,10 +705,10 @@ plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,...) {
 set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
   must.use.package("genoset",bioC=T)
   if(!is(ranged)[1]=="RangedData") { warning("not a RangedData object"); return(NULL) }
-  if(!all(unique(chr(select.autosomes(ranged))) %in% paste("chr",1:22,sep=""))) {
-    ranged <- toGenomeOrder(ranged,strict=TRUE)
+  if(!all(unique(chr2(select.autosomes(ranged))) %in% paste("chr",1:22,sep=""))) {
+    ranged <- toGenomeOrder2(ranged,strict=TRUE)
     #prv(ranged)
-    mychr2 <- mychr <- paste(chr(ranged))
+    mychr2 <- mychr <- paste(chr2(ranged))
     #all.nams <- chrNames2(ranged)
     #all.nums <- chrNums(ranged,table.in=table.in)
     all.nums.t <- chrNums(select.autosomes(ranged),table.in=NULL,table.out=T) 
@@ -667,7 +725,7 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
     #print(tail(mychr2)); print((all.nums))
     #prv(mychr2)
     out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
-    out <- toGenomeOrder(out,strict=TRUE)
+    out <- toGenomeOrder2(out,strict=TRUE)
     # prv(out)
     if(ncol(ranged)>0 & keep) {
       cn <- colnames(ranged)
@@ -684,12 +742,12 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
 
 #' @param table.in, table.out extra parameters for chrNums (e.g, how to convert weird regions)
 set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
-  if(table.out | suppressWarnings(any(is.na(as.numeric(chr(ranged)))))) {
+  if(table.out | suppressWarnings(any(is.na(as.numeric(chr2(ranged)))))) {
     silly.name <- "adf89734t5b"
-    ranged <- toGenomeOrder(ranged,strict=T)
+    ranged <- toGenomeOrder2(ranged,strict=T)
     ranged[[silly.name]] <- paste(1:nrow(ranged))
     #prv(ranged)
-    mychr2 <- mychr <- paste(chr(ranged))
+    mychr2 <- mychr <- paste(chr2(ranged))
     #all.nams <- chrNames2(ranged)
     #all.nums <- chrNums(ranged,table.in=table.in)
     all.nums.t <- chrNums(ranged,table.in=table.in,table.out=T) 
@@ -699,7 +757,7 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
     for (cc in 1:length(all.nams)) { mychr2[which(mychr==all.nams[cc])] <- all.nums[cc] }
     #print(tail(mychr2)); print((all.nums))
     out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2,silly.name=ranged[[silly.name]])
-    out <- toGenomeOrder(out,strict=T)
+    out <- toGenomeOrder2(out,strict=T)
     if(all(!is.na(out[["silly.name"]]))) {
       rn <- narm(rownames(ranged)[match(out[["silly.name"]],ranged[[silly.name]])])
       if(nrow(out)==length(rn) ) { rownames(out) <- rn } else { warning("rownames did not match number of rows") }
@@ -1008,10 +1066,10 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
  # print(head(xlist[[1]]))
   #  prv(xlist)
   xx <- xlist[[1]]
-  xx=toGenomeOrder(xx,strict=T)
+  xx=toGenomeOrder2(xx,strict=T)
   #print(head(xx))
   ili <- set.chr.to.numeric(subj,table.in=xlist[[2]],table.out=F)
-  yy=toGenomeOrder(ili,strict=T)
+  yy=toGenomeOrder2(ili,strict=T)
   if(autosomes.only) {
     xx=select.autosomes(xx)
     yy=select.autosomes(yy)
@@ -1088,7 +1146,7 @@ get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=F,text=F) {
     must.use.package(c("genoset","IRanges"),bioC=T)
     outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=chr,
                           reg=reg.dat,universe=ucsc[1])
-    outData <- toGenomeOrder(outData,strict=T)
+    outData <- toGenomeOrder2(outData,strict=T)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- vector("list",nchr); names(outData) <- paste("chr",1:nchr,sep="")
@@ -1129,7 +1187,7 @@ get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=FALSE,text=FAL
     must.use.package(c("genoset","IRanges"),bioC=TRUE)
     outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=1:nchr,
                           reg=reg.dat,universe=ucsc[1])
-    outData <- toGenomeOrder(outData,strict=TRUE)
+    outData <- toGenomeOrder2(outData,strict=TRUE)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- my.chr.range 
@@ -1158,7 +1216,7 @@ get.cyto <- function(ucsc="hg18",local.file="cyto.txt.gz",bioC=T) {
     must.use.package(c("genoset","IRanges"),bioC=T)
     outData <- RangedData(ranges=IRanges(start=st,end=en,names=fullbands),space=tt$chr,
                           negpos=tt$negpos,universe=ucsc[1])
-    outData <- toGenomeOrder(outData,strict=T)
+    outData <- toGenomeOrder2(outData,strict=T)
     #if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- tt 
@@ -1216,7 +1274,7 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
       ts <- RangedData(ranges=IRanges(start=ts$start,end=ts$end),
                        space=ts$chr,gene=ts$gene, strand=ts$strand,
                        txid=ts$txid, txname=ts$txname,universe=ucsc)
-      ts <- toGenomeOrder(ts,strict=T)
+      ts <- toGenomeOrder2(ts,strict=T)
     }
   } else {
     if(from.scr) { if(exists("ex.fn")) { save(ts,file=ex.fn) } }
@@ -1258,7 +1316,7 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=T,duplicate.report=F) 
   if(range.out) {
     outData <- RangedData(ranges=IRanges(start=dat$start_position,end=dat$end_position),
                           space=dat$chromosome_name,gene=dat$hgnc_symbol, band=dat$band, universe=ucsc)
-    outData <- toGenomeOrder(outData,strict=T)
+    outData <- toGenomeOrder2(outData,strict=T)
     if(duplicate.report) {
       dup.genes <- gene.duplicate.report(outData)
     }
@@ -1289,7 +1347,7 @@ get.telomere.locs <- function(dir="",kb=500,ucsc=c("hg18","hg19"),bioC=F,text=F)
     must.use.package(c("genoset","IRanges"),bioC=T)
     outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=chrz,
                           reg=reg.dat,universe=ucsc[1])
-    outData <- toGenomeOrder(outData,strict=T)
+    outData <- toGenomeOrder2(outData,strict=T)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- my.chr.range 
@@ -1433,7 +1491,7 @@ import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames
   }
   snpData <- RangedData(ranges=IRanges(start=vcf.file[,pos.col],width=1,
                                        names=paste(vcf.file[,snp.col])),space=vcf.file[,chr.col])
-  snpData <- toGenomeOrder(snpData,strict=T)
+  snpData <- toGenomeOrder2(snpData,strict=T)
   return(snpData)
 }
 
@@ -1454,7 +1512,7 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
   must.use.package(c("genoset","IRanges"),T)
   if(!is(snp.info)[1]=="RangedData") { warning("snp.info wasn't RangedData") ; return(NULL) }
   snp.info <- select.autosomes(snp.info)
-  snp.info <- toGenomeOrder(snp.info,strict=T)
+  snp.info <- toGenomeOrder2(snp.info,strict=T)
   chr.set <- chrNums(snp.info); n.chr <- length(snp.info)
   # single core -  multicore doesn't really help much (like 5 seconds saving for 22 cores for a large dataset)
   rd <- calc.cov(snp.info, targ.int, min.snps)
@@ -1471,11 +1529,11 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
     enz  <- (chr.lens.full - sapply(snp.info,function(x) { rev(sortna(start(x)))[min.snps-1] })) - (targ.int)
     rd2 <- RangedData(IRanges(start=rep(1,n.chr)[stz>0],end=stz[stz>0]),space=chr.set[stz>0])
     rd3 <- RangedData(IRanges(start=(chr.lens.full-enz-targ.int)[enz>0],end=(chr.lens.full-targ.int)[enz>0]),space=chr.set[enz>0])
-    rd  <- rbind(toGenomeOrder(rd,strict=T),toGenomeOrder(rd2,strict=T),toGenomeOrder(rd3,strict=T))
+    rd  <- rbind(toGenomeOrder2(rd,strict=T),toGenomeOrder2(rd2,strict=T),toGenomeOrder2(rd3,strict=T))
   } else { 
     chr.lens <- chr.lens.range  
   }
-  rd <- toGenomeOrder(rd,strict=T)
+  rd <- toGenomeOrder2(rd,strict=T)
   gappoz <- sum(as.numeric(width(rd)))
   if(by.chr) {
     ind.chrs <- 1-(sapply(rd,function(x) { sum(width(x)) })/chr.lens)
@@ -1500,7 +1558,7 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
 
 calc.cov <- function (snp.info, targ.int, min.snps) {
   # function used by chip.coverage() to calculate coverage gaps
-  cur.chr <- chr(snp.info)
+  cur.chr <- chr2(snp.info)
   if(nrow(snp.info)<10) { warning("not enough snps to calculate coverage"); return(NA) }
   nsnp <- nrow(snp.info)-min.snps;
   beg <- fin <- Chr <- integer(nsnp) 
@@ -1533,7 +1591,7 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
   sel <- !is.na(beg) & !is.na(fin) & beg!=0
   beg <- beg[sel] ; fin <- fin[sel] ; Chr <- Chr[sel]
   rd <- RangedData(IRanges(start=beg,end=fin),space=Chr)
-  rd <- toGenomeOrder(rd,strict=T)
+  rd <- toGenomeOrder2(rd,strict=T)
   return(rd)
 }
 
@@ -1726,7 +1784,7 @@ plink.to.Ranges <- function(plink.cnv) {
   #FID  IID  CHR  BP1  BP2  TYPE	SCORE	SITES
   outData <- RangedData(ranges=IRanges(start=dat$BP1,end=dat$BP2),id=dat$IID,space=dat$CHR,
                         cn=dat$TYPE,numSnps=dat$SITES,fid=dat$FID,score=dat$SCORE)
-  outData <- toGenomeOrder(outData,strict=T)
+  outData <- toGenomeOrder2(outData,strict=T)
   # note the IDs can't be rownames due to duplicates
   return(outData)
 }
@@ -2189,12 +2247,12 @@ extractROH <- function(dd,min.size=100,merge.gap.pc=.01,verbose=F) {
 
 convert.snp.indx.to.pos <- function(ROHlist,snpMat,snp.info) {
   must.use.package("genoset")
-  snp.info <- toGenomeOrder(select.autosomes(snp.info),strict=T)
+  snp.info <- toGenomeOrder2(select.autosomes(snp.info),strict=T)
   valid.snps <- colnames(snpMat)[colnames(snpMat) %in% rownames(snp.info)]
   select <- which(rownames(snp.info) %in% valid.snps)
   if(length(valid.snps)<ncol(snpMat)) { warning("some snp names from snpMat were not found in snp.info - set to NA") }
   snp.info <- snp.info[select,]  
-  st <- start(snp.info); en <- end(snp.info); ch <- chr(snp.info)
+  st <- start(snp.info); en <- end(snp.info); ch <- chr2(snp.info)
   #print(paste("st",st,"en",en,"chr",ch)[en>st])
   main.fun <- function(X,st,en,chr) {
     if(is.null(X) | length(which(!is.na(X)))<2) { warning("sample had no ROH regions exceeding min.size"); return(NULL) }
@@ -2239,7 +2297,7 @@ get.ROH.for.SnpMatrix <- function(snpMat,snp.info=NULL,snp.fail=NULL,dir=NULL,sa
   if(is.null(snp.info) & is.null(dir)) { stop("at least one of snp.info or dir must be non-null to run this function") }
   doROHrow <- function(x,...) { dd <- as.numeric(x); out <- extractROH(dd,...); return(out) }
   if(!is.null(dir) & !is(snp.info)[1]=="RangedData") { snp.info <- read.snp.info(dir) }
-  snp.info <- toGenomeOrder(select.autosomes(snp.info),strict=T)
+  snp.info <- toGenomeOrder2(select.autosomes(snp.info),strict=T)
   if(is.character(snp.fail)) { ii <- snp.fail } else { 
     if("QCfail" %in% colnames(snp.info)) {
       ii <- rownames(snp.info)[snp.info$QCfail!=0]

@@ -34,13 +34,17 @@ suck.pheno.file <- function(fnp) {
   tab0 <- tab1 <- vector("list",3)
   fil <- readLines(fnp)
   anc <- grep("$raw.counts$`0`",fil,fixed=T)
-  for (cc in 1:length(anc)) {
-    tab0[[cc]] <- get.tab.with.anc(fil,anc[cc])
-  }
+  if(length(anc)>0) {
+    for (cc in 1:length(anc)) {
+      tab0[[cc]] <- get.tab.with.anc(fil,anc[cc])
+    }
+  } else { warning("no 0 counts found") }
   anc <- grep("$raw.counts$`1`",fil,fixed=T)
-  for (cc in 1:length(anc)) {
-    tab1[[cc]] <- get.tab.with.anc(fil,anc[cc])
-  }
+  if(length(anc)>0) {
+    for (cc in 1:length(anc)) {
+      tab1[[cc]] <- get.tab.with.anc(fil,anc[cc])
+    }
+  } else { warning("no 1 counts found") }
   names(tab0) <- names(tab1) <- c("Gene","Exon","DGV")
   return(list(controls=tab0,cases=tab1))
 }
@@ -733,7 +737,7 @@ if(F) {
   
 #thisCNVR <- cnvs1[which(cnvs1$cnvr %in% rownames(tts[[1]])[16]),]
 #plot.a.CNVR(thisCNVR,dir)
-
+# for a CNV, make a plot (horizontal red and blue lines) comparing case control freq and extent
 plot.a.CNVR <- function(thisCNVR,dir,genes=T) {
   ## assuming phenotypes 1,2 for controls,T1D respectively
   ## ... further arguments for getting the data
@@ -767,6 +771,7 @@ plot.a.CNVR <- function(thisCNVR,dir,genes=T) {
   return(NULL)
 }
 
+# for a CNV, make a plot (dots or lines) comparing case control signal intensity, BAF coherence
 plot.lrr.CNVR <- function(thisCNVR,dir,genes=T,BAF=F,type="l",DEL=T,cex=1) {
   ## assuming phenotypes 1,2 for controls,T1D respectively
   ## ... further arguments for getting the data

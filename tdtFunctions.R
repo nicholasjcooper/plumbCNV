@@ -109,7 +109,7 @@ trio.analysis <- function(dir=NULL, cnvResults, ped.file) {
 }
 
 
-
+## add all ids in the study to CNV/snpMatrix object containing only some (e.g, passing qc, have CNV, etc)
 add.all.ids <- function(tdt.cnv, ped, dir) {
   dir <- validate.dir.for(dir,"ano")
   want <- c("familyid","member","father","mother","sex","affected")
@@ -178,7 +178,7 @@ make.cnv.reg.snp.matrix <- function(X) {
   return(data.frame.to.SnpMatrix(out))
 }
 
-
+# take the named elements of a list and put them into the current environment
 list.to.env <- function(list) {
   if(!is.list(list)) { stop("this function's sole parameter must be a list object")}
   if(is.null(names(list))) { stop("list elements must be named") }
@@ -189,7 +189,7 @@ list.to.env <- function(list) {
   return(NULL)
 }
 
-
+## extract family links from a ped file
 get.ped.linked.sets <- function(ped) {
   want <- c("familyid","member","father","mother","sex","affected")
   if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'get.pedData()']") }
@@ -249,6 +249,8 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     their.kids <- rownames(kk)[mklink[[cc]]]
     if(length(their.kids)<1) { next }
     mat <- TDT[their.kids,dels,drop=FALSE]  # extract her children for these DEL snps
+    mat[mat>1] <- 1
+    #if("S6" %in% colnames(mat)) { print(mat) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[1]]) }
     if(length(Dim(mat))<2) {
       snp.counts <- mat  # in case only 1 child, a row, not a matrix
@@ -266,6 +268,8 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     their.kids <- rownames(kk)[fklink[[cc]]]
     if(length(their.kids)<1) { next }
     mat <- TDT[their.kids,dels,drop=FALSE]  # extract his children for these DEL snps
+    mat[mat>1] <- 1
+    #if("S6" %in% colnames(mat)) { print(mat) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[2]]) }
     if(length(Dim(mat))<2) {
       snp.counts <- mat  # in case only 1 child, a row, not a matrix
@@ -289,6 +293,7 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     #cat("processing child:",rownames(kk)[cc],"with parents",paste(their.folks, collapse=","),"\n")
     if(length(their.folks)<1) { next }
     mat <- TDT[their.folks,dels,drop=FALSE]  # extract mother+father of child for these DEL snps
+    #if("S6" %in% colnames(mat)) { print(mat) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[3]]) }
     if(length(Dim(mat))<2) {
       snp.counts <- mat  # in case only 1 parent, a row, not a matrix

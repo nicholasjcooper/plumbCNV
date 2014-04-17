@@ -577,15 +577,19 @@ get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
 
 
 
-force.chr.pos <- function(Pos,Chr,snp.info) {
+force.chr.pos <- function(Pos,Chr,snp.info=NULL) {
   if(length(Pos)==2) {
-    maxln <- end(tail(snp.info[paste(Chr)],1)) # force start and end to be within 1:chr.len
+    if(is(snp.info)[1]!="RangedData" & is(snp.info)[1]!="GRanges") { 
+      maxln <- get.chr.lens()[Chr] 
+    } else { 
+      maxln <- end(tail(snp.info[paste(Chr)],1)) # force start and end to be within 1:chr.len
+    }
     mbs <- min(max(1,Pos[1]),(maxln-1)); mbe <- min(max(2,Pos[2]),maxln)
     return(c(mbs,mbe))
   } else {
     Pos <- NA; warning("Pos needs to be numeric length 2, min, max")
   }
-  return(Pos)
+  return(round(Pos))
 }
 
 

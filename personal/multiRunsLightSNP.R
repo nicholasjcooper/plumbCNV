@@ -7,7 +7,7 @@ samp.excl <- F
 eval <- F
 my.st <- 6
 my.end <- 6
-do.cnv <- F
+do.cnv <- T
 comp <- F
 samp.set <- "light"
 pca.set <- 24
@@ -102,15 +102,18 @@ if(samp.set=="none") {
 
 if(pca.set==0) {
   pca.settings <- list(num.pcs=0,pc.to.keep=.20,assoc=F,n.store=50,correct.sex=F,
+                       add.int=T,preserve.median=F,
                        comparison=F,comp.gc=F,comps="plate",exclude.bad.reg=F)
 } else {
   if(pca.set==6) {
     
     pca.settings <- list(num.pcs=6,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=T,
+                         add.int=T,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   } else {
     #24
     pca.settings <- list(num.pcs=24,pc.to.keep=.30,assoc=F,n.store=50,correct.sex=T,
+                         add.int=T,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   }
 }
@@ -126,7 +129,7 @@ if(!do.cnv) {
   #normal
   cnv.settings <- list(out.format="Ranges",results="everything",print.summary.overlaps=T,
                        cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.01,del.rate=0.4,dup.rate=0.2,thr.sd=3,plate.thr=3,
-                       rmv.low.plates=F,min.sites=6,rare.olp=0.5,rare.pc=0.01,rmv.bad.reg=T)
+                       rmv.low.plates=F,min.sites=6,rare.olp=0.5,rare.pc=0.01,rmv.bad.reg=F)
 }
 
 settings <- c(chip.settings,base.settings,snp.settings,samp.settings,pca.settings,penn.settings,cnv.settings)

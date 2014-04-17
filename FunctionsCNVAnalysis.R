@@ -174,7 +174,8 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
                              comparison=T,big.lrr.fn="combinedBigMat.RData",n.cores=1,
                              snp.sub.fn="pca.snp.subset.txt",restore.mode=F,pref.suf="",
                              sub.pref="PCAMatrix",post.pref="PostPC",cor.pref="corrected",
-                             sub.fn="pcaSubMat.RData", SVD=T,LAP=F,big.cor.fn=NULL,add.int=F,
+                             sub.fn="pcaSubMat.RData", SVD=T,LAP=F,big.cor.fn=NULL,
+                             add.int=F,preserve.median=FALSE,
                              pcs.fn="PCsEVsFromPCA.RData", med.fn="postpcmed.RData",
                              comp.gc=F,comp.dlrs=T,comps=c("plate","phenotype"),exclude.bad.reg=TRUE,
                              snp.info=NULL,sample.info=NULL,raw.stat.fn=NULL,ucsc="hg18")
@@ -255,7 +256,8 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
     # correct using the PC-components
     corrected.ref <- PC.correct(pca.result,big.lrr.fn,dir=dir,num.pcs=num.pcs,n.cores=n.cores,
                                                 pref=cor.pref,big.cor.fn=big.cor.fn,write=T,
-                                                sample.info=sample.info,correct.sex=correct.sex, add.int=add.int)
+                                                sample.info=sample.info,correct.sex=correct.sex, 
+                                                add.int=add.int, preserve.median=preserve.median)
   }
   corrected.bigMat <- get.big.matrix(corrected.ref,dir) #; rm(corrected.ref) #(in case it was a bigmat)
   # optionally make comparison of pre and post-pc distributions
@@ -5345,7 +5347,7 @@ process.cohort.qc <- function(DT=NULL,grp,of,dir,sample.info,snp.info,restore.mo
                               pref="",des.fn=paste(pref,"descrFile",sep=""),verbose=F,
                               med.chunk.out="medianStorage.RData",plate.fn="plate.lookup.txt",
                               dlrs=T,badPlateThresh=0.33,skip.chr.ab=F,lob=2,hib=2.5,pctile.bound=0.01,batch="plate",
-                              plate.report=T,chr.ab.report=T,lrr.report=T,n.cores=1,
+                              plate.report=T,chr.ab.report=T,lrr.report=T,n.cores=1,add.int=F,preserve.median=F,
                               cohort.pc.correct=F, pc.to.keep=.13,num.pcs=9,nSD=3,exclude.bad.reg=TRUE,
                               lo.cut=c("LB",NA,"LB"),hi.cut=c("UB","UB","UB"),ucsc="hg18",...)
 {
@@ -5408,10 +5410,12 @@ process.cohort.qc <- function(DT=NULL,grp,of,dir,sample.info,snp.info,restore.mo
     filt.descr <- big.exclude.sort(R.descr, dir=dir, 
                                    pref=paste("SampQC_LRR",grp,sep=""),verbose=F)
     pc.descr <- run.PCA.correct(dir=dir,pc.to.keep=pc.to.keep,assoc=F,correct.sex=F,
-                                num.pcs=num.pcs,n.store=max(50,num.pcs),add.int=F,
+                                num.pcs=num.pcs,n.store=max(50,num.pcs),
+                                add.int=add.int,preserve.median=preserve.median,
                                 comparison=F,big.lrr.fn=filt.descr,n.cores=n.cores,
                                 big.cor.fn=paste("pcaSubCorrected",grp,".RData",sep=""),
-                                snp.sub.fn="pca.snp.subset.pre.txt",restore.mode=(grp!=1),pref.suf=paste(grp),
+                                snp.sub.fn="pca.snp.subset.pre.txt",restore.mode=(grp!=1),
+                                pref.suf=paste(grp),
                                 sub.pref="cohortPCA",cor.pref="cohortCorrect",
                                 sub.fn=paste("pcaSubMat",grp,".RData",sep=""),
                                 pcs.fn=evs.filename, med.fn="postpcmed.RData",
@@ -5441,7 +5445,7 @@ run.SAMPLE.qc <- function(DT=NULL,dir=NULL,init=T,big.lrr=NULL,sample.info=NULL,
                           med.chunk.out="medianStorage.RData",big.list.out="grpsBigMats.RData",verbose=F,
                           cmb.out="combinedBigMat.RData",badPlateThresh=0.33,skip.chr.ab=F,lob=2,hib=2.5,pctile.bound=0.01,
                           pc.to.keep=.13,num.pcs=9,nSD=3,mean.thr=c("LB","UB"),dlrs.thr=c(NA,"UB"),gc.thr=c("LB","UB"),exclude.bad.reg=TRUE,
-                          dlrs=T,batch="plate",lrr.report=T,chr.ab.report=T,plate.report=T,cohort.pc.correct=F,n.cores=1,...)
+                          dlrs=T,batch="plate",lrr.report=T,chr.ab.report=T,plate.report=T,cohort.pc.correct=F,add.int=F,n.cores=1,...)
 {
   # run the whole sample QC process from scratch including importing raw data
   load.all.libs() # load all main plumbcnv libraries
@@ -5501,7 +5505,7 @@ run.SAMPLE.qc <- function(DT=NULL,dir=NULL,init=T,big.lrr=NULL,sample.info=NULL,
                                    badPlateThresh=badPlateThresh,skip.chr.ab=skip.chr.ab,lob=lob,hib=hib,pctile.bound=pctile.bound,
                                    batch=batch,plate.report=plate.report,chr.ab.report=chr.ab.report,lrr.report=lrr.report,
                                    dlrs=dlrs, pc.to.keep=pc.to.keep,num.pcs=num.pcs,restore.mode=restore.mode,exclude.bad.reg=exclude.bad.reg,
-                                   cohort.pc.correct=cohort.pc.correct,nSD=nSD,lo.cut=lo.cut,hi.cut=hi.cut,n.cores=n.cores,...)
+                                   cohort.pc.correct=cohort.pc.correct,add.int=add.int,nSD=nSD,lo.cut=lo.cut,hi.cut=hi.cut,n.cores=n.cores,...)
     if(is.data.tracker(DT)) {
       DT <- cohort.qc
       if(cohort.pc.correct) {
@@ -7224,13 +7228,13 @@ qscore.cnvs <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.flank
       #         LRR=LRR,BAF=BAF
       
       Pos <- force.chr.pos(Pos,Chr,snp.info)
-      
-      }
-    dev.off()
+      ## not sure what's going on here!
     }
+    dev.off()
+  }
   #dev.off()
   cat("~wrote file:",ofn)
-  }
+}
 
 
 ratio.flanks <- function(pos,chr,ratio=5,bp=NA,chr.lens=get.chr.lens()) {
@@ -8745,6 +8749,7 @@ get.snpqc.ranges <- function(dir,col="het",def=NA) {
 }
 
 
+
 cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
                      chr.expand=0,Chr=1:22,Pos=NA,Cnv=Pos,scl=10^6,
                      tag.cnvs=T,medSmooth=F,med.rat=10,gcOverlay=F,geneOverlay=F,exons=F,
@@ -8789,10 +8794,14 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
       warning("lookup of baf.file and/or lrr.file file(s) failed - will try to proceed but failure is likely")
     }
   } 
+  extend.50pc <- function(X,Chr,snp.info,pc=.5) {
+    y <- abs(X[2]-X[1])*pc; return(force.chr.pos(c(X[1]-y,X[2]+y),Chr,snp.info)) }
   ## over-ride settings incompatible with viewing a partial chromosome if ZOOM is on:
   if(is(snp.info)[1]!="RangedData") { snp.info <- read.snp.info(dir) }
   snp.info <- toGenomeOrder2(snp.info,strict=T)
   chr.set <- chrNums(snp.info); 
+  if(is.na(Pos) & all(Cnv==force.chr.pos(Cnv,Chr,snp.info))) { 
+    Pos <- extend.50pc(Cnv,Chr,snp.info) } # if pos left blank, by default extend 'Cnv' range by 50%
   if(any(!paste(Chr) %in% paste(chr.set))) { Chr <- Chr[paste(Chr) %in% paste(chr.set)] }
   if(length(Chr)<length(chr.set)) { rngOn <- T }
   if(length(Chr)==1 | length(chr.set)==1){
@@ -9045,7 +9054,7 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
     }
     cat(".")  # progress dots
   }
-  if(plot.to.file) { dev.off() ; cat("~wrote file:",ofn) }
+  if(plot.to.file) { dev.off() ; cat("~wrote file:",ofn,"\n") }
   return(NULL)
 }
 
@@ -9975,8 +9984,15 @@ plot.pheno.cnvs <- function(fn,type="DEL",pref="",dir)
   ## make plot of CNV regions across chromosomes in competing phenotypes for rare dels/dups
   if(!file.exists(fn)) { warning("cnv.summary file not found"); return(NULL) }
   if(length(grep("cnv.summary",fn))<1) { warning("doesn't look like a plink cnv.summary file: may fail") }
-  tt <- reader(fn)
-  #print(Dim(tt))
+  tt <- reader(fn,  )
+  if(length(Dim(tt))<2) { 
+    tt <- read.table(fn,  header=TRUE)
+    if(length(Dim(tt))<2) {
+      warning("problem with cnv.summary file: ",fn,", plot skipped")
+      prv(tt)
+      return(paste("failed to extract from",fn))
+    }  
+  }
   chr.list <- unique(tt[,1])
   if(length(chr.list)>0) {
     if(pref!="") { pref <- paste(pref,"_",sep="") }
@@ -10353,7 +10369,8 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                      cohort.pc.correct=F,num.pcs=9,
                      batch="plate",other.batch=list(),
                      lrr.report=T,chr.ab.report=T,plate.report=T,
-                     pc.to.keep=.11,assoc=F,n.store=50,correct.sex=F,add.int=F,exclude.bad.reg=T,
+                     pc.to.keep=.11,assoc=F,n.store=50,correct.sex=F,
+                     add.int=F,exclude.bad.reg=T,preserve.median=F,
                      comparison=T,comp.gc=F,comps="plate",use.penn.gc=F,
                      penn.path="/usr/local/bin/penncnv64/",hmm="hh550.hmm",
                      relative=F,run.manual=F,print.cmds=F,trio=F,joint=F,ped.file="my.ped",
@@ -10539,7 +10556,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                         badPlateThresh=badPlateThresh,
                         skip.chr.ab=skip.chr.ab,lob=lob,hib=hib,pctile.bound=pctile.bound,
                         cohort.pc.correct=cohort.pc.correct,pc.to.keep=pc.to.keep,exclude.bad.reg=exclude.bad.reg,
-                        num.pcs=num.pcs,batch=batch,n.cores=n.cores,
+                        num.pcs=num.pcs,add.int=add.int,batch=batch,n.cores=n.cores,
                         lrr.report=lrr.report,chr.ab.report=chr.ab.report,plate.report=plate.report)
     DT <- setSlot(DT,settings=settings,proc.done=3)
     write.data.tracker(DT,fn=dt.name)
@@ -10551,7 +10568,8 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   if(start.at<5) {
     Header("4. PCA AND PC-BATCH CORRECTION","#")
     if(assoc & cohort.pc.correct) { assoc <- F; warning("set 'assoc' to false as cohort.pc.correction removes mean differences between cohorts") }
-    DT <- run.PCA.correct(DT=DT,pc.to.keep=pc.to.keep,assoc=assoc,num.pcs=num.pcs,n.store=n.store,correct.sex=correct.sex,add.int=add.int,
+    DT <- run.PCA.correct(DT=DT,pc.to.keep=pc.to.keep,assoc=assoc,num.pcs=num.pcs,n.store=n.store,correct.sex=correct.sex,
+                          add.int=add.int,preserve.median=preserve.median,
                           comparison=comparison,comp.gc=comp.gc,comps=comps,ucsc=ucsc,n.cores=n.cores,restore.mode=restore.mode,
                           exclude.bad.reg=exclude.bad.reg)
     DT <- setSlot(DT,settings=settings,proc.done=4)
@@ -10643,7 +10661,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   
   # PLOT COMPARITIVE CNVRs
   fn <- cat.path(dir$cnv.qc,pref="rare",fn=c("DEL","DUP"),ext="cnv.summary")
-  if(any(file.exists(fn)) & n.phenos>1) {
+  if(all(file.exists(fn[1:2])) & n.phenos>1) {
     cnvr.del <- plot.pheno.cnvs(fn[1],type="DEL",pref=result.pref,dir=dir)
     cnvr.dup <- plot.pheno.cnvs(fn[2],type="DUP",pref=result.pref,dir=dir)
     if(doneCNVR & exists("oo1") & exists("oo2")) { 

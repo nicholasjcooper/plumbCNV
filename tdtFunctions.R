@@ -17,6 +17,42 @@ if(F & !exists("tdt3")) {
   keyfams2 <- names(which(tapply(ww$S51[kidz],factor(ww$familyid[kidz]),function(X) { any(X==2) })))
   #look at just the families with affected kids but not parents
   with(ww[ww$familyid %in% keyfams2 & !ww$familyid %in% keyfams,],table(affected,S51))
+  
+
+  
+  # to make plots of families for the CNV 'S6'
+
+  print(load("./RESULTS/TDT_results.RData"))
+  reg <- "S272"  # "S6" --> tdt3
+  cnv.bounds <- c(31468234,31561619)  #c(20656322,21229324)
+  plot.window <- c(31000000,31600000)  # c(20000000,21800000)
+  tt <- get.CNV.wise.inheritance.counts(tdt3,ped=ped)
+  tt[,which(tt[8,]>5)]
+  ttt <- (as.numeric(tdt4[,reg]))
+  names(ttt) <- rownames(tdt4)
+  ped[[reg]] <- ttt[match(rownames(ped),names(ttt))]
+  ped <- ped.interp(ped,F)
+  
+  ttt <- (as.numeric(tdt4[,reg]))
+  names(ttt) <- rownames(tdt4)
+  
+  with(ped , table(father,affected,S121,exclude=NULL))
+  fam.grps <- tapply(rownames(ped),factor(ped$familyid),c)
+  s6.grps.list <- tapply(ped[[reg]],factor(ped$familyid),c)
+  s6.who.list <- tapply(ped$who,factor(ped$familyid),c)
+  s6.grps <- tapply(ped[[reg]],factor(ped$familyid),max)
+  ff <- which(as.numeric(s6.grps)>1)
+  repz <- length(fam.grps)
+  sstt <- proc.time()
+  for(cc in 1:repz) {
+    if(!cc %in% ff) { next }
+    labl <- paste(substr(fam.grps[[cc]][1],1,6),paste(s6.grps.list[[cc]],collapse=""),
+             paste(s6.who.list[[cc]],collapse="_"),sep="_")
+    cnv.plot(Cnv=cnv.bounds,PREPOSTPC=T,Chr=6,Pos=plot.window,samples=fam.grps[[cc]],
+             LRR=T,BAF=T,show.fail=T,dir=dir,cnvPlotFileName=paste(labl,"pdf",sep="."))
+    loop.tracker(cc,repz,st.time=sstt)
+  }
+  
 }
 # DN --\
 # ---NN, NN, DN, DN
@@ -59,6 +95,24 @@ if(F & !exists("tdt3")) {
 # 8:1 'denovos' are affected
 # next step, count within each family how many times each CNV is passed 
 # on versus not, sum for all. get transmission rate.
+
+
+# add column to a ped file, showing in plain english who is who within families, mum dad, boy, girl, etc
+ped.interp <- function(ped,long=TRUE) {
+  want <- c("familyid","member","father","mother","sex","affected")
+  sample.info <- read.sample.info(dir)
+  if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'get.pedData()']") }
+  long.codes <- c("father","mother","boy","girl","control","t1d")
+  short.codes <- c("F","M","B","G","Ct","T1")
+  if(long) { codes <- long.codes } else { codes <- short.codes }
+  ped[["who"]] <- ""
+  ped[["who"]][(is.na(ped$father) & ped$sex==1)] <- codes[1]
+  ped[["who"]][(is.na(ped$father) & ped$sex==2)] <- codes[2]
+  ped[["who"]][(!is.na(ped$father) & ped$sex==1)] <- codes[3]
+  ped[["who"]][(!is.na(ped$father) & ped$sex==2)] <- codes[4]
+  ped[["who"]] <- paste(ped[["who"]],codes[5:6][ped$affected],sep=".")
+  return(ped)
+}
 
 
 trio.analysis <- function(dir=NULL, cnvResults, ped.file) {
@@ -169,7 +223,7 @@ make.cnv.reg.snp.matrix <- function(X) {
       rel.rows <- which(doubleidsinsamps & doublecnvsinlist)
       #prv(doubleidsinsamps,doublecnvsinlist,rel.rows)
       if(length(rel.rows)>0) {
-        samps <- narm(match(id.lists[[cc]],Xd$id[rel.rows]))
+        samps <- narm(match(Xd$id[rel.rows],rownames(out)))
         out[samps,cnvz] <- 2 # homozygous = 2*dup/2*del
       }
       #loop.tracker(cc,length(id.lists))
@@ -236,10 +290,13 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
   list.to.env(ped.list) # take the variables from the list and assign them into the local environment
   if(!exists("kk") | !exists("fklink")) { stop("failure to import variables from get.ped.linked.sets() function") }
   RN  <- c("mother-pass","father-pass","mother-kidcount","father-kidcount","total-pass",
-                           "total-kidcount","in-a-parent","denovo","child-has")
+                           "total-kidcount","in-a-parent","denovo","parent-count",
+                           "aff-mother-pass","aff-father-pass","affect-mum-kidcount","affect-dad-kidcount",
+                           "affected-denovos","affected-kidcount2","aff-in-a-parent","aff-parent-count")
   countmat <- matrix(0,nrow=length(RN),ncol=ncol(TDT))
   rownames(countmat) <- RN
   colnames(countmat) <- colnames(TDT)
+  affect.samps <- rownames(ped)[ped$affected==2]
   if(only.doubles) { thresh <- 1 } else { thresh <- 0 }
   ## MUMS ##
   for(cc in 1:nrow(mm)) {
@@ -250,15 +307,20 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     if(length(their.kids)<1) { next }
     mat <- TDT[their.kids,dels,drop=FALSE]  # extract her children for these DEL snps
     mat[mat>1] <- 1
+    mat2 <- mat[rownames(mat) %in% affect.samps,,drop=FALSE] # only with affected kids
     #if("S6" %in% colnames(mat)) { print(mat) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[1]]) }
     if(length(Dim(mat))<2) {
-      snp.counts <- mat  # in case only 1 child, a row, not a matrix
+      snp.counts <- mat  # in case only 1 child may also be a row, not a matrix
+      snp.counts2 <- mat2 # (affected)
     } else {
       snp.counts <- colSums(mat,na.rm=T) # add the number of times passed to children to the snp count
+      snp.counts2 <- colSums(mat2,na.rm=T) # (affected)
     }
     countmat[1,dels] <- countmat[1,dels] + snp.counts
+    countmat[10,dels] <- countmat[10,dels] + snp.counts2  # affected
     countmat[3,dels] <- countmat[3,dels] + nrow(mat)
+    countmat[12,dels] <- countmat[12,dels] + nrow(mat2)
   }
   ## DADS ##
   for(cc in 1:nrow(ff)) {
@@ -269,15 +331,20 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     if(length(their.kids)<1) { next }
     mat <- TDT[their.kids,dels,drop=FALSE]  # extract his children for these DEL snps
     mat[mat>1] <- 1
+    mat2 <- mat[rownames(mat) %in% affect.samps,,drop=FALSE] # only with affected kids
     #if("S6" %in% colnames(mat)) { print(mat) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[2]]) }
     if(length(Dim(mat))<2) {
       snp.counts <- mat  # in case only 1 child, a row, not a matrix
+      snp.counts2 <- mat2 # (affected)
     } else {
       snp.counts <- colSums(mat,na.rm=T) # add the number of times passed to children to the snp count
+      snp.counts2 <- colSums(mat2,na.rm=T) # (affected)
     }
     countmat[2,dels] <- countmat[2,dels] + snp.counts
+    countmat[11,dels] <- countmat[11,dels] + snp.counts2  # affected
     countmat[4,dels] <- countmat[4,dels] + nrow(mat)
+    countmat[13,dels] <- countmat[13,dels] + nrow(mat2)
   }
   countmat[5,] <- countmat[1,]+countmat[2,] # add passed-on CNVs from mum and dad to 'total' row
   countmat[6,] <- countmat[3,]+countmat[4,] # add child count from mum and dad to 'total' row
@@ -292,7 +359,7 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     their.folks <- c(rownames(mm)[kmlink[cc]],rownames(ff)[kflink[cc]])
     #cat("processing child:",rownames(kk)[cc],"with parents",paste(their.folks, collapse=","),"\n")
     if(length(their.folks)<1) { next }
-    mat <- TDT[their.folks,dels,drop=FALSE]  # extract mother+father of child for these DEL snps
+    mat <- TDT[their.folks,dels,drop=FALSE]  # extract mother+father of child for these DEL/DUP snps
     #if("S6" %in% colnames(mat)) { print(mat) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[3]]) }
     if(length(Dim(mat))<2) {
@@ -303,8 +370,14 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     snp.counts[snp.counts>1] <- 1 # add '1' if at least one parent had the same CNV found in the child
     #if(!all(snp.counts %in% c(0,1))) { warning("snp.counts seems invalid: ",paste(snp.counts,collapse=",")) }
     countmat[7,dels] <- countmat[7,dels] + snp.counts # increments snps if at least 1 parent has the cnv
-    countmat[8,dels] <- countmat[8,dels] + 1-snp.counts # adds denovos for each snp
+    countmat[8,dels] <- countmat[8,dels] + (1-snp.counts) # adds denovos for each snp
     countmat[9,dels] <- countmat[9,dels] + nrow(mat) # adds to parent count for each snp
+    if(rownames(kk)[cc] %in% affect.samps) {
+      countmat[14,dels] <- countmat[14,dels] + (1-snp.counts) # increments snps for aff if at least 1 parent has the cnv
+      countmat[15,dels] <- countmat[15,dels] + 1 # alternate way to calculate # of affected kids
+      countmat[16,dels] <- countmat[16,dels] + snp.counts # affected kids count, when a parent has cnv
+      countmat[17,dels] <- countmat[17,dels] + nrow(mat) # affected kids parent count
+    }
   }
   cat("\n")
   ###

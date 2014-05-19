@@ -1,64 +1,171 @@
 #play with TDT
 
+
 if(F & !exists("tdt3")) {
   # only bother recalculating if these vars not already present
-  print(load("/chiswick/data/ncooper/ImmunochipFamilies/RESULTS/TDT_results.RData"))
+  #print(load("/chiswick/data/ncooper/ImmunochipFamilies/RESULTS/TDT_results.RData"))
+  #print(load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData")))
   dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
-  tdt3 <- add.all.ids(tdt3,ped,dir)
-  tdt4 <- add.all.ids(tdt4,ped,dir)
+  
+  dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
+  family.check.and.validate(dir,"famstats_trios",suffix="")
+  plot.each.family.for.cnv(dir,reg="S1",chromo=1,cnv.bounds=c(197158752,197170596),suffix=48)
+  #tdt3 <- add.all.ids(tdt3,ped,dir)
+  #tdt4 <- add.all.ids(tdt4,ped,dir)
   #add in the snp data # note that missing will get coded as 0 (zero) in this step
-  ww[["S51"]] <- as.numeric(tdt3[,"S51"][match(rownames(ww),rownames(tdt3))])
+  #  ww[["S51"]] <- as.numeric(tdt3[,"S51"][match(rownames(ww),rownames(tdt3))])
   
   # key families are those which have a parent with the cnv
-  keyfams <- names(which(tapply(ww$S51[parz],factor(ww$familyid[parz]),function(X) { any(X==2) })))
+  #  keyfams <- names(which(tapply(ww$S51[parz],factor(ww$familyid[parz]),function(X) { any(X==2) })))
   #just the key families
-  with(ww[ww$familyid %in% keyfams,],table(affected,S51))
+  #  with(ww[ww$familyid %in% keyfams,],table(affected,S51))
   # key families are those which have a child with the cnv
-  keyfams2 <- names(which(tapply(ww$S51[kidz],factor(ww$familyid[kidz]),function(X) { any(X==2) })))
+  #  keyfams2 <- names(which(tapply(ww$S51[kidz],factor(ww$familyid[kidz]),function(X) { any(X==2) })))
   #look at just the families with affected kids but not parents
-  with(ww[ww$familyid %in% keyfams2 & !ww$familyid %in% keyfams,],table(affected,S51))
-  
+  #  with(ww[ww$familyid %in% keyfams2 & !ww$familyid %in% keyfams,],table(affected,S51)) 
+}
 
-  
-  # to make plots of families for the CNV 'S6'
 
-  print(load("./RESULTS/TDT_results.RData"))
-  reg <- "S272"  # "S6" --> tdt3
-  cnv.bounds <- c(31468234,31561619)  #c(20656322,21229324)
-  plot.window <- c(31000000,31600000)  # c(20000000,21800000)
-  tt <- get.CNV.wise.inheritance.counts(tdt3,ped=ped)
+
+Z.to.p <- function(Z) { p <- 2*pnorm(-abs(Z)); p[!is.finite(p)] <- NA; return(p) }
+
+t.o.p <- function(p1,p2,n1,n2) {
+ p <- (p1 * n1 + p2 * n2) / (n1 + n2)
+ SE <- sqrt((p*(1 - p)) * ((1/n1) + (1/n2)))
+ z <- (p1 - p2) / SE
+ return(list(Z=z,p=Z.to.p(z)))
+}
+
+
+compile.qs.results.to.cc.toptable <- function(qs.results,dir,suffix,cnvResult,decline.thresh=-.1) {
+  results1 <- qs.results$DEL
+  results1 <- within(results1,{decline <- rowMeans(cbind(c(qc90_cs-qc50_cs)/qc50_cs, c(qc90_ct-qc50_ct)/qc50_ct),na.rm=T)})
+  print(head(results1[order(results1$qc75_sig),],15))
+  results2 <- qs.results$DUP
+  results2 <- within(results2,{decline <- rowMeans(cbind(c(qc90_cs-qc50_cs)/qc50_cs, c(qc90_ct-qc50_ct)/qc50_ct),na.rm=T)})
+  print(head(results2[order(results2$qc75_sig),],15))
+  save(qs.results,file=cat.path(dir$res,"qs.filt.results",suf=suffix,ext="RData"))
+
+  tt1 <- (results1[order(results1$qc90_sig),])
+  tt2 <- (results2[order(results2$qc75_sig),])
+  oo1 <- cnvResult[[5]][[1]][which(rownames(cnvResult[[5]][[1]]) %in% (rownames(tt1[tt1$decline> decline.thresh,]))),]
+  oo2 <- cnvResult[[5]][[2]][which(rownames(cnvResult[[5]][[2]]) %in% (rownames(tt2[tt2$decline> decline.thresh,]))),]
+  oo1$sig  <- results1$qc90_sig[match(rownames(oo1),rownames(results1))]
+  oo2$sig  <- results2$qc75_sig[match(rownames(oo2),rownames(results2))]
+  oo1$cases  <- results1$qc90_cs[match(rownames(oo1),rownames(results1))]
+  oo1$ctrls  <- results1$qc90_ct[match(rownames(oo1),rownames(results1))]
+  oo2$ctrls  <- results2$qc75_ct[match(rownames(oo2),rownames(results2))]
+  oo2$cases  <- results2$qc75_cs[match(rownames(oo2),rownames(results2))]
+  toptables(oo1,oo2)
+  return(list(DEL=oo1,DUP=oo2))
+}
+
+
+print.family.check <- function(tt1,tt2,mothrate,fathrate,denov_ctrl,denov_case,trans.del,trans.dup,ZZ1,ZZ2,ZZ3,ZZ4,ZZ5,ZZ6) {
+  cat("Controls, denovo rate [vs trans]: DELs, DUPs",denov_ctrl,"\n") # ctrl denovo rate
+  cat("Cases, denovo rate [vs trans]: DELs, DUPs",denov_case,"\n") # overall denovo rate for affected
+  cat("affected vs control transmission rate for DELs",trans.del,"\n") # affected vs control transmission rate for dels
+  cat("affected vs control transmission rate for DUPs",trans.dup,"\n") # '' '' for dups
+  ZZ1 <- t.o.p(trans.del[1],trans.del[2],sum(tt1[17,]),sum(tt1[9,]-tt1[17,]))$Z
+  ZZ2 <- t.o.p(trans.dup[1],trans.dup[2],sum(tt2[17,]),sum(tt2[9,]-tt2[17,]))$Z
+  ZZ3 <- t.o.p(denov_case[1],denov_ctrl[1],sum(tt1[17,]),sum(tt1[9,]-tt1[17,]))$Z #DEL
+  ZZ4 <- t.o.p(denov_case[2],denov_ctrl[2],sum(tt1[17,]),sum(tt1[9,]-tt1[17,]))$Z #DUP
+  ZZ5 <- t.o.p(mothrate[1],fathrate[1],sum(tt1[3,]),sum(tt1[4,]))$Z #DEL
+  ZZ6 <- t.o.p(mothrate[2],fathrate[2],sum(tt1[3,]),sum(tt1[4,]))$Z #DUP
+  cat(paste("Transmissions (case v ctrl) rDELs: Z=",round(ZZ1,4),",p=",round(Z.to.p(ZZ1),5)),"\n")
+  cat(paste("Transmissions (case v ctrl) rDUPs: Z=",round(ZZ2,4),",p=",round(Z.to.p(ZZ2),5)),"\n")
+  cat(paste("Denovos (case v ctrl) rDELs: Z=",round(ZZ3,4),",p=",round(Z.to.p(ZZ3),5)),"\n")
+  cat(paste("Denovos (case v ctrl) rDUPs: Z=",round(ZZ4,4),",p=",round(Z.to.p(ZZ4),5)),"\n")
+  cat(paste("Transmissions (mums v dads) rDELs: Z=",round(ZZ5,4),",p=",round(Z.to.p(ZZ5),5)),"\n")
+  cat(paste("Transmissions (mums v dads) rDUPs: Z=",round(ZZ6,4),",p=",round(Z.to.p(ZZ6),5)),"\n")
+}
+
+
+family.check.and.validate <- function(dir,fam.stats="famstats",top.dels=NULL,top.dups=NULL,suffix="") {
+  load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData"))
+  fam.stats <- cat.path(dir$res,fam.stats,ext="RData")
+  tdt3 <- add.all.ids(tdt3,ped,dir)
+  tdt4 <- add.all.ids(tdt4,ped,dir)
+  tt1 <- get.CNV.wise.inheritance.counts(tdt3,ped=ped) # del table
+  tt2 <- get.CNV.wise.inheritance.counts(tdt4,ped=ped) # dup table
+  ## display the TDT information for significant hits ##
+  if(length(top.dels)>0){
+    print(tt1[-c(23:28),top.dels])
+    print(round(tt1[c(23:28),top.dels],5))
+  }
+  if(length(top.dups)>0){
+    print(tt2[-c(23:28),top.dups])
+    print(round(tt2[c(23:28),top.dups],5))
+  }
+  ###
+  print(tt0 <- cbind(rowSums(tt1),rowSums(tt2))[-c(23:28),]) # display the table
+  #ratios of interest - assumption checking.. looks like dups over-called?
+  cat("                                        DELS,   DUPs\n")
+  cat("overall transmission ratio for mothers:",mothrate <- tt0[1,]/tt0[3,],"\n") # 
+  cat("overall transmission ratio for fathers:",fathrate <- tt0[2,]/tt0[4,],"\n") # 
+  cat("overall transmission ratio to affected for mothers:",tt0[10,]/tt0[12,],"\n") # 
+  cat("overall transmission ratio to affected for fathers:",tt0[11,]/tt0[13,],"\n") # 
+  trans.dup <- rowMeans( tt2[c(27:28),] ,na.rm=T)
+  trans.del <- rowMeans( tt1[c(27:28),] ,na.rm=T)
+  denov_ctrl <- (tt0[8,]-tt0[14,])/((tt0[7,]+tt0[8,])-(tt0[14,]+tt0[16,]))
+  denov_case <- tt0[14,]/(tt0[14,]+tt0[16,])
+  save(tt1,tt2,mothrate,fathrate,denov_ctrl,denov_case,trans.del,trans.dup,file=fam.stats)
+  cat("wrote objects to file",fam.stats,"\n")
+  print.family.check(tt1,tt2,mothrate,fathrate,denov_ctrl,denov_case,trans.del,trans.dup)
+}
+
+
+# in the current directory, generate plots of all members of each family that has a CNV
+# e.g, 
+# dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
+# family.check.and.validate(dir,"famstats_trios",suffix="48")
+# plot.each.family.for.cnv(dir,reg="S1",chromo=1,cnv.bounds=c(197158752,197170596),suffix=48)
+plot.each.family.for.cnv <- function(dir,ped,reg="S1",chromo=1,cnv.bounds=c(197158752,197170596),DEL=T,suffix=48) {
+  print(load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData")))
+  #S272"  # "S6" --> tdt3
+  #cnv.bounds <- c(197158752,197170596) # c(31468234,31561619)  #c(20656322,21229324)
+  cnv.w <- diff(cnv.bounds)
+  plot.window <- c(cnv.bounds[1]-cnv.w,cnv.bounds[2]+cnv.w) 
+  if(DEL) {
+    tt1 <- get.CNV.wise.inheritance.counts(tdt3,ped=ped)
+    ttt <- (as.numeric(tdt3[,reg]))
+    names(ttt) <- rownames(tdt3)
+  } else {
+    tt2 <- get.CNV.wise.inheritance.counts(tdt4,ped=ped)
+    ttt <- (as.numeric(tdt4[,reg]))
+    names(ttt) <- rownames(tdt4)
+  }
+  tt <- tt1
   tt[,which(tt[8,]>5)]
-  ttt <- (as.numeric(tdt4[,reg]))
-  names(ttt) <- rownames(tdt4)
-  ped[[reg]] <- ttt[match(rownames(ped),names(ttt))]
-  ped <- ped.interp(ped,F)
-  
-  ttt <- (as.numeric(tdt4[,reg]))
-  names(ttt) <- rownames(tdt4)
-  
-  with(ped , table(father,affected,S121,exclude=NULL))
+  ped[["cnv.reg"]] <- ttt[match(rownames(ped),names(ttt))]
+  ped <- ped.interp(ped,F)  
+  with(ped , table(father,affected,cnv.reg,exclude=NULL))
   fam.grps <- tapply(rownames(ped),factor(ped$familyid),c)
-  s6.grps.list <- tapply(ped[[reg]],factor(ped$familyid),c)
+  s6.grps.list <- tapply(ped[,"cnv.reg"],factor(ped$familyid),c)
   s6.who.list <- tapply(ped$who,factor(ped$familyid),c)
-  s6.grps <- tapply(ped[[reg]],factor(ped$familyid),max)
+  s6.grps <- tapply(ped[,"cnv.reg"],factor(ped$familyid),max)
   ff <- which(as.numeric(s6.grps)>1)
   repz <- length(fam.grps)
   sstt <- proc.time()
   for(cc in 1:repz) {
     if(!cc %in% ff) { next }
     labl <- paste(substr(fam.grps[[cc]][1],1,6),paste(s6.grps.list[[cc]],collapse=""),
-             paste(s6.who.list[[cc]],collapse="_"),sep="_")
-    cnv.plot(Cnv=cnv.bounds,PREPOSTPC=T,Chr=6,Pos=plot.window,samples=fam.grps[[cc]],
+                  paste(s6.who.list[[cc]],collapse="_"),sep="_")
+    cnv.plot(Cnv=cnv.bounds,PREPOSTPC=T,Chr=chromo,Pos=plot.window,samples=fam.grps[[cc]],
              LRR=T,BAF=T,show.fail=T,dir=dir,cnvPlotFileName=paste(labl,"pdf",sep="."))
     loop.tracker(cc,repz,st.time=sstt)
   }
-  
+  return(NULL)
 }
+
+
+  # ONLY USE below to make plots of families for the CNV 'S6'
 # DN --\
 # ---NN, NN, DN, DN
 # NN --/ 
 #   
-#   DN --\
+#   DN --\:q
+
 # ---DD, DN, DN, NN
 # DN --/ 
 #   
@@ -97,6 +204,7 @@ if(F & !exists("tdt3")) {
 # on versus not, sum for all. get transmission rate.
 
 
+
 # add column to a ped file, showing in plain english who is who within families, mum dad, boy, girl, etc
 ped.interp <- function(ped,long=TRUE) {
   want <- c("familyid","member","father","mother","sex","affected")
@@ -115,50 +223,109 @@ ped.interp <- function(ped,long=TRUE) {
 }
 
 
-trio.analysis <- function(dir=NULL, cnvResults, ped.file) {
+core.tdt <- function(dir,cnvrs,cnvs,ped,double.table,DEL=TRUE) {
+  cnvs <- update.cnvrs.with.cn(cnvs,double.table,DEL=DEL)
+  tdt3 <- make.cnv.reg.snp.matrix(cnvs)
+  tdt3 <- add.all.ids(tdt3, ped, dir)
+  ii <- tdt.snp(data=ped,snp.data=tdt3)
+  tt <- p.value(ii,1)
+  cnvrs[["tdt"]][match(names(tt),rownames(cnvrs))] <- tt
+  sum.del <- ranged.to.data.frame(cnvrs,T)[order(cnvrs[[5]]),]
+  colnames(sum.del)[c(7,9)] <- c("p.fet","p.tdt")                              
+  ## remove NAs..
+  sum.del2 <- sum.del[!is.na(sum.del$p.tdt),]
+  sum.del2[["genes"]] <- substr(sum.del2[["genes"]],1,10);
+  return(list(cnvrs=cnvrs,sum.del=sum.del,tdt3=tdt3,ped=ped))
+}
+
+
+trio.analysis <- function(dir=NULL, cnvResults, ped.file, result.pref="",quality.scores=FALSE,restore=TRUE) {
   dir <- validate.dir.for(dir,c("res","cnv.qc"))
   if(!is.list(cnvResults) | length(cnvResults)!=5 | !is(cnvResults[[1]])[1]=="RangedData") { 
     warning("cnvResults object should be a list of RangedData objects, length 5"); return(NULL) }
   cat("\nRunning TDT analysis for family trios\n")
   oo1 <- extract.cnv.regions(dir,type="del",by.cnv=FALSE,lwr=0.25,upr=4,FET=T,prt=F) # regionlist
   oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=FALSE,lwr=0.25,upr=4,FET=T,prt=F) # regionlist
-  oo3 <- extract.cnv.regions(dir,type="del",by.cnv=TRUE,lwr=0.25,upr=4,FET=T,prt=F) # cnv list
-  oo4 <- extract.cnv.regions(dir,type="dup",by.cnv=TRUE,lwr=0.25,upr=4,FET=T,prt=F) # cnv list
   oo1[["tdt"]] <- NA; oo2[["tdt"]] <- NA
   
+  DT <- read.data.tracker(dir)
   double.del.table <- cnvResults[[4]][which(cnvResults[[4]]$cn==0),] # rareDELs
   double.dup.table <- cnvResults[[5]][which(cnvResults[[5]]$cn==4),] # rareDUPs
-  
-  oo3 <- update.cnvrs.with.cn(oo3,double.del.table)
-  oo4 <- update.cnvrs.with.cn(oo4,double.dup.table,DEL=FALSE)
-  
-  tdt3 <- make.cnv.reg.snp.matrix(oo3)
-  tdt4 <- make.cnv.reg.snp.matrix(oo4)
-  
+
   ped <- get.pedData(ped.file)
-  
-  tdt3 <- add.all.ids(tdt3, ped, dir)
-  tdt4 <- add.all.ids(tdt4, ped, dir)
-  
-  ii <- tdt.snp(data=ped,snp.data=tdt3)
-  tt <- p.value(ii,1)
-  oo1[["tdt"]][match(names(tt),rownames(oo1))] <- tt
-  ii <- tdt.snp(data=ped,snp.data=tdt4)
-  tt <- p.value(ii,1)
-  oo2[["tdt"]][match(names(tt),rownames(oo2))] <- tt
-  CNVR <- list(deletions=oo1,duplications=oo2)
-  sum.del <- ranged.to.data.frame(oo1,T)[order(oo1[[5]]),]
-  sum.dup <- ranged.to.data.frame(oo2,T)[order(oo2[[5]]),]
-  colnames(sum.del)[c(7,9)] <- colnames(sum.dup)[c(7,9)] <- c("p.fet","p.tdt") 
-  ## remove NAs..
-  sum.del2 <- sum.del[!is.na(sum.del$p.tdt),]; sum.dup2 <- sum.dup[!is.na(sum.dup$p.tdt),]
-  sum.del2[["genes"]] <- substr(sum.del2[["genes"]],1,10); 
-  sum.dup2[["genes"]] <- substr(sum.dup2[["genes"]],1,10)
-  cat("\nDeletions TDT Results\n") ; print(sum.del2[sum.del2[,"p.tdt"]<.05,])
-  cat("\nDuplications TDT Results\n") ; print(sum.dup2[sum.dup2[,"p.tdt"]<.05,])
-  ofn=cat.path(dir$res,"TDT_results.RData")
+
+  if(quality.scores) {
+    results <- process.quality.scores(DT,suffix=result.pref,dir,restore=restore)
+    oo3 <- results[[3]]
+    oo4 <- results[[4]]
+    outlist1 <- core.tdt(dir,cnvrs=oo1,cnvs=oo3,ped,double.del.table,DEL=TRUE)
+    sum.del <- outlist1$sum.del
+    outlist2 <- core.tdt(dir,cnvrs=oo2,cnvs=oo4,ped,double.dup.table,DEL=FALSE)
+    sum.dup <- outlist2$sum.del
+    keep.lev.dup <- 2; keep.lev.del <- 2
+    q.levs <- c(0.5,0.75,0.95)
+    colz <- c("cases", "ctrls", "p.tdt")
+    cn <- matrix(ncol=length(colz),nrow=length(q.levs))
+    for (jj in 1:length(q.levs)) {
+      cc <- q.levs[jj]
+      res1a <- filt.counts.cnvr(oo1,oo3,col="score",thresh=cc,excl.less.than=T)
+      res2a <- filt.counts.cnvr(oo2,oo4,col="score",thresh=cc,excl.less.than=T)
+      oo1a <- res1a$cnvr; oo3a <- res1a$cnv; oo2a <- res2a$cnvr; oo4a <- res2a$cnv
+      outlist1a <- core.tdt(dir,cnvrs=oo1a,cnvs=oo3a,ped,double.del.table,DEL=TRUE)
+      outlist2a <- core.tdt(dir,cnvrs=oo2a,cnvs=oo4a,ped,double.dup.table,DEL=FALSE) #sum.del even for Dups!
+      if(jj==keep.lev.del) {  oo1 <- oo1a;  tdt3 <- outlist1a$tdt3 }
+      if(jj==keep.lev.dup) {  oo2 <- oo2a ; tdt4 <- outlist2a$tdt3 }
+      for (dd in 1:length(colz)) {
+         cn[jj,dd] <- paste(colz[dd],cc,sep="_")
+         # rint(cn)
+         sum.del[[cn[jj,dd]]][match(rownames(outlist1a$sum.del),rownames(sum.del))] <- outlist1a$sum.del[[colz[dd]]] 
+         sum.dup[[cn[jj,dd]]][match(rownames(outlist2a$sum.del),rownames(sum.dup))] <- outlist2a$sum.del[[colz[dd]]]     
+      }
+    }
+    cs.pc <-(sum.del[,cn[3,1]] - sum.del[,cn[1,1]])/sum.del[,cn[1,1]]
+    ct.pc <-(sum.del[,cn[3,2]] - sum.del[,cn[1,2]])/sum.del[,cn[1,2]]
+    sum.del[["decline"]] <- rowMeans(cbind(cs.pc,ct.pc),na.rm=T) 
+    cs.pc <-(sum.dup[,cn[3,1]] - sum.dup[,cn[1,1]])/sum.dup[,cn[1,1]]
+    ct.pc <-(sum.dup[,cn[3,2]] - sum.dup[,cn[1,2]])/sum.dup[,cn[1,2]]
+    sum.dup[["decline"]] <- rowMeans(cbind(cs.pc,ct.pc),na.rm=T) 
+    del.p <- cn[keep.lev.del,3]; dup.p <- cn[keep.lev.dup,3]
+  } else {
+    oo3 <- extract.cnv.regions(dir,type="del",by.cnv=TRUE,lwr=0.25,upr=4,FET=T,prt=F) # cnv list
+    oo4 <- extract.cnv.regions(dir,type="dup",by.cnv=TRUE,lwr=0.25,upr=4,FET=T,prt=F) # cnv list
+    outlist <- core.tdt(dir,cnvrs=oo1,cnvs=oo3,ped,double.del.table,DEL=TRUE)
+    oo1 <- outlist$cnvrs; sum.del <- outlist$sum.del; tdt3 <- outlist$tdt3
+    #(list(cnvrs==cnvrs,sum.del=sum.del,tdt3=tdt3,ped=ped))
+    outlist <- core.tdt(dir,cnvrs=oo2,cnvs=oo4,ped,double.dup.table,DEL=FALSE)
+    oo2 <- outlist$cnvrs; sum.dup <- outlist$sum.del; tdt4 <- outlist$tdt3
+    dup.p <- del.p <- "p.tdt"
+  } 
+  ofn=cat.path(dir$res,"TDT_results",suf=result.pref,ext="RData")
   save(oo1,oo2,sum.del,sum.dup,tdt3,tdt4,ped,file=ofn)
-  cat(" wrote TDT family analysis results to",ofn,"\n")
+  CNVR <- list(deletions=oo1,duplications=oo2)
+  cat(" wrote primary TDT family analysis results to",ofn,"\n")
+  ofn <- cat.path(dir$res,"TDTsummary",suf=result.pref,ext="txt")
+  sum.del2 <- sum.del[!is.na(sum.del[,del.p]),]
+  sum.dup2 <- sum.dup[!is.na(sum.dup[,dup.p]),]
+  sum.del2[["genes"]] <- substr(sum.del2[["genes"]],1,14)
+  sum.dup2[["genes"]] <- substr(sum.dup2[["genes"]],1,14)
+  sink(ofn)
+   cat("\nDeletions TDT Results\n") ; print(sum.del2[sum.del2[,del.p]<.05,])
+   cat("\nDuplications TDT Results\n") ; print(sum.dup2[sum.dup2[,dup.p]<.05,])  # to file copy
+   top.dels <- rownames(cnvResults$cnvr[[1]][narm(which(cnvResults$cnvr[[1]]$tdt<.01)),])
+   top.dups <- rownames(cnvResults$cnvr[[2]][narm(which(cnvResults$cnvr[[2]]$tdt<.01)),])
+   #load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData"))
+   fam.fn <- cat.path(dir$res,"famstats_trios",suf=result.pref,ext="RData")
+   cat("\nTDT Counts\n") #; print(sum.del[sum.del[,del.p]<.05,])
+   family.check.and.validate(dir,fam.fn,top.dels=top.dels,top.dups=top.dups,suffix=result.pref)
+  sink()
+  cat("\nDeletions TDT Results\n") ; print(sum.del2[sum.del2[,del.p]<.05,])
+  cat("\nDuplications TDT Results\n") ; print(sum.dup2[sum.dup2[,dup.p]<.05,]) 
+  load(fam.fn)
+  print.family.check(tt1,tt2,mothrate,fathrate,denov_ctrl,denov_case,trans.del,trans.dup)
+  cat("wrote TDT count objects to file",fam.fn,"\n")
+  # on screen copy
+  cat("wrote summary to file:",ofn,"\n")
+
   return(CNVR)
 }
 
@@ -244,7 +411,7 @@ list.to.env <- function(list) {
 }
 
 ## extract family links from a ped file
-get.ped.linked.sets <- function(ped) {
+get.ped.linked.sets <- function(ped,tdt3) {
   want <- c("familyid","member","father","mother","sex","affected")
   if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'get.pedData()']") }
   #which are the route cases
@@ -284,7 +451,8 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
   if(is(tdt.snp)[1]=="SnpMatrix") {  TDT <- SnpMatrix.to.data.frame(tdt.snp) } else { TDT <- tdt.snp }
   if(!is.data.frame(TDT)) { stop("tdt.snp must be a SnpMatrix or data.frame with snp-ids as rownames") }
   if(is.null(ped)) { stop("a valid 'pedData' object must be inputted (see snpStats:tdt.snp documentation)")}
-  ped.list <- get.ped.linked.sets(ped)
+ # prv(ped)
+  ped.list <- get.ped.linked.sets(ped,tdt.snp)
   if(replace.na) { if(length(replace.with)!=3 | !all(is.numeric(unlist(replace.with)))) { 
     stop("replace.with must be a vector of three scalars for mother, father, child missing values")} }
   list.to.env(ped.list) # take the variables from the list and assign them into the local environment
@@ -292,12 +460,14 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
   RN  <- c("mother-pass","father-pass","mother-kidcount","father-kidcount","total-pass",
                            "total-kidcount","in-a-parent","denovo","parent-count",
                            "aff-mother-pass","aff-father-pass","affect-mum-kidcount","affect-dad-kidcount",
-                           "affected-denovos","affected-kidcount2","aff-in-a-parent","aff-parent-count")
+                           "affected-denovos","affected-kidcount2","aff-in-a-parent","aff-parent-count",
+                           "in.both","aff-in-both","double-counted-aff","double-counted-kids","total-aff-kidcount","chisq.tdt","p.tdt","chisq.ctrl","p.ctrl","aff-pc-trans","ctrl-pc-trans")
   countmat <- matrix(0,nrow=length(RN),ncol=ncol(TDT))
   rownames(countmat) <- RN
   colnames(countmat) <- colnames(TDT)
   affect.samps <- rownames(ped)[ped$affected==2]
   if(only.doubles) { thresh <- 1 } else { thresh <- 0 }
+  counted.kids <- counted.affs <- vector("list",ncol(TDT))
   ## MUMS ##
   for(cc in 1:nrow(mm)) {
     loop.tracker(cc,2*nrow(mm)+nrow(kk))  # allows loop tracker to span all three loops
@@ -308,7 +478,7 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     mat <- TDT[their.kids,dels,drop=FALSE]  # extract her children for these DEL snps
     mat[mat>1] <- 1
     mat2 <- mat[rownames(mat) %in% affect.samps,,drop=FALSE] # only with affected kids
-    #if("S6" %in% colnames(mat)) { print(mat) }
+   # if("S1" %in% colnames(mat)) { print(cc);print(mat); print(mat2) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[1]]) }
     if(length(Dim(mat))<2) {
       snp.counts <- mat  # in case only 1 child may also be a row, not a matrix
@@ -321,6 +491,14 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     countmat[10,dels] <- countmat[10,dels] + snp.counts2  # affected
     countmat[3,dels] <- countmat[3,dels] + nrow(mat)
     countmat[12,dels] <- countmat[12,dels] + nrow(mat2)
+    if(length(dels)==0) { stop("length of jj was 0") }
+    for(jj in 1:length(dels)) {
+      # keep track of which affected kids are added to the 'passed on' count, in case doubleup in dads
+      more.kids <- rownames(mat[mat[,jj]>0,])
+      more.affs <- rownames(mat2[mat2[,jj]>0,])
+      if(length(more.affs)>0) { counted.affs[[dels[jj]]] <- c(counted.affs[[dels[jj]]],more.affs) }
+      if(length(more.kids)>0) { counted.kids[[dels[jj]]] <- c(counted.kids[[dels[jj]]],more.kids) }
+    }
   }
   ## DADS ##
   for(cc in 1:nrow(ff)) {
@@ -332,7 +510,7 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     mat <- TDT[their.kids,dels,drop=FALSE]  # extract his children for these DEL snps
     mat[mat>1] <- 1
     mat2 <- mat[rownames(mat) %in% affect.samps,,drop=FALSE] # only with affected kids
-    #if("S6" %in% colnames(mat)) { print(mat) }
+    #if("S1" %in% colnames(mat)) { print(cc);print(mat); print(mat2) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[2]]) }
     if(length(Dim(mat))<2) {
       snp.counts <- mat  # in case only 1 child, a row, not a matrix
@@ -345,6 +523,14 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     countmat[11,dels] <- countmat[11,dels] + snp.counts2  # affected
     countmat[4,dels] <- countmat[4,dels] + nrow(mat)
     countmat[13,dels] <- countmat[13,dels] + nrow(mat2)
+    if(length(dels)==0) { stop("length of jj was 0") }
+    for(jj in 1:length(dels)) {
+      again.affs <- which(rownames(mat2[mat2[,jj]>0,]) %in% counted.affs[[dels[jj]]])
+      again.kids <- which(rownames(mat[mat[,jj]>0,]) %in% counted.kids[[dels[jj]]])
+      countmat[21,dels[jj]] <- countmat[21,dels[jj]] + length(again.kids)
+      countmat[20,dels[jj]] <- countmat[20,dels[jj]] + length(again.affs)
+      # add the number of aff kids already counted in the mum to this row total
+    }
   }
   countmat[5,] <- countmat[1,]+countmat[2,] # add passed-on CNVs from mum and dad to 'total' row
   countmat[6,] <- countmat[3,]+countmat[4,] # add child count from mum and dad to 'total' row
@@ -354,7 +540,7 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
   ## KIDS ##
   for(cc in 1:nrow(kk)) {
     loop.tracker(cc+1,2*nrow(ff)+nrow(kk)+1) # allows loop tracker to span all three loops
-    dels <- which(TDT[rownames(kk)[cc],]>thresh) # which DELs does the next mum have
+    dels <- which(TDT[rownames(kk)[cc],]>thresh) # which DELs does the next kid have
     if(length(dels)<1) { next }  # skip if this mother has none
     their.folks <- c(rownames(mm)[kmlink[cc]],rownames(ff)[kflink[cc]])
     #cat("processing child:",rownames(kk)[cc],"with parents",paste(their.folks, collapse=","),"\n")
@@ -362,22 +548,44 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     mat <- TDT[their.folks,dels,drop=FALSE]  # extract mother+father of child for these DEL/DUP snps
     #if("S6" %in% colnames(mat)) { print(mat) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[3]]) }
+   # if("S1" %in% colnames(mat)) { print(cc);print(mat); print(mat2) }
     if(length(Dim(mat))<2) {
       snp.counts <- mat  # in case only 1 parent, a row, not a matrix
     } else {
       snp.counts <- colSums(mat,na.rm=T) 
     }
+    in.both <- as.numeric(snp.counts>1)
+    countmat[18,dels] <- countmat[18,dels] + in.both # how many times in both parents
     snp.counts[snp.counts>1] <- 1 # add '1' if at least one parent had the same CNV found in the child
     #if(!all(snp.counts %in% c(0,1))) { warning("snp.counts seems invalid: ",paste(snp.counts,collapse=",")) }
     countmat[7,dels] <- countmat[7,dels] + snp.counts # increments snps if at least 1 parent has the cnv
     countmat[8,dels] <- countmat[8,dels] + (1-snp.counts) # adds denovos for each snp
     countmat[9,dels] <- countmat[9,dels] + nrow(mat) # adds to parent count for each snp
     if(rownames(kk)[cc] %in% affect.samps) {
+      countmat[19,dels] <- countmat[19,dels] + in.both
       countmat[14,dels] <- countmat[14,dels] + (1-snp.counts) # increments snps for aff if at least 1 parent has the cnv
-      countmat[15,dels] <- countmat[15,dels] + 1 # alternate way to calculate # of affected kids
+      countmat[15,dels] <- countmat[15,dels] + 1 # alternate way to calculate # of affected kids for each cnv
       countmat[16,dels] <- countmat[16,dels] + snp.counts # affected kids count, when a parent has cnv
       countmat[17,dels] <- countmat[17,dels] + nrow(mat) # affected kids parent count
     }
+    ## run TDT tests ##
+    trios.with <- countmat[22,] <- (countmat[12,]+countmat[13,]-countmat[20,]) # number of trios with an affect child where 1 parent has the cnv
+    trios.with1 <- countmat[6,] <- (countmat[3,]+countmat[4,]-countmat[21,]) # number of trios with an 
+    trios.with2 <- trios.with1 - trios.with
+    did.trans <-  (countmat[16,]) # number of transmissions to an affected child where 1 parent has cnv [subtract where 2 parents have]
+    did.trans1 <- countmat[7,]-countmat[16,]
+    did.not <- trios.with-did.trans
+    did.not1 <- trios.with2 - did.trans1
+    tdt.chi <- ((did.not-did.trans)^2)/(did.not+did.trans)
+    tdt.chi1 <- ((did.not1-did.trans1)^2)/(did.not1+did.trans1)
+    tdt.p <- pchisq(tdt.chi,1,lower.tail=F)
+    tdt.p1 <- pchisq(tdt.chi1,1,lower.tail=F)
+    countmat[23,] <- tdt.chi
+    countmat[24,] <- tdt.p
+    countmat[25,] <- tdt.chi1
+    countmat[26,] <- tdt.p1
+    countmat[27,] <- did.trans/(did.not+did.trans)
+    countmat[28,] <- did.trans1/(did.not1+did.trans1)
   }
   cat("\n")
   ###

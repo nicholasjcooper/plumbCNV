@@ -1,18 +1,37 @@
-
-suffix <- 45
+if(F) {
 metabo <- F
 plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 4
+do.cnv <- T
+comp <- F
+samp.set <- "light"
+pca.set <- 24
+cov.for.sex <- T
+trio.quality.scores <- T
+}
+
+if(T) {
+suffix <- 5522
+metabo <- F
+plumber <- T
+dgv.valid <- F
+samp.excl <- F
+eval <- F
+my.st <- 3
 my.end <- 6
 do.cnv <- T
 comp <- F
 samp.set <- "light"
 pca.set <- 24
 restore <- F
-cov.for.sex <- T
+cov.for.sex <- F
+use.trio.calling <- T
+trio.quality.scores <- T
+q.cores <- 100 #NA
+hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hhdup2.hmm"
+}
 
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
 source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
@@ -78,17 +97,18 @@ base.settings <- list(dt.name="datatracker",
                       ucsc="hg18",erase.previous=T,verbose=F)
 
 
-penn.settings <- list(hmm="hh550.hmm",relative=T,run.manual=F,print.cmds=F,q.cores=100,
-                      grid.id="all.q",cluster.fn="q.cmd",use.penn.gc=F,trio=T,joint=F,ped.file=ped.file)
+penn.settings <- list(hmm=hmm.file,
+                    relative=T,run.manual=F,print.cmds=F,q.cores=q.cores,grid.id="all.q",
+                    cluster.fn="q.cmd",use.penn.gc=F,trio=use.trio.calling,joint=F,ped.file=ped.file)
 
 
 
 if(comp) {
-  snp.settings <- list(callrate.samp.thr=.94,callrate.snp.thr=.97,hwe.thr=0.0001,
+  snp.settings <- list(callrate.samp.thr=.94,callrate.snp.thr=.985,hwe.thr=0.0001,
                        snp.grp.miss=T,grp.hwe.z.thr=4,grp.cr.thr=.001,het.lo=.17,het.hi=.25)
 } else {
-  snp.settings <- list(callrate.samp.thr=.94,callrate.snp.thr=.985,hwe.thr=0.0001,
-                       snp.grp.miss=F,grp.hwe.z.thr=400,grp.cr.thr=10^-20,het.lo=.05,het.hi=.50)
+  snp.settings <- list(callrate.samp.thr=.95,callrate.snp.thr=.98,hwe.thr=0.00000001,
+                       snp.grp.miss=F,grp.hwe.z.thr=400,grp.cr.thr=10^-20,het.lo=.1,het.hi=.40)
 }
 
 
@@ -103,7 +123,7 @@ samp.settings <- list(nSD=99,mean.thr=c(NA,NA),dlrs.thr=c(NA,NA),gc.thr=c(NA,NA)
   if(samp.set=="light") {
 
     samp.settings <- list(nSD=3.5,mean.thr=c("-3.5SD","+3.5SD"),dlrs.thr=c(NA,"+3.5SD"),gc.thr=c("-3.5SD","+3.5SD"),
-                      badPlateThresh=0.50,skip.chr.ab=F,lob=2.5,hib=3,pctile.bound=0.01,cohort.pc.correct=F,
+                      badPlateThresh=0.40,skip.chr.ab=F,lob=2.5,hib=3,pctile.bound=0.01,cohort.pc.correct=F,
                       batch="plate",other.batch=list(),
                       lrr.report=T,chr.ab.report=T,plate.report=T)
   } else {
@@ -120,18 +140,18 @@ samp.settings <- list(nSD=99,mean.thr=c(NA,NA),dlrs.thr=c(NA,NA),gc.thr=c(NA,NA)
 
 if(pca.set==0) {
   pca.settings <- list(num.pcs=0,pc.to.keep=.20,assoc=F,n.store=50,correct.sex=cov.for.sex,
-                       add.int=T,preserve.median=F,
+                       add.int=F,preserve.median=F,
                        comparison=F,comp.gc=F,comps="plate",exclude.bad.reg=F)
 } else {
   if(pca.set==6) {
     
     pca.settings <- list(num.pcs=6,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=cov.for.sex,
-                         add.int=T,preserve.median=F,
+                         add.int=F,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   } else {
     #24
     pca.settings <- list(num.pcs=24,pc.to.keep=.30,assoc=F,n.store=50,correct.sex=cov.for.sex,
-                         add.int=T,preserve.median=T,
+                         add.int=F,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   }
 }
@@ -142,12 +162,12 @@ if(!do.cnv) {
   #none
   cnv.settings <- list(out.format="Ranges",results="everything",print.summary.overlaps=T,
                      cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.01,del.rate=2,dup.rate=2,thr.sd=4,plate.thr=4,
-                     rmv.low.plates=F,min.sites=4,rare.olp=0.5,rare.pc=0.02,rmv.bad.reg=F)
+                     rmv.low.plates=F,min.sites=4,rare.olp=0.5,rare.pc=0.03,rmv.bad.reg=F,qs.trios=trio.quality.scores)
 } else {
   #normal
   cnv.settings <- list(out.format="Ranges",results="everything",print.summary.overlaps=T,
                      cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.01,del.rate=0.4,dup.rate=0.2,thr.sd=3,plate.thr=3,
-                     rmv.low.plates=F,min.sites=6,rare.olp=0.5,rare.pc=0.01,rmv.bad.reg=F)
+                     rmv.low.plates=F,min.sites=6,rare.olp=0.5,rare.pc=0.03,rmv.bad.reg=T,qs.trios=trio.quality.scores)
 }
 
 settings <- c(chip.settings,base.settings,snp.settings,samp.settings,pca.settings,penn.settings,cnv.settings)
@@ -169,6 +189,13 @@ if(plumber) {
   save(cnvResult,file=cat.path(dir$res,"fullresult",suf=suffix,ext="RData"))
 }
 
+## do some TDT checks
+#top.dels <- rownames(cnvResult$cnvr[[1]][narm(which(cnvResult$cnvr[[1]]$tdt<.01)),])
+#top.dups <- rownames(cnvResult$cnvr[[2]][narm(which(cnvResult$cnvr[[2]]$tdt<.01)),])
+#load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData"))
+#family.check.and.validate(dir,"famstats_trios",top.dels=top.dels,top.dups=top.dups)
+#plot.each.family.for.cnv(dir,reg="S1",chromo=1,cnv.bounds=c(197158752,197170596),suffix=48)
+
 if(eval) {
   #source("validationWorking.R")
   do.plots <- F # don't redo fp/fn plots each time
@@ -185,7 +212,7 @@ if(eval) {
   from.scratch <- F  # first time only set to T, otherwise F
   suffix <- suffix
   validate <- T
-  dir <- make.dir("/chiswick/data/ncooper/immunochipRunTest/")
+  dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies/") #/chiswick/data/ncooper/immunochipRunTest/")
   DT <- read.data.tracker(dir)
   thr <- .95
   n.cores <- 1

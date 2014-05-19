@@ -33,6 +33,11 @@ is.ch <- function(x) {
 }
 
 
+# extend a 'range' window by 50% (or other specified percentage), ensuring the range
+# remains a valid position set for the relevant chromosome
+extend.50pc <- function(X,Chr,snp.info,pc=.5) {
+  y <- abs(X[2]-X[1])*pc; return(force.chr.pos(c(X[1]-y,X[2]+y),Chr,snp.info)) 
+}
 
 
 update.cnvrs.with.cn <- function(cnv.list,double.table,DEL=TRUE) {  
@@ -5138,7 +5143,7 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
   # Tabulate snp call rate stats
   if(tabulateCallRate) {
     snp.result <- call.rate.summary(snp.info)
-    if(snp.result$SNPs>(0.5*nrow(snp.info))) { 
+    if(any(head(snp.result$SNPs2)>(0.5*nrow(snp.info)))) { 
       warning("very high proportion of SNPs failing call rate! suspected failure of data import")
     } 
   }
@@ -6279,7 +6284,9 @@ get.trios.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",ped.fi
   num.to.chk <- c(1,2)
   penn.args.list <- vector("list",length(arg.nms))
   names(penn.args.list) <- arg.nms
-  penn.args.list[[1]] <- paste(penn.path,"lib/",hmm,sep="")
+  if(!file.exists(hmm)) { hmm.file <- paste(penn.path,"lib/",hmm,sep="") } else { hmm.file <- hmm }
+  cat("using HMM file:",hmm.file,"\n")
+  penn.args.list[[1]] <- hmm.file
   penn.args.list[[2]] <- find.file(baf.out.fn,dir$cnv,dir)
   for (cc in num.to.chk) {
     nf <- penn.args.list[[cc]]
@@ -6334,7 +6341,8 @@ get.penn.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",use.pen
   if(use.penn.gc) { arg.nms <- c(arg.nms,"gcmodel"); num.to.chk <- c(num.to.chk,6) }
   penn.args.list <- vector("list",length(arg.nms))
   names(penn.args.list) <- arg.nms
-  penn.args.list[[1]] <- paste(penn.path,"lib/",hmm,sep="")
+  if(!file.exists(hmm)) { hmm.file <- paste(penn.path,"lib/",hmm,sep="") } else { hmm.file <- hmm }
+  penn.args.list[[1]] <- hmm.file
   penn.args.list[[2]] <- find.file(baf.out.fn,dir$cnv,dir)
   if(use.penn.gc) { penn.args.list[[6]] <- find.file(gc.out.fn,dir$cnv,dir) }
   for (cc in num.to.chk) {
@@ -6362,10 +6370,12 @@ get.penn.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",use.pen
 }  
 
 
-process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/penncnv/",ucsc="hg18",min.sites=10,rare.olp=.5,rare.pc=1,
-                                 baf.fn="BAF.pfb",cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,rmv.low.plates=F,
-                                 raw.main="raw",plink.out="plink.cnv",rmv.bad.reg=T,bad.reg.fn="badRegions.txt",hide.plink.out=T,verbose=F,
-                                 ped.file="my.ped",trio=FALSE,joint=FALSE,restore.mode=FALSE,...)
+process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/penncnv/",ucsc="hg18",
+                                 min.sites=10,rare.olp=.5,rare.pc=1,baf.fn="BAF.pfb",cnv.qc=T,rare.qc=T,
+                                 plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,
+                                 rmv.low.plates=F,raw.main="raw",plink.out="plink.cnv",rmv.bad.reg=T,
+                                 bad.reg.fn="badRegions.txt",hide.plink.out=T,verbose=F,ped.file="my.ped",
+                                 trio=FALSE,hmm="hh550.hmm",joint=FALSE,restore.mode=FALSE,...)
 {
   # This function runs the penn cnv output through a series of filters from penn scripts,
   # plink commands, both utilising bash commands, and also R-functions, to end up with
@@ -6422,7 +6432,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
       if(!file.exists(first.pen) | !restore.mode) {
         run.PENN.trios(ped.file=ped.file,combined.file=cur.pen,
                      low.ram=T, hide.penn.out=hide.plink.out,
-                     penn.path=penn.path,ucsc=ucsc,joint=joint,...)
+                     penn.path=penn.path,ucsc=ucsc,joint=joint,hmm=hmm,...)
                      # ... = DT=NULL,n.cores=n.cores,num.pcs=num.pcs,run.manual=run.manual,hmm=hmm,print.cmds=print.cmds,q.cores=q.cores,grid.id=grid.id,
       }
       cat.arg <- cat.path(dir$cnv.fam,"familyp*",ext="triocnv")
@@ -6449,7 +6459,9 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
       penn.cmb[5] <- paste(cmd,args)
       nn[[1]] <- c(nn[[1]],sapply(penn.cmb,system,intern=hide.plink.out,ignore.stderr=hide.plink.out))
       remain.lines <- file.nrow(cur.pen)
-      if(remain.lines<1) { stop("file ",cur.pen," was empty. No trios were called successfully, please review input file names and parameters and try again") }
+      if(remain.lines<1) { stop("file ",cur.pen," was empty. No trios were called successfully,",
+        " please review input file names and parameters and try again",
+        " in particular if the 'restore' parameter of plumbCNV() is TRUE, try setting to FALSE") }
     } else {
       warning("selected 'trio=TRUE' option but did not find a ped/fam file called: ",ped.file)
     }
@@ -6748,11 +6760,11 @@ bash.qsub <- function(bash.commands, dir=getwd(), hrs.guess=NA, grid.name="all.q
 }
 
 
-run.PENN.trios <- function(ped.file="my.ped",combined.file="raw.merge2.cnv",joint=FALSE,...) { 
+run.PENN.trios <- function(ped.file="my.ped",combined.file="raw.merge2.cnv",hmm="hh550.hmm",joint=FALSE,...) { 
   # validate CNVs with trios if we have family data
   # takes roughly as long as the original penn-cnv analysis
   # only where the data is in trios of child-father-mother, runs from 6-column plink ped/fam file
-  run.PENN.cnv(...,trio=TRUE,joint=joint,restore.mode=TRUE,relative=FALSE,ped.file=ped.file,
+  run.PENN.cnv(...,trio=TRUE,hmm=hmm,joint=joint,restore.mode=TRUE,relative=FALSE,ped.file=ped.file,
                combined.file=combined.file,use.penn.gc=FALSE)
 }
 
@@ -6841,7 +6853,8 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
     if(trio) {
       cat("\nRunning PennCNV to validate one-at-a-time CNV calls using family/trio data\n")
     } else {
-      cat("\nRunning the PennCNV (hidden markov model for CNV calling)\n")
+      cat("\nRunning the PennCNV (hidden markov model for CNV calling)\n",
+          "using the hmm file: ",hmm,"\n")
       #cat(" NB: to run with family data, press Ctrl-C and run PennCNV manually with appropriate options\n")
     }
   }
@@ -6889,6 +6902,7 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
       # run one after the other
       options(warn = -1)
       time.per.it <- (hrs.guess/n.calls)*60; total.time <- 0
+      if(length(n.calls)<1) { stop("no penn calls were produced") }
       for (tt in 1:n.calls) {
         cat(" expect HMM process ",tt,"/",n.calls," to take roughly ",round(time.per.it,2),"minutes\n",sep="")
         kk <- proc.time()
@@ -6902,8 +6916,9 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
     }
   } else {
     kk <- proc.time()
-    nullList <- list()
+    nullList <- vector("list",n.calls)
     cat(paste("\n parallel PennCNV processing for",n.calls,"files initiated: "))
+    if(length(n.calls)<1) { stop("no penn calls were produced") }
     for (tt in 1:n.calls) {
       cat(paste(tt,"..",sep=""))
       nullList[[tt]] <- parallel::mcparallel(system(penn.calls[tt],intern=hide.penn.out, ignore.stderr=hide.penn.out))
@@ -7710,6 +7725,7 @@ get.quality.scores <- function(ranges,dir,n.pcs=NA,...) {
   DT <- read.data.tracker(dir)
   DEL <- ranges
   snp.info <- read.snp.info(dir)
+  snp.info[["QCfail"]][is.na(snp.info[["QCfail"]])] <- 9
   snp.info <- snp.info[snp.info$QCfail==0,]
   snp.info <- toGenomeOrder2(select.autosomes(snp.info))
   bigPCC <- getSlot(DT,"big.pcc",ret.obj=T,n.pcs=n.pcs)
@@ -7768,6 +7784,7 @@ make.qs.table <- function(XX) {
   QS.results.matrix <- data.frame(cnvqs=CNV.QS, lrrqs=LRR.QS, bafqs=BAF.QS, n.snps=XX$len[,"cnv"],
                                   trunc=fs[longer.than.tag+1], roh=fs[in.roh.region+1], wave=fs[local.bias+1])
   if(nrow(QS.results.matrix)==length(rn)) { 
+    while(any(duplicated(rn))) { rn[duplicated(rn)] <- paste(rn[duplicated(rn)],"2",sep=".") }
     rownames(QS.results.matrix) <- rn 
   } else { 
     warning("rownames in XX did not match length of object to return") 
@@ -7975,7 +7992,7 @@ random.spacing.snp.select <- function(snp.info,pc.to.keep=.05,dir,autosomes.only
   } else {
     mhc <- c(29500000,34000000) # for build 36
   }
-  bad.reg <- rbind(get.telomere.locs(bioC=T,ucsc=ucsc),get.centromere.locs(bioC=T,ucsc=ucsc),get.immunog.locs(bioC=T,ucsc=ucsc))
+  bad.reg <- rbind(get.telomere.locs(bioC=T,ucsc=ucsc,kb=500),get.centromere.locs(bioC=T,ucsc=ucsc),get.immunog.locs(bioC=T,ucsc=ucsc))
   #igse <- cbind(start(ig),end(ig))
   #cbind(unlist(sapply(get.immunog.locs(),"[",1)),unlist(sapply(get.immunog.locs(),"[",2)))
   cat("snp.info contains data for chromsomes:",paste(chr.set,collapse=","),"\n")
@@ -8307,7 +8324,152 @@ snp.cr.summary <- function(bigMat,histo=F,print=F,n.cores=1) {
 }
 
 
+length.analysis <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75) {
+  thrsh <- .05/length(LL); blnk <- rep(NA,times=length(LL))
+  resultsDEL <- resultsDUP <- data.frame(length=LL,cases=blnk,controls=blnk,ratio=blnk,FET=blnk,pass=blnk)
+  DELqs <- reader(cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt"))
+  DUPqs <- reader(cat.path(dir$res,"qs.dup.results",suf=suffix,ext="txt"))
+  sample.info <- read.sample.info(dir)
+  cnts <- table(sample.info$phenotype[sample.info$QCfail==0])
+  X <- cnvResult[[1]]
+  X[[4]] <- X[[4]][DELqs[[1]]>del.thr,]
+  X[[5]] <- X[[5]][DUPqs[[1]]>dup.thr,]
 
+  for(ll in 1:length(LL)) {
+    ii <- print.biggest.cnvs(X,cutoff=LL[ll],print=F)
+    jj <- table(ii[[1]]$phenotype); if(length(jj)<2) { jj <- c(0,jj) };kk <-  table(ii[[2]]$phenotype) 
+    resultsDEL[ll,"controls"] <- jj[1]
+    resultsDEL[ll,"cases"] <- jj[2]
+    resultsDUP[ll,"controls"] <- kk[1]
+    resultsDUP[ll,"cases"] <- kk[2]
+    ff <-  FET(c(jj[2],kk[2]),c(jj[1],kk[1]),case.d=cnts[2],cont.d=cnts[1])
+    DELcc.ratio <- ((jj[2]/cnts[2]) / (jj[1]/cnts[1]))
+    DUPcc.ratio <- ((kk[2]/cnts[2]) / (kk[1]/cnts[1]))
+    resultsDEL[ll,"FET"] <- ff[1]
+    resultsDUP[ll,"FET"] <- ff[2]
+    resultsDEL[ll,"ratio"] <- DELcc.ratio
+    resultsDUP[ll,"ratio"] <- DUPcc.ratio
+  }
+  resultsDEL$pass <- resultsDEL$FET<thrsh
+  resultsDUP$pass <- resultsDUP$FET<thrsh
+  #print(resultsDEL)
+  #print(resultsDUP)
+  return(list(DEL=resultsDEL,DUP=resultsDUP))
+}
+
+
+count.genes <- function(text, delim=";") {
+  # genes in my functions can be stored in a single field separated by semicolons
+  # this uses number of ;'s plus 1 to count genes
+  counts <- rep(1,length(text))
+  counts[nchar(text)==0] <- 0
+  ncolons <- nchar(text) - nchar(gsub(";","",text,fixed=T))
+  counts[ncolons>0] <- (ncolons+1)[ncolons>0]
+  return(counts)
+}
+
+
+power.analysis.fet <- function(bonf=.05/1000,bu=10000,rng=15) {
+ #bu = basic unit of table, rng = max ratio
+ szs <- c(0.5,0.8,(1:10))*bu # dataset sizes to test
+ ns <- length(szs)
+ pez <- matrix(nrow=rng+1,ncol=(rng+1)*ns); 
+ dim(pez) <- c(rng+1,rng+1,ns)
+ dimnames(pez) <- list(paste(0:rng),paste(0:rng),paste(szs))
+ tfz <- pez
+ rez <- tfz[,,1]
+ for (nn in 1:ns) {
+   rt <- szs[nn]/bu
+   for(cas in 1:(rng+1)) { 
+     for(cnt in 1:(rng+1)) { 
+       pez[cas,cnt,nn] <- FET(round((cas-1)*rt),round((cnt-1)*rt),case.d=szs[nn],cont.d=szs[nn]) 
+     }
+     tfz[cas,,nn] <- pez[cas,,nn]<bonf
+   } 
+ }
+ for(cas in 1:(rng+1)) { 
+     for(cnt in 1:(rng+1)) { 
+       rez[cas,cnt] <- 2*(szs/bu)[min(which(tfz[cas,cnt,]),na.rm=T)]
+     }
+ } 
+ return(list(pa=rez,tf=tfz,p=pez))
+}
+
+
+##OR version
+power.analysis.fet2 <- function(bonf=.05/1000,bu=10000) {
+ #bu = basic unit of table, rng = max ratio
+ szs <- c(0.5,0.8,(1:10))*bu # dataset sizes to test
+ ORs <- c(20,10:2,1.75,1.5,1.25,1.1)
+ CNVF <- c(0.0001,.0002,.0005,.001,.002,.005,.01,.02,.05)
+ ns <- length(szs)
+ nf <- length(CNVF)
+ no <- length(ORs)
+ pez <- matrix(nrow=no,ncol=nf*ns); 
+ dim(pez) <- c(nf,no,ns)
+ dimnames(pez) <- list(paste(CNVF),paste(ORs),paste(szs))
+ tfz <- pez
+ rez <- tfz[,,1]
+ for (nn in 1:ns) {
+   rt <- szs[nn]/bu
+   for(cnvf in 1:nf) { 
+     for(ors in 1:no) { 
+       tot.cnvs <- CNVF[cnvf]*2*szs[nn]
+       case.cnvs <- round((ORs[ors]/(ORs[ors]+1))*tot.cnvs)
+       cont.cnvs <- round(tot.cnvs-case.cnvs)
+       #if((!case.cnvs %in% 1:1000) | (!cont.cnvs %in% 1:1000)) { cat(case.cnvs,",",cont.cnvs,"..")}
+       pez[cnvf,ors,nn] <- FET(case.cnvs,cont.cnvs,case.d=szs[nn],cont.d=szs[nn]) 
+     }
+     tfz[cnvf,,nn] <- pez[cnvf,,nn]<bonf
+   } 
+ }
+ for(cnvf in 1:nf) { 
+     for(ors in 1:no) { 
+       rez[cnvf,ors] <- 2*(szs/bu)[min(which(tfz[cnvf,ors,]),na.rm=T)]
+     }
+ } 
+ return(list(pa=rez,tf=tfz,p=pez))
+}
+
+
+# print the longest CNVs in the whole (towards end of pipeline in plumbCNV())
+print.biggest.cnvs <- function(cnvResult,cutoff=3000000,print=TRUE,add.genes=FALSE) {
+  if(!is.list(cnvResult)) { stop("invalid 'cnvResult, should be list returned by plumbCNV()") }
+  if(!all(names(cnvResult) %in% c("allCNV","allDel","allDup","rareDEL","rareDUP"))) {
+    stop("invalid 'cnvResult', first element should be list of RangedData objects")
+  }
+  if(add.genes) { 
+    for (dd in 4:5) {  cnvResult[[dd]] <- annot.cnv(cnvResult[[dd]]) } 
+  }
+  DEL <- as(cnvResult[[4]],"GRanges")
+  rl <- rev(sort(width(DEL)))
+  n <- length(rl[rl>cutoff])
+  if(n>0) {
+    cat(n,"DEL CNVs found longer than",cutoff,"base pairs\n")
+    cnv1 <- toGenomeOrder(DEL[head(rev(order(width(DEL))),n),])
+    cnv1 <- as(cnv1,"RangedData")
+    if(add.genes) { cnv1[["n.genes"]] <- count.genes(cnv1[["gene"]]) }
+    if(print) { print(cnv1) }
+  } else {
+    cat("no DEL CNVs found longer than",cutoff,"base pairs\n")
+  }
+  DUP <- as(cnvResult[[5]],"GRanges")
+  rl <- rev(sort(width(DUP)))
+  n <- length(rl[rl>cutoff])
+  if(n>0) {
+    cat(n,"DUP CNVs found longer than",cutoff,"base pairs\n")
+    cnv2 <- toGenomeOrder(DUP[head(rev(order(width(DUP))),n),])
+    cnv2 <- as(cnv2,"RangedData")
+    if(add.genes) { cnv2[["n.genes"]] <- count.genes(cnv2[["gene"]]) }
+    if(print) { print(cnv2) }
+  } else {
+    cat("no DUP CNVs found longer than",cutoff,"base pairs\n")
+  }
+  if(!print) { 
+    #cnv1 <- as(cnv1,"RangedData"); cnv2 <- as(cnv2,"RangedData")
+    return(list(DEL=cnv1,DUP=cnv2)) 
+  }
+}
 
 
 LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.cores=1)
@@ -8560,6 +8722,7 @@ get.all.samp.fails <- function(dir,verb=F)
 }
 
 
+# plot all the CNVs for individuals, in a RangedData object
 plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.flank=5,snp.info=NULL,
                             col1="black",scheme="mono",LRR=T,BAF=F,bafOverlay=F,hzOverlay=F,
                             PREPOSTPC=F,baf.file="big.baf",lrr.file="big.pcc",n.cores=1,n.pcs=NA,...) {
@@ -8794,13 +8957,11 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
       warning("lookup of baf.file and/or lrr.file file(s) failed - will try to proceed but failure is likely")
     }
   } 
-  extend.50pc <- function(X,Chr,snp.info,pc=.5) {
-    y <- abs(X[2]-X[1])*pc; return(force.chr.pos(c(X[1]-y,X[2]+y),Chr,snp.info)) }
   ## over-ride settings incompatible with viewing a partial chromosome if ZOOM is on:
   if(is(snp.info)[1]!="RangedData") { snp.info <- read.snp.info(dir) }
   snp.info <- toGenomeOrder2(snp.info,strict=T)
   chr.set <- chrNums(snp.info); 
-  if(is.na(Pos) & all(Cnv==force.chr.pos(Cnv,Chr,snp.info))) { 
+  if(all(is.na(Pos)) & all(Cnv==force.chr.pos(Cnv,Chr,snp.info))) { 
     Pos <- extend.50pc(Cnv,Chr,snp.info) } # if pos left blank, by default extend 'Cnv' range by 50%
   if(any(!paste(Chr) %in% paste(chr.set))) { Chr <- Chr[paste(Chr) %in% paste(chr.set)] }
   if(length(Chr)<length(chr.set)) { rngOn <- T }
@@ -9310,10 +9471,11 @@ dlrs <- function(X,na.rm=T)
 gene.duplicate.report <- function(ga,full.listing=F) {
   # for a RangedData object, report on any multiple listings for the same gene
   if(is(ga)[1]!="RangedData") { warning("not a RangedData object") ; return(NULL) }
-  if("gene" %in% c)
+  if("gene" %in% tolower(colnames(ga)))
     gene.col <- (which(tolower(colnames(ga)) %in% c("gene","genes","geneid")))
   if(length(gene.col)>0) { gene.col <- gene.col[1] } else { warning("no 'gene' column"); return(NULL) }
   colnames(ga)[gene.col] <- "gene" #force this colname
+  duplicate.report <- T  ### when would this be FALSE???
   if(duplicate.report) {
     culprits <- unique(ga$gene[which(duplicated(ga$gene))])
     n.gene.multi.row <- length(culprits)
@@ -9335,6 +9497,41 @@ gene.duplicate.report <- function(ga,full.listing=F) {
   }
   return(culprits)
 }
+
+
+make.genes.unique <- function(ga,quiet=FALSE) {
+  # for a RangedData object, convert any multiple listings for the same gene into one entry, merging ranges to min,max
+  if(is(ga)[1]!="RangedData") { warning("not a RangedData object") ; return(NULL) }
+  if(any(c("gene","genes","geneid") %in% tolower(colnames(ga)))) {
+    gene.col <- (which(tolower(colnames(ga)) %in% c("gene","genes","geneid")))
+  } else { gene.col <- NULL }
+  if(length(gene.col)>0) { gene.col <- gene.col[1] } else { warning("no 'gene' column"); return(NULL) }
+  colnames(ga)[gene.col] <- "gene" #force this colname
+  duplicate.report <- T  ### when would this be FALSE???
+  to.cut.rows <- NULL
+  if(duplicate.report) {
+    culprits <- unique(ga$gene[which(duplicated(ga$gene))])
+    n.gene.multi.row <- length(culprits)
+    culprit.ranges <- ga[ga$gene %in% culprits,]
+    total.culprit.rows <- nrow(culprit.ranges)
+    stga <- start(ga); enga <- end(ga)
+    for (cc in 1:length(culprits)) { 
+      dup.gene.rows <- which(ga$gene %in% culprits[cc])
+     # mini <- (ga[dup.gene.rows,]) 
+      new.range <- c(min(stga[dup.gene.rows],na.rm=T), max(enga[dup.gene.rows],na.rm=T))
+     # prv(new.range,dup.gene.rows)
+      start(ga)[dup.gene.rows[1]] <- as.numeric(new.range[1])
+      end(ga)[dup.gene.rows[1]] <- as.numeric(new.range[2])
+      to.cut.rows <- c(to.cut.rows,dup.gene.rows[-1])
+    }
+    if(!quiet) {
+      cat(" merged",total.culprit.rows,"split gene range rows into ",length(culprits),"unique gene rows\n")
+    }
+  }
+  return(ga)
+}
+
+
 
 
 dgv.subset.cov.by.n.snps <- function(n.snps=10,dir=NULL,snp.set=NULL,dgv=NULL,max.freq=NA,
@@ -9655,10 +9852,10 @@ pheno.ratios.table <- function(dir,sum.table)
 
 
 # note that only a column named 'gene' will be annotated! so change the name if you want to use for something else
-annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, ucsc="hg18", autosomes.only=T, alt.name=NULL){
+annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, ucsc="hg18", autosomes.only=T, alt.name=NULL, dir=getwd()){
   ## which genes overlap with each CNV - don't forget to account for the empty ones!
   must.use.package("genoset")
-  if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(ucsc=ucsc) }
+  if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(ucsc=ucsc,dir=dir) }
   if(is(gs)[1]!="RangedData" | is(cnvResults)[1]!="RangedData") {
     warning("'gs' and 'cnvResults' must both be 'RangedData' type; returning null")
     return(NULL)
@@ -9667,7 +9864,7 @@ annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, ucsc="h
   #gene.vec <- (find.overlaps(cnvResults,ref=gs,vec.out=T,delim=";",autosomes.only=autosomes.only,alt.name=alt.name))
   
   if(nrow(cnvResults)==length(gene.vec)) { cnvResults[["gene"]] <- gene.vec ; return(cnvResults) } else { 
-     stop("gene vector returned doesn't match nrow of cnvResult") }
+     stop("gene vector returned doesn't match nrow of cnvResult")  }  #; return(cnvResults)  }
 }
 
 
@@ -9984,7 +10181,7 @@ plot.pheno.cnvs <- function(fn,type="DEL",pref="",dir)
   ## make plot of CNV regions across chromosomes in competing phenotypes for rare dels/dups
   if(!file.exists(fn)) { warning("cnv.summary file not found"); return(NULL) }
   if(length(grep("cnv.summary",fn))<1) { warning("doesn't look like a plink cnv.summary file: may fail") }
-  tt <- reader(fn,  )
+  tt <- reader(fn, one.byte=F)
   if(length(Dim(tt))<2) { 
     tt <- read.table(fn,  header=TRUE)
     if(length(Dim(tt))<2) {
@@ -10242,12 +10439,18 @@ check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=
       scr.url <- "http://www.openbioinformatics.org/penncnv/download/penncnv_to_plink.pl"
       res <- download.file(scr.url,cat.path(penn.path,conv.scrpt),quiet=F)
     }
-    hmm.file <- paste(penn.path,"lib/",hmm,sep="")
+    if(!file.exists(hmm.file)) { 
+      hmm.file <- paste(penn.path,"lib/",hmm,sep="")
+      alt.hmm <- F
+    } else { 
+      alt.hmm <- T 
+      cat("Found hidden markov parameter file ",hmm,".\n",sep="")
+    }
     if(!file.exists(hmm.file)) 
     { 
       stop(paste("expecting to find file",hmm.file,". Suggest reinstall PennCNV from",penurl)) 
     } else {
-      cat("Found hidden markov parameter file lib/",hmm,".\n",sep="")
+      if(!alt.hmm) { cat("Found hidden markov parameter file lib/",hmm,".\n",sep="") }
       cat("Modify parameters therein; B1_uf, B2_uf, B3_uf, from 0.01 to 0.03,")
       cat("if using Affymetrix arrays\n")
     }
@@ -10373,7 +10576,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                      add.int=F,exclude.bad.reg=T,preserve.median=F,
                      comparison=T,comp.gc=F,comps="plate",use.penn.gc=F,
                      penn.path="/usr/local/bin/penncnv64/",hmm="hh550.hmm",
-                     relative=F,run.manual=F,print.cmds=F,trio=F,joint=F,ped.file="my.ped",
+                     relative=F,run.manual=F,print.cmds=F,trio=F,joint=F,ped.file="my.ped",qs.trios=F,
                      result.pref="cnvResults",out.format="Ranges",results="DT",print.summary.overlaps=F,
                      cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,
                      rmv.low.plates=F,min.sites=10,rare.olp=0.5,rare.pc=0.01,rmv.bad.reg=T,settings=NULL) 
@@ -10620,8 +10823,10 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
 #  grpz[grpz==-1] <- 0
 #  print(unique(grpz))
 #  cnvResults[[4]]$phenotype <- grpz
+  
   ##
   if(print.summary.overlaps | !(tolower(results) %in% c("dt","ranges"))) {
+    print.biggest.cnvs(cnvResults,cutoff=3000000)      
     big.summary <- do.CNV.all.overlaps.summary(cnvResults,dir,comps=c(1:5),dbs=1:3,len.lo=1, len.hi=5000000,
                                                min.sites=min.sites,n.cores=1) #n.cores) 1 is faster?
     n.phenos <- length(unique(cnvResults[[1]][["phenotype"]]))
@@ -10670,10 +10875,11 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
       CNVR <- list(deletions=cnvr.del,duplications=cnvr.dup) 
     }
   }    
-  if(is.file(ped.file,dir$ano,dir) | trio) {
+  if(n.phenos==2 & (is.file(ped.file,dir$ano,dir) | trio)) {
     # if using family data/trios, then run a TDT analysis
     if(!trio) { cat("trio option not selected but found family file:",ped.file," so attempting to run a TDT analysis\n") }
-    resultz <- trio.analysis(dir,cnvResults, ped.file)
+    resultz <- trio.analysis(dir,cnvResults, ped.file, result.pref=result.pref,
+                                   quality.scores=qs.trios,restore=restore.mode)
     if(!is.null(resultz)) { CNVR <- resultz } # add the tdt pvalues to the CNVR object
   }
   

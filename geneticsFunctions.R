@@ -276,6 +276,7 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
   # not case sensitive
   ## abandon longer names as they clash with function names
   st <- paste(start); en <- paste(end); ch <- paste(chr); wd <- paste(width)
+  ucsc <- ucsc.sanitizer(ucsc)
   must.use.package(c("genoset","IRanges"),T)
   if(is.matrix(dat)) { dat <- as.data.frame(dat,stringsAsFactors=FALSE) }
   if(!is.data.frame(dat)) { stop("Error: not a dataframe")}
@@ -577,10 +578,19 @@ get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
 
 
 
-force.chr.pos <- function(Pos,Chr,snp.info=NULL) {
-  if(length(Pos)==2) {
+force.chr.pos <- function(Pos,Chr,snp.info=NULL,ucsc="hg18",dir=NULL) {
+  ucsc <- ucsc.sanitizer(ucsc)
+  # convert any non autosomes to numbers:
+  Chr[grep("c6",Chr,ignore.case=T)] <- 6  # prevent issues with c6_COX, c6_QBL  
+  Chr[grep("X",Chr,ignore.case=T)] <- 23
+  Chr[grep("Y",Chr,ignore.case=T)] <- 24
+  Chr[grep("M",Chr,ignore.case=T)] <- 25
+  Chr[grep("NT",Chr,ignore.case=T)] <- 26  # prevent issues with NT_11387, etc
+  Chr <- as.numeric(Chr)
+  if(any(!paste(Chr) %in% paste(c(1:25)))) { stop("invalid chromosome(s) entered") }
+  if(length(Pos)==2 & is.numeric(Pos)) {
     if(is(snp.info)[1]!="RangedData" & is(snp.info)[1]!="GRanges") { 
-      maxln <- get.chr.lens()[Chr] 
+      maxln <- get.chr.lens(dir=dir,mito=T,autosomes=FALSE,ucsc=ucsc)[Chr] 
     } else { 
       maxln <- end(tail(snp.info[paste(Chr)],1)) # force start and end to be within 1:chr.len
     }
@@ -626,6 +636,7 @@ plot.gene.annot <- function(gs=NULL, chr=1, pos=NA, x.scl=10^6, y.ofs=0, width=1
   #  the step size of the rest of the plot.
   # more args to 'rect' ...
   dir <- validate.dir.for(dir,"ano")
+  ucsc <- ucsc.sanitizer(ucsc)
   if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(dir=dir,ucsc=ucsc) }
   if(!"gene" %in% colnames(gs)) { warning("didn't find 'gene' column in annotation") ; return(NULL) }
   Col <- c("green", "darkgreen")
@@ -673,32 +684,65 @@ plot.gene.annot <- function(gs=NULL, chr=1, pos=NA, x.scl=10^6, y.ofs=0, width=1
 }
 
 
-plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,...) {
+plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,lty="solid",
+                        full.vertical=FALSE,ylim=NULL,scl=c("b","Kb","Mb","Gb"),...) {
+  # should enter a ranged object with data for only 1 chromosome
+  # yadj controls offset from the default y-axis location of the plotted ranges (default is integers)
+  # adjust scl if the plot is in Mb units or Kb units (ranged object should always be in base-pairs)
+  # full vertical plots the ranges with abline() instead of as horizontal lines
   # plot a set of ranges from a RangedData object
   #if(is(ranges)[1]!="RangedData") { warning("need RangedData object") ; return(NULL) }
   chk <- chrNums(rangedat)
   if(length(chk)>1) { warning(length(chk)," chromosomes in 'rangedat', only using the first, chr",chk[1]) ; rangedat <- rangedat[1] }
+  if(is.character(scl[1])) { scltxt <- tolower(scl[1]) } else { scltxt <- "b" }
+  if(scltxt %in% c("b","kb","mb","gb")) {
+    scl <- 1
+    if(scltxt=="kb") { scl <- 10^3 }
+    if(scltxt=="mb") { scl <- 10^6 }
+    if(scltxt=="gb") { scl <- 10^9 }
+  } else {
+    scl <- 1; warning("scale entered with illegal value, reverting to a base-pair scale")
+  }
   xl <- range(c(start(rangedat),end(rangedat)))
   xl <- xl + ((diff(xl)*0.1)*c(-1,1))
   nr <- nrow(rangedat); if(is.null(nr)) { nr <- length(rangedat) }
   yl <- c(0,(nr+2))
+  if(is.numeric(ylim) & length(ylim)==2) {
+    ylim <- range(ylim)
+    ydif <- diff(ylim)
+    yl <- ylim
+  }
+  YY <- seq(from=yl[1],to=yl[2],length.out=nr+2)[-1]
+  #print(YY)
   colz <- get.distinct.cols(nr); if(nr>22) { colz <- rep("black",nr) }
   if(is.null(labels)) { lab <- rownames(rangedat) } else { lab <- rangedat[[labels]] }
   if(is.null(lab) & do.labs) { lab <- paste(1:nr) }
   if(!skip.plot.new) {
-    plot(x=c(start(rangedat[1,]),end(rangedat[1,])),y=c(1,1),xlim=xl,ylim=yl,type="l",col=colz[1],...)
+    if(full.vertical) {
+      plot(x=c(start(rangedat[1,]),end(rangedat[1,]))/scl,y=YY[c(1,1)],
+           xlim=xl,ylim=yl,type="l",col="white",lty=lty,...)
+      abline(v=c(start(rangedat[1,]),end(rangedat[1,]))/scl,col=colz[1])
+    } else {
+      plot(x=c(start(rangedat[1,]),end(rangedat[1,]))/scl,y=YY[c(1,1)],
+           xlim=xl,ylim=yl,type="l",col=colz[1],lty=lty,...)
+    }
     st <- 2
   } else {
     st <- 1
   }
   if(nr>1 | st==1) {
     for (cc in st:nr) {
-      lines(x=c(start(rangedat[cc,]),end(rangedat[cc,])),y=c(cc,cc),col=colz[cc])
+      if(full.vertical) {
+        abline(v=c(start(rangedat[cc,]),end(rangedat[cc,]))/scl,col=colz[cc],lty=lty)
+      } else {
+        lines(x=c(start(rangedat[cc,]),end(rangedat[cc,]))/scl,y=YY[c(cc,cc)],col=colz[cc],lty=lty)
+      }
     }
   }
   if(do.labs) {
     for (cc in 1:nr) {
-      text(x=start(rangedat[cc,]),y=cc+0.5,labels=lab[cc],cex=0.6,pos=4,offset=0)
+      if(full.vertical) { YY <- rep(tail(YY,1),length(YY)) }
+      text(x=start(rangedat[cc,])/scl,y=YY[cc]+(diff(YY[1:2])*0.5),labels=lab[cc],cex=0.6,pos=4,offset=0)
     }
   }
 }
@@ -746,7 +790,7 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
 
 #' @param table.in, table.out extra parameters for chrNums (e.g, how to convert weird regions)
 set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
-  if(table.out | suppressWarnings(any(is.na(as.numeric(chr2(ranged)))))) {
+  if(table.out | suppressWarnings(any(is.na(as.numeric(paste(chr2(ranged))))))) {
     silly.name <- "adf89734t5b"
     ranged <- toGenomeOrder2(ranged,strict=T)
     ranged[[silly.name]] <- paste(1:nrow(ranged))
@@ -775,6 +819,7 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
         out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
       }
     }
+    if(any(colnames(out) %in% "silly.name")) { out <- out[,-which(colnames(out) %in% "silly.name")] }
     if(table.out) {
       return(list(ranged=out,table.out=all.nums.t))
     } else {
@@ -782,6 +827,7 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
     }
   } else {
     #cat("no change\n")
+    if(any(colnames(ranged) %in% "silly.name")) { ranged <- ranged[,-which(colnames(ranged) %in% "silly.name")] }
     return(ranged)      # change not needed
   }
 }
@@ -802,6 +848,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   } else {
     if(nrow(cnv.ranges)<1) { warning("cnv.ranges contains zero rows, returning NULL"); return(NULL) }
   }
+  ucsc <- ucsc.sanitizer(ucsc)
   uv <- tolower(universe(cnv.ranges)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
   dir <- validate.dir.for(dir,"ano")
   if(ranges.out) { fill.blanks <- T; none.val <- 0 }
@@ -1131,8 +1178,9 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
 }
 
 
-get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=F,text=F) {
+get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
   nchr <- 22
+  ucsc <- ucsc.sanitizer(ucsc[1])
   if(ucsc[1]=="hg19") {
     #hg19
     chr <- c(22,14,2,14)
@@ -1164,32 +1212,31 @@ get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=F,text=F) {
 }
 
 
-get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=FALSE,text=FALSE)
+get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE)
 {
   dir <- validate.dir.for(dir,c("ano"),warn=FALSE); success <- TRUE
-  local.file <- paste(dir$ano,"cytoBand.txt.gz",sep="")
-  if(!file.exists(local.file)) {
-    golden.path <- paste("http://hgdownload.cse.ucsc.edu/goldenPath/",ucsc[1],"/database/cytoBand.txt.gz",sep="")
-    success <- tryCatch( download.file(url=golden.path,local.file,quiet=T),error=function(e) { FALSE } )
+  ucsc <- ucsc.sanitizer(ucsc)
+  local.file <- cat.path(dir$ano,"cyto")
+  tt <- get.cyto(ucsc=ucsc,bioC=FALSE,dir=dir)
+  chrn <- paste(1:22)
+  if(!autosomes) { 
+    chrn <- c(chrn,c("X","Y"))
   }
-  if(is.logical(success)) {
-    if(!success) { warning("couldn't reach ucsc website! try sourcing cytoband data elsewhere"); return(NULL) } }
-  tt <- read.table(local.file,stringsAsFactors=FALSE)
-  nchr <- 22 #default
+  nchr <- length(chrn)
   my.chr.range <- vector("list",nchr)
-  names(my.chr.range) <- paste("chr",1:nchr,sep="")
+  names(my.chr.range) <- paste("chr",chrn,sep="")
   for (cc in 1:nchr) {
     just.centros <- tt[paste(tt[,5])=="acen",]
     just.chr <- just.centros[which(paste(just.centros[,1])==names(my.chr.range)[cc]),]
     my.chr.range[[cc]] <- list(start=min(just.chr[,2]), end=max(just.chr[,3]))
   }
   reg.dat <- rep("centromere",nchr)
-  nmz <- paste(reg.dat,1:nchr,sep="_")
+  nmz <- paste(reg.dat,chrn,sep="_")
   stz <- sapply(my.chr.range,"[[",1)
   enz <- sapply(my.chr.range,"[[",2)
   if(bioC | text) {
     must.use.package(c("genoset","IRanges"),bioC=TRUE)
-    outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=1:nchr,
+    outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=gsub("chr","",chrn),
                           reg=reg.dat,universe=ucsc[1])
     outData <- toGenomeOrder2(outData,strict=TRUE)
     if(text) { outData <- Ranges.to.txt(outData) }
@@ -1200,13 +1247,22 @@ get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=FALSE,text=FAL
 }
 
 
-get.cyto <- function(ucsc="hg18",local.file="cyto.txt.gz",bioC=T) {
+# if dir left blank won't leave a trace
+get.cyto <- function(ucsc="hg18",dir=NULL,bioC=TRUE) {
+  ucsc <- ucsc.sanitizer(ucsc)
+  local.file="cyto"
+  if(is.null(dir)) {
+    local.file <- cat.path("",local.file,suf=ucsc,ext="tar.gz")
+  } else { 
+    local.file <- cat.path(dir,local.file,suf=ucsc,ext="tar.gz")
+  }
   if(!file.exists(local.file)) {
-    golden.path <- paste("http://hgdownload.cse.ucsc.edu/goldenPath/",ucsc[1],"/database/cytoBand.txt.gz",sep="")
+    golden.path <- paste("http://hgdownload.cse.ucsc.edu/goldenPath/",ucsc,"/database/cytoBand.txt.gz",sep="")
     success <- tryCatch( download.file(url=golden.path,local.file,quiet=T),error=function(e) { F } )
     if(is.logical(success)) {
       if(!success) { warning("couldn't reach ucsc website! try sourcing cytoband data elsewhere"); return(NULL) } }
     tt <- reader(local.file,header=FALSE)
+    if(is.null(dir)) { unlink(local.file) }
   } else {
     tt <- reader(local.file)
   }
@@ -1218,12 +1274,17 @@ get.cyto <- function(ucsc="hg18",local.file="cyto.txt.gz",bioC=T) {
     st <- as.numeric(tt$start)
     en <- as.numeric(tt$end)
     must.use.package(c("genoset","IRanges"),bioC=T)
-    outData <- RangedData(ranges=IRanges(start=st,end=en,names=fullbands),space=tt$chr,
+    outData <- RangedData(ranges=IRanges(start=st,end=en,names=fullbands),space=mychr,
                           negpos=tt$negpos,universe=ucsc[1])
     outData <- toGenomeOrder2(outData,strict=T)
     #if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- tt 
+    if("band" %in% colnames(outData)) {
+      ## make 'chr-band' rownames to be consistent with the RangedData object if bioC=T
+      rownames(outData) <- fullbands
+      #outData <- outData[,-which(colnames(outData) %in% "band")]
+    }
   }
   return(outData)
 }
@@ -1231,6 +1292,7 @@ get.cyto <- function(ucsc="hg18",local.file="cyto.txt.gz",bioC=T) {
 
 
 get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
+  ucsc <- ucsc.sanitizer(ucsc)
   ## load exon annotation (store locally if not there already)
   from.scr <- T
   if(!is.null(dir)) {
@@ -1287,14 +1349,18 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
 }
 
 
-get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=T,duplicate.report=F) {
+get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=TRUE,duplicate.report=FALSE,unique=FALSE,map.cox.to.6=TRUE) {
   # faster than exon, but only contains whole gene ranges, not transcripts
   # allows report on duplicates as some might be confused as to why some genes
   # have more than one row in the listing (split across ranges usually)
+  # run with dir as NULL to refresh changes in COX
   must.use.package(c("biomaRt","genoset","gage"),T)
+  ucsc <- ucsc.sanitizer(ucsc)
   from.scr <- T
   if(!is.null(dir)) {
-    gn.fn <- cat.path(dir$ano,"geneAnnot.RData")
+    dir <- validate.dir.for(dir,"ano")
+    utxt <- ""; if(unique) { utxt <- "_unq" }
+    gn.fn <- cat.path(dir$ano,"geneAnnot",pref=ucsc,suf=utxt,ext="RData")
     if(file.exists(gn.fn)) {
       dat <- get(paste(load(gn.fn)))
       from.scr <- F
@@ -1317,6 +1383,10 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=T,duplicate.report=F) 
                  values = egSymb[,2], mart = ens)
     if(exists("gn.fn")) { save(dat,file=gn.fn) }
   } 
+  if(map.cox.to.6) {
+    dat$chromosome_name[grep("c6",dat$chromosome_name,ignore.case=T)] <- 6  # prevent issues with c6_COX, c6_QBL  
+    dat$chromosome_name[grep("NT",dat$chromosome_name,ignore.case=T)] <- "Z_NT"  # merge all NT regions to one label
+  }
   if(range.out) {
     outData <- RangedData(ranges=IRanges(start=dat$start_position,end=dat$end_position),
                           space=dat$chromosome_name,gene=dat$hgnc_symbol, band=dat$band, universe=ucsc)
@@ -1331,20 +1401,31 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=T,duplicate.report=F) 
 }
 
 
-get.telomere.locs <- function(dir="",kb=500,ucsc=c("hg18","hg19"),bioC=F,text=F)
+get.telomere.locs <- function(dir="",kb=10,ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE,mito.zeros=FALSE)
 {
-  chr.lens <- get.chr.lens(dir=dir,ucsc=ucsc[1])
-  nchr <- 22 #default
-  my.chr.range <- vector("list",nchr)
-  names(my.chr.range) <- paste("chr",1:nchr,sep="")
+  # the actual telomeres are typically about 10kb, but
+  # for cnv-QC purposes want to exclude a larger region like 500kb
+  # Mt have no telomeres, are circular, but for some purposes might want zero values in there
+  ucsc <- ucsc.sanitizer(ucsc)
+  chr.lens <- get.chr.lens(dir=dir,ucsc=ucsc[1],autosomes=FALSE,mito=mito.zeros)
+  n <- 1:22; if(!autosomes) { n <- c(n,"X","Y") } # Mt have no telomeres, are circular
+  nchr <- length(n) #default
+  if(mito.zeros) { n <- c(n,"M") }
+  my.chr.range <- vector("list",length(n))
+  names(my.chr.range) <- paste("chr",n,sep="")
   for (cc in 1:nchr) {
-    one <- c(1,kb*1000)
-    two <- chr.lens[[cc]]+c(-kb*1000,0)
+    one <- force.chr.pos(Pos=c(1,kb*1000),Chr=cc,ucsc=ucsc) # f..c..pos() makes sure is a valid range
+    two <- force.chr.pos(Pos=chr.lens[cc]+c(-kb*1000,0),Chr=cc,ucsc=ucsc)
     my.chr.range[[cc]] <- list(start=c(one[1],two[1]),end=c(one[2],two[2]))
   }
-  reg.dat <- rep("telomere",nchr*2)
-  chrz <- rep(1:nchr,each=2)
-  nmz <- paste(reg.dat,chrz,rep(c("a","b"),times=nchr),sep="_")
+  if(mito.zeros) {
+    # add null values for the Mitochondrial chromosome
+    cc <- cc+1; one <- c(1,1);  two <- chr.lens[cc]+c(0,0)
+    my.chr.range[[cc]] <- list(start=c(one[1],two[1]),end=c(one[2],two[2]))
+  }
+  reg.dat <- rep("telomere",length(n)*2)
+  chrz <- rep(n,each=2)
+  nmz <- paste(reg.dat,chrz,rep(c("a","b"),times=length(n)),sep="_")
   stz <- as.vector(sapply(my.chr.range,"[[",1))
   enz <- as.vector(sapply(my.chr.range,"[[",2))
   if(bioC | text) {
@@ -1360,42 +1441,92 @@ get.telomere.locs <- function(dir="",kb=500,ucsc=c("hg18","hg19"),bioC=F,text=F)
 }
 
 
-get.chr.lens <- function(dir="",len.fn="humanChrLens.txt",ucsc=c("hg18","hg19")[1],n=c(1:22),delete.after=F)
+# internal function to allow flexible input for the ucsc parameter
+ucsc.sanitizer <- function(ucsc,allow.multiple=FALSE) {
+  ucsc.alt <- c("hg15","hg20","hg17","hg18","hg19",17,18,19,35,36,37,
+                "build35","build36","build37","b35","b36","b37")
+  ucsc.new <- c("hg15","hg20",rep(c("hg17","hg18","hg19"),times=5))
+  ucsc <- ucsc.new[match(tolower(ucsc),ucsc.alt)]
+  if(any(is.na(ucsc))) { 
+    warning("Illegal ucsc parameter, defaulting to hg18") 
+    ucsc[is.na(ucsc)] <- "hg18" 
+  }
+  if(allow.multiple) {
+    return(ucsc)
+  } else {
+    return(ucsc[1])
+  }
+}
+
+#' Get chromosome lengths from UCSC database
+#' 
+#' Quick and easy way to retrieve human chromosome lengths. Can select from hg18/hg19 (ie, 
+#'  build 36/37), or any future builds (hg20, etc) stored in the same location on the UCSC website.
+#'  Default is to return lengths for 22 autosomes, but can also retrieve X,Y 
+#'  and Mitochondrial DNA lengths by 'autosomes=FALSE' or n=1:25. Even if not connected to 
+#'  the internet can retrieve hard coded lengths for hg18/hg19.
+#'  @param dir directory to retrieve/download the annotation from/to (defaults to current getwd())
+#'  if dir is NULL then will automatically delete the annotation text file from the local directory
+#'   after downloading
+#'  @param ucsc string, currently 'hg17','hg18' or 'hg19' to specify which annotation version to use. 
+#'  Default is build-36/hg-18. Will also accept integers 17,18,19,35,36,37 as alternative arguments.
+#'  @param autosomes logical, if TRUE, only load the lengths for the 22 autosomes, else load X,Y,[MT] as well
+#'  @param len.fn optional file name to keep the lengths in
+#'  @param whether to include the length of the mitochondrial DNA (will not include unless autosomes is also FALSE)
+#'  @param delete.after logical, if TRUE then delete the text file that these lengths were downloaded to. 
+#'  If FALSE, then the file will be kept, meaning future lookups will be faster, and available offline.
+#'  @examples
+#'  get.chr.lens(delete.after=TRUE) # delete.after simply deletes the downloaded txt file after reading
+#'  get.chr.lens(ucsc=35,autosomes=TRUE,delete.after=TRUE) # only for autosomes
+#'  get.chr.lens(ucsc="hg19",mito=TRUE,delete.after=TRUE) # include mitochondrial DNA length
+get.chr.lens <- function(dir="",ucsc=c("hg18","hg19")[1],autosomes=FALSE,len.fn="humanChrLens.txt",
+                         mito=FALSE,delete.after=FALSE, verbose=FALSE)
 {
   # retrieve chromosome lengths from local annotation file, else download from UCSC
+  if(is.null(dir)) { dir <- getwd() ; delete.after <- TRUE }
   dir <- validate.dir.for(dir,c("ano"),warn=F)
   chrlens.f <- cat.path(dir$ano,len.fn) # existing or future lengths file
+  ucsc <- ucsc.sanitizer(ucsc)
+  n <- 1:22; if(!autosomes) { n <- c(n,"X","Y","M") }
+  hg18.backup <- c(247249719,242951149,199501827,191273063,180857866,170899992,158821424,
+                      146274826,140273252,135374737,134452384,132349534,114142980,106368585,
+                      100338915,88827254,78774742,76117153,63811651,62435964,46944323,
+                      49691432,154913754,57772954,16571)
+  hg19.backup <- c(249250621,243199373,198022430,191154276,180915260,171115067,159138663,
+                      146364022,141213431,135534747,135006516,133851895,115169878,107349540,
+                      102531392,90354753,81195210,78077248,59128983,63025520,48129895,
+                      51304566,155270560,59373566,16571)
+  
   # backups for offline use
-  if(ucsc=="hg18") {
-    offline.backup <- c(247249719,242951149,199501827,191273063,180857866,170899992,158821424,
-                        146274826,140273252,135374737,134452384,132349534,114142980,106368585,
-                        100338915,88827254,78774742,76117153,63811651,62435964,46944323,49691432)
-  } else {
-    offline.backup <- c(249250621,243199373,198022430,191154276,180915260,171115067,159138663,
-                        146364022,141213431,135534747,135006516,133851895,115169878,107349540,
-                        102531392,90354753,81195210,78077248,59128983,63025520,48129895,51304566)
-  }
+  if(ucsc=="hg18") { offline.backup <- hg18.backup  } else { offline.backup <- hg19.backup }
   if(file.exists(chrlens.f))
   {
     # file seems to be in annotation directory already
     chrLens <- readLines(chrlens.f)
-    if (length(as.numeric(chrLens))!=length(n))
+    if (length(chrLens)!=length(n))
     {
-      cat(paste("Length of chromosome file doesn't match expected",length(n),"\n"))
+      #warning("Length of existing chromosome file didn't match expected:",length(n))
       notGot <- T
-    } else { notGot <- F}
+    } else {
+      notGot <- F
+      # we have the right length, but do we have the right version?
+      if(ucsc=="hg18" & length(which(chrLens %in% hg19.backup))>2) { notGot <- T }
+      if(ucsc=="hg19" & length(which(chrLens %in% hg18.backup))>2) { notGot <- T }
+    }
   } else { notGot <- T }
-  if (notGot) {
+  if (notGot | (!ucsc %in% c("hg18","hg19"))) {
     #download from UCSC
-    cat("attempting to download chromosome lengths from UCSC\n")
+    if(verbose) { cat("attempting to download chromosome lengths from UCSC ... ") }
     urL <- switch(ucsc,
+                  hg17="http://hgdownload.cse.ucsc.edu/goldenPath/hg17/database/chromInfo.txt.gz",
                   hg18="http://hgdownload.cse.ucsc.edu/goldenPath/hg18/database/chromInfo.txt.gz",
-                  hg19="http://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/chromInfo.txt.gz",)
+                  hg19="http://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/chromInfo.txt.gz",
+                  hg20="http://hgdownload.cse.ucsc.edu/goldenPath/hg20/database/chromInfo.txt.gz")
     success <- T
     success <- tryCatch(download.file(urL, chrlens.f,quiet=T),error=function(e) { F } )
     if(!is.logical(success)) { success <- T }
     if(success) {
-      print("download successful")
+      if(verbose) {  cat("download successful\n") }
       chrL.f <- readLines(chrlens.f)
       len.lst <- strsplit(chrL.f,"\t")
       nmz <- sapply(len.lst,"[",1)
@@ -1406,7 +1537,8 @@ get.chr.lens <- function(dir="",len.fn="humanChrLens.txt",ucsc=c("hg18","hg19")[
       names(chrLens) <- want.chr.names
     } else {
       warning("couldn't reach ucsc website, so have used offline versions of chr lengths")
-      chrLens <- paste(offline.backup); names(chrLens) <- paste(1:22)
+      if(!ucsc %in% c("hg18","hg19")) { warning("no offline version for ucsc version:",ucsc) }
+      chrLens <- paste(offline.backup)[1:length(n)]; names(chrLens) <- n
       delete.after <- F
     }
     if(length(dir)==1 & dir[1]=="" & delete.after) {
@@ -1415,6 +1547,7 @@ get.chr.lens <- function(dir="",len.fn="humanChrLens.txt",ucsc=c("hg18","hg19")[
       writeLines(chrLens,con=chrlens.f) # save file for future use
     }
   }
+  if(!mito & length(chrLens)>22) { chrLens <- chrLens[-grep("M",n)] }
   return(as.numeric(chrLens))
 }
 
@@ -1514,6 +1647,7 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
   # min.snps ## minimum number of snps per window
   # can return the gaps - they'll be unmerged...
   must.use.package(c("genoset","IRanges"),T)
+  ucsc <- ucsc.sanitizer(ucsc)
   if(!is(snp.info)[1]=="RangedData") { warning("snp.info wasn't RangedData") ; return(NULL) }
   snp.info <- select.autosomes(snp.info)
   snp.info <- toGenomeOrder2(snp.info,strict=T)
@@ -1604,6 +1738,7 @@ get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=TRUE,text=FALSE,shortenID=T
 {
   ## download or use local version of DGV (database for Genomic Variants)
   from.scr <- TRUE
+  ucsc <- ucsc.sanitizer(ucsc)
   dir <- validate.dir.for(dir,c("ano"),warn=FALSE)
   old.colnm.core <- c("VariationID","Start","End","Chr","Gain","Loss") # order: ids,st,en,chr,...
   colnm.core <- c("variantaccession","start","end","chr","observedgains","observedlosses") # order: ids,st,en,chr,...
@@ -1821,6 +1956,7 @@ Ranges.to.cnvgsa <- function(dat) {
 add.genes.to.GSA <- function(cnv.frame, delim=";", ucsc="hg18", genemap=NULL) {
   ## use cnvGSA function 'getCnvGenes' to add gene annotation to a cnv slot object for cnvGSA
   gsa.cols <- c("SampleID","Chr","Coord_i","Coord_f","Type","Genes","CnvID")
+  ucsc <- ucsc.sanitizer(ucsc)
   if(!all(colnames(cnv.frame)==gsa.cols))
   { cat(" invalid frame, genes not added\n") ; return(cnv.frame) }
   must.use.package("cnvGSA",T)
@@ -1864,6 +2000,7 @@ full.cnvGSA <- function(do.assoc=F, cnv.frame=NULL, gmt.file=NULL, grandtotals.m
                         delim=";", ucsc="hg18", genemap=NULL) {
   # create a cnvGSA object using cnv.frame or RangedData object generated by plumb cnv
   must.use.package("cnvGSA",T)
+  ucsc <- ucsc.sanitizer(ucsc)
   if(is(cnv.frame)[1]=="RangedData") { 
     uv <- tolower(universe(cnv.frane)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
     cnv.frame <- Ranges.to.cnvgsa(cnv.frame) 

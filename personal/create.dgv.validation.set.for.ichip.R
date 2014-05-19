@@ -141,13 +141,18 @@ if(from.scratch) {
 
 
 
-
 if(validate) {
+  
+  # a lot of this now duplicated in process.quality.scores() in validation.functions.R
   SCT.list <- vector("list",length(sav.fn)); names(SCT.list) <- basename(sav.fn)
   res.fn <- getSlot(DT,"cnvresult",n.pcs=pca.set)
   x.result <- get(paste(load(cat.path(dir$res,res.fn))))  #cnvResultsPCAAssoc9.RData"))))
   #x.result$rareDEL <- x.result$rareDEL[!x.result$rareDEL$roh,]
-  qs.sc <- get.quality.scores(x.result$rareDEL,dir)
+  ofn <- cat.path(dir$res,"qs.del.backup",suf=suffix,ext="RData")
+  if(file.exists(ofn)) { print(load(ofn)) } else {
+    qs.sc <- get.quality.scores(x.result$rareDEL,dir)
+    save(qs.sc,file=ofn)
+  }
   qs.mat <- make.qs.table(qs.sc)
   ofn <- cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt")
   write.table(qs.mat,file=ofn,quote=F);   cat("wrote:",ofn,"\n")
@@ -160,6 +165,11 @@ if(validate) {
   save(cnvResults,file=res.fn)
   x.result$rareDEL <- x.result$rareDEL[scrs>=thr,]
   qs.sc2 <- get.quality.scores(x.result$rareDUP,dir,n.pcs=pca.set)
+  ofn <- cat.path(dir$res,"qs.dup.backup",suf=suffix,ext="RData")
+  if(file.exists(ofn)) { print(load(ofn)) } else {
+    qs.sc2 <- get.quality.scores(x.result$rareDUP,dir,n.pcs=pca.set)
+    save(qs.sc2,file=ofn)
+  }
   qs.mat2 <- make.qs.table(qs.sc2)
   ofn <- cat.path(dir$res,"qs.dup.results",suf=suffix,ext="txt")
   write.table(qs.mat2,file=ofn,quote=F);   cat("wrote:",ofn,"\n")

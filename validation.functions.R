@@ -1,5 +1,145 @@
 
 
+
+
+if(F) {
+  
+  source("~/github/iChip/iFunctions.R")
+  source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
+  
+  pheno.file <- "/home/ncooper/Documents/necessaryfilesICHIP/ichip.age.lookup.csv"
+  
+  setwd("/chiswick/data/ncooper/ImmunochipFamilies/")
+  setwd("/chiswick/data/ncooper/immunochipRunTwo/")
+  dir <- make.dir(getwd())
+  DT <- read.data.tracker(dir)
+  #ph <- reader("~/Documents/necessaryfilesICHIPFam/pheno.lookup.txt") # for famz
+  ph <- reader(pheno.file)
+  # ph <- shift.rownames(ph,T)
+  #big.pcc <- get.big.matrix(getSlot(DT,"big.pcc"),dir$big) # corrected
+  
+  # define column names in pheno file
+  pheno.var <- "t1d"
+  age.var <- "age_ab_1" # "ageatbleed"
+  
+  #bs2 <- big.select(big.pcc,select.cols=colnames(big.pcc)[!ctrl],dir=dir$big, pref="sel2")
+  #PH2 <- ph[match(colnames(get.big.matrix(bs2,dir$big)),rownames(ph)),]
+  #qpa2 <- quick.pheno.assocs(get.big.matrix(bs2,dir$big),PH2,"ageatbleed",dir$big,n.cores=20)
+  
+  # correlations with sample type factor - check working correctly
+  qpa1y <- NULL # age.analyse(dir,ph,corrected=F,select.col="t1d",select.val=2,cor.var="sample_type") # cases all same sample type
+  qpa2z <- age.analyse(dir,ph,corrected=F,select.col="t1d",select.val=1,cor.var="sample_type")
+  
+  # this should work correctly now with new varnames , although phenotype should be t1d!
+  # note that t1d are ALL cell-line and only have age for 1958bc, who are all same age
+  
+  qpa1a <- age.analyse(dir,ph,corrected=F,select.col=pheno.var,select.val=2,cor.var=age.var)
+  qpa2a <- age.analyse(dir,ph,corrected=F,select.col=pheno.var,select.val=1,cor.var=age.var)
+  qpa1b <- age.analyse(dir,ph,corrected=F,select.col="sample_type",select.val="CL",cor.var=age.var)
+  qpa2b <- age.analyse(dir,ph,corrected=F,select.col="sample_type",select.val="wholeblood",cor.var=age.var)
+  qpa3a <- age.analyse(dir,ph,corrected=F,select.col=pheno.var,select.val=2,cor.var=age.var,cor.not.p=T)
+  qpa4a <- age.analyse(dir,ph,corrected=F,select.col=pheno.var,select.val=1,cor.var=age.var,cor.not.p=T)
+  qpa3b <- age.analyse(dir,ph,corrected=F,select.col="sample_type",select.val="CL",cor.var=age.var,cor.not.p=T)
+  qpa4b <- age.analyse(dir,ph,corrected=F,select.col="sample_type",select.val="wholeblood",cor.var=age.var,cor.not.p=T)
+  
+  qpa5a <- age.analyse(dir,ph,corrected=T,select.col=pheno.var,select.val=2,cor.var=age.var)
+  qpa6a <- age.analyse(dir,ph,corrected=T,select.col=pheno.var,select.val=1,cor.var=age.var)
+  qpa5b <- age.analyse(dir,ph,corrected=T,select.col="sample_type",select.val="CL",cor.var=age.var)
+  qpa6b <- age.analyse(dir,ph,corrected=T,select.col="sample_type",select.val="wholeblood",cor.var=age.var)
+  qpa7a <- age.analyse(dir,ph,corrected=T,select.col=pheno.var,select.val=2,cor.var=age.var,cor.not.p=T)
+  qpa8a <- age.analyse(dir,ph,corrected=T,select.col=pheno.var,select.val=1,cor.var=age.var,cor.not.p=T)
+  qpa7b <- age.analyse(dir,ph,corrected=T,select.col="sample_type",select.val="CL",cor.var=age.var,cor.not.p=T)
+  qpa8b <- age.analyse(dir,ph,corrected=T,select.col="sample_type",select.val="wholeblood",cor.var=age.var,cor.not.p=T)
+  
+  save(qpa1a,qpa2a,qpa3a,qpa4a,qpa5a,qpa6a,qpa7a,qpa8a,qpa2z,
+       qpa1b,qpa2b,qpa3b,qpa4b,qpa5b,qpa6b,qpa7b,qpa8b,file="QPA_New.RData")
+  #save(qpa1,qpa2,qpa3,qpa4,qpa5,qpa6,qpa7,qpa8,file="QPA.RData")
+  
+  analyse.age.effect(qpa3a,stat="mean",scl=1000000,pref="t1dUncorrected",use.cor=T) #  cases
+  analyse.age.effect(qpa5a,stat="mean",scl=1000000,pref="t1dCorrected",use.cor=T) #  cases
+  
+  
+  qpa1 <- cbind(qpa1,qpa3) #  cases
+  qpa2 <- cbind(qpa2,qpa4) #  ctrls
+  
+  analyse.age.effect(qpa1,stat="percent.fail.bonf",scl=1000000,pref="cases") #  cases
+  analyse.age.effect(qpa2,stat="percent.fail.bonf",scl=1000000,pref="ctrls") #  ctrls
+  
+  analyse.age.effect(qpa1,stat="mean",scl=1000000,pref="cases",use.cor=T) #  cases
+  analyse.age.effect(qpa2,stat="mean",scl=1000000,pref="ctrls",use.cor=T) #  ctrls
+  analyse.age.effect(qpa1,stat="max",scl=1000000,pref="cases",use.cor=T) #  cases
+  analyse.age.effect(qpa2,stat="max",scl=1000000,pref="ctrls",use.cor=T) #  ctrls
+  analyse.age.effect(qpa1,stat="median",scl=1000000,pref="cases",use.cor=T) #  cases
+  analyse.age.effect(qpa2,stat="median",scl=1000000,pref="ctrls",use.cor=T) #  ctrls
+  
+  # tables showing cor directions
+  for (cc in 15:3) { bnf <- 10^-(cc); with(qpa2,print(paste(length(which(p<bnf)), (length(which(p<bnf & r>0))),(length(which(p<bnf & r<0)))))) }
+  for (cc in 15:3) { bnf <- 10^-(cc); with(qpa1,print(paste(length(which(p<bnf)), (length(which(p<bnf & r>0))),(length(which(p<bnf & r<0)))))) }
+  
+  
+  # working to merge pheno files
+  
+  orig <- "~/Documents/necessaryfilesMCHIP/SubjectPlateRegionTypeSexEthnic.txt"
+  alt <- "~/Documents/necessaryfilesICHIP/alt.id.lookup.txt"
+  convert.to.sampid(orig,alt,dir="~/Documents/necessaryfilesICHIP/")
+  ## now go into CSV file and add 'ID/sampleid', etc as first header instead of ""
+  dd1 <- reader(file.choose())
+  dd2 <- reader(file.choose())
+  dd <- gtools:::smartbind(dd1,dd2)
+  rownames(dd) <- dd[[1]]
+  dd <- dd[,-1]
+  write.csv(dd,file=cat.path("~/Documents/necessaryfilesICHIP/","ichip.age.lookup",ext="csv"))
+  
+  tt <- reader(file.choose())
+  
+  
+  
+  
+    
+}
+
+# internal, quite specific to plot.all.samples.for.cnv()
+is.cnvr.in.cnv.result.object <- function(cnvResult) {
+  expect.names <- c("ranges","overlaps","table","ratios","cnvr","DT")
+  if(!all(names(cnvResult) %in% expect.names)) { 
+    if(length(cnvResult)==6) {
+      names(cnvResult) <- expect.names
+      cnvr <- which(expect.names=="cnvr")
+    } else {
+      all.names <- sapply(cnvResult,names); troo <- logical(length(all.names))
+      for(cc in 1:length(all.names)) { 
+        troo[cc] <- all(all.names[[cc]] %in% c("deletions","duplications")) & !is.null(all.names[[cc]])
+      }
+      if(length(troo)==1) { cnvr <- which(troo) } else { 
+        stop("couldn't find good (single) candidate for cnvr sublist in the cnvResult object")
+      }
+    }
+  } else { cnvr <- which(expect.names=="cnvr") }
+  return(cnvr)
+}
+
+# take a CNV region from the top-table for DELs or DUPs and plot LRR,BAF all the individuals comprising it
+# e,g
+# 
+# plot.all.samples.for.cnv(dir,reg="S1",dup=T,suffix="96")
+plot.all.samples.for.cnv <- function(dir,reg="S1",dup=F,cnvResult=NULL,suffix="",LRR=T,BAF=T,PREPOSTPC=F,...) {
+  DT <- read.data.tracker(dir)
+  if(is.null(cnvResult)) { cnvResult <- reader(cat.path(dir$res,"fullresult",suf=suffix,ext="RData")) }
+  if(length(cnvResult)<2) { if(is.character(cnvResult)) { if(cnvResult=="") { stop("cnv.result file not found in DT") }}}
+  if(is.null(cnvResult)) { stop("object cnvResult must be valid, not NULL, to use this function")}
+  cnvr <- is.cnvr.in.cnv.result.object(cnvResult)
+  if(dup){ cnv.txt <- "DUP" } else { cnv.txt <- "DEL" }
+  cnv.row <- cnvResult[[cnvr]][[(1+as.numeric(dup))]][reg,]
+  cnv.lim <- c(chr2(cnv.row),start(cnv.row),end(cnv.row))
+  cnv.ranges <- cnvResult[[1]][[(4+as.numeric(dup))]][cnv.lim[1]]
+  cnv.ranges <- cnv.ranges[(start(cnv.ranges)>=cnv.lim[2] & end(cnv.ranges)<=cnv.lim[3]),]
+  # do the plots - may be slow
+  plot.all.ranges(cnv.ranges,DT=DT,file=cat.path("",cnv.txt,suf=reg,ext="pdf"),dir=dir,pc.flank=5,
+                  LRR=LRR,BAF=BAF,PREPOSTPC=PREPOSTPC,...)   
+  return(NULL)
+}
+
+
 ### FUNCTIONS TO PASS EACH KIND OF OUTPUT FILE FROM THE RUNS ###
 suck.metaboverlap.file <- function(fnm) {
   if(!file.exists(fnm)) { return(NULL) }
@@ -487,6 +627,8 @@ my.manhat <- function(oo,yl=8,lab05=F,lab01=F) {
   bnf <- .05/nrow(oo)
   thrs1 <- -log10(bnf); thrs2 <- 2 ;thrs3 <- -log10(.05) #2
   l10ps <- -log10(oo$sig)
+  l10ps[l10ps==-Inf] <- -324
+  l10ps[l10ps==Inf] <- 324
   gene.splt <- strsplit(oo$genes,";",fixed=T)
   lns <- sapply(gene.splt,length)
   shrt <- sapply(gene.splt,"[",1)
@@ -534,6 +676,97 @@ my.manhat <- function(oo,yl=8,lab05=F,lab01=F) {
          pch=c(19,19,19,15,17,16,NA),pt.cex=c(0.7,0.6,0.5,0.3,0.6,0.6,NA), 
          lty=c(NA,NA,NA,NA,NA,NA,"dotted"),ncol=2,cex=0.9)
 }
+
+
+
+
+process.quality.scores <- function(DT,suffix,dir,restore=T) {
+  # dodgy hack of dodgy code to extract quality scores.. quite some unecessary stuff here
+  # works its way up to doing the case-control fischer analysis after extracting Quality scores,
+  # and does it for several thresholds.
+  thr <- 0 # set this to 0, leave filters for a later stage
+  res.fn <- getSlot(DT,"cnvresult")
+  cnvResults <- x.result <- get(paste(load(cat.path(dir$res,res.fn))))  #cnvResultsPCAAssoc9.RData"))))
+  exp.names <-  c("allCNV","allDel","allDup","rareDEL","rareDUP")
+  if(length(cnvResults)==5) { if(!all(names(cnvResults) %in% exp.names)) { names(cnvResults) <- exp.names } }
+  #x.result$rareDEL <- x.result$rareDEL[!x.result$rareDEL$roh,]
+  ofn <- cat.path(dir$res,"qs.del.backup",suf=suffix,ext="RData")
+  if(file.exists(ofn) & restore) { print(load(ofn)) } else {
+    qs.sc <- get.quality.scores(x.result$rareDEL,dir)
+    save(qs.sc,file=ofn)
+  }
+  qs.mat <- make.qs.table(qs.sc)
+  ofn <- cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt")
+  write.table(qs.mat,file=ofn,quote=F);   cat("wrote:",ofn,"\n")
+  scrs <- qs.mat[[2]]; scrs[is.na(scrs)] <- qs.mat[[3]][is.na(scrs)]
+  cat(length(scrs[scrs>=.95]),"/",length(scrs)," DELs pass .95 threshold\n",sep="")
+  print(summary(scrs))
+  # save QS to file
+  cnvResults$rareDEL <- x.result$rareDEL; 
+  cnvResults$rareDEL[["score"]] <- scrs;
+  save(cnvResults,file=res.fn)
+  x.result$rareDEL <- x.result$rareDEL[scrs>=thr,]
+  ofn <- cat.path(dir$res,"qs.dup.backup",suf=suffix,ext="RData")
+  if(file.exists(ofn) & restore) { print(load(ofn)) } else {
+    qs.sc2 <- get.quality.scores(x.result$rareDUP,dir)
+    save(qs.sc2,file=ofn)
+  }
+  qs.mat2 <- make.qs.table(qs.sc2)
+  ofn <- cat.path(dir$res,"qs.dup.results",suf=suffix,ext="txt")
+  write.table(qs.mat2,file=ofn,quote=F);   cat("wrote:",ofn,"\n")
+  scrs2 <- qs.mat2[[2]]; scrs2[is.na(scrs2)] <- qs.mat2[[3]][is.na(scrs2)]
+  cat(length(scrs2[scrs2>=.75]),"/",length(scrs2)," DUPs pass .75 threshold\n",sep="")
+  print(summary(scrs2))
+  # save QS to file
+  cnvResults$rareDUP <- x.result$rareDUP; 
+  cnvResults$rareDUP[["score"]] <- scrs2;
+  save(cnvResults,file=res.fn)
+  x.result$rareDUP <- x.result$rareDUP[scrs2>=thr,] # what is the different to cnvResults???
+  
+  ## add QS to cnvrs
+  oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+  cnvs1 <- extract.cnv.regions(dir,type="del",by.cnv=T,lwr=0.25,upr=4,FET=T)
+  oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+  cnvs2 <- extract.cnv.regions(dir,type="dup",by.cnv=T,lwr=0.25,upr=4,FET=T)
+  qs1 <- qs.mat; qs2 <- qs.mat2
+  #print(load(getSlot(read.data.tracker(dir),"cnvresults")))
+  cnvResults[[4]][["score"]] <- qs1[,1]
+  cnvResults[[5]][["score"]] <- qs2[,1]
+  cnvs1 <- add.scores.to.cnvrs(cnvs1,cnvResults[[4]],"score")
+  cnvs2 <- add.scores.to.cnvrs(cnvs2,cnvResults[[5]],"score")
+  results1 <- full.cnvr.summary(cnvs1,oo1,dir,thr=c(.5,.75,.9))
+  results2 <- full.cnvr.summary(cnvs2,oo2,dir,thr=c(.5,.75,.9))
+  return(list(DEL=results1,DUP=results2,cnvs1=cnvs1,cnvs2=cnvs2))
+}
+
+
+#oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+#cnvs2 <- extract.cnv.regions(dir,type="dup",by.cnv=T,lwr=0.25,upr=4,FET=T)
+# might use with trios.analysis()
+filt.counts.cnvr <- function(oo,cnvs,col="QS",thresh=0.9,excl.less.than=T) {
+  #cnvs <- toGenomeOrder2(cnvs,strict=T)
+  if(excl.less.than) {
+    cnvs <- cnvs[cnvs[[col]]>=thresh,]
+  } else {
+    cnvs <- cnvs[cnvs[[col]]<=thresh,]
+  }
+ # return(cnvs)
+  ii <- tapply(cnvs[["phenotype"]],cnvs[["cnvr"]],table)
+  ctrls <- sapply(ii,"[","1")
+  cases <- sapply(ii,"[","2")
+  #print(head(ii)); print(head(oo))
+  # leave values as they were if new value is NA
+  ##oo[["cases"]][!is.na(match(rownames(oo),names(ii)))] <- cases[narm(match(rownames(oo),names(ii)))]
+  ##oo[["ctrls"]][!is.na(match(rownames(oo),names(ii)))] <- ctrls[narm(match(rownames(oo),names(ii)))]
+  # any CNVS with all excluded go to NA ==> 0
+  oo[["cases"]] <- cases[(match(rownames(oo),names(ii)))]
+  oo[["ctrls"]] <- ctrls[(match(rownames(oo),names(ii)))]
+  oo[["cases"]][is.na(oo[["cases"]])] <- 0
+  oo[["ctrls"]][is.na(oo[["ctrls"]])] <- 0
+  return(list(cnvr=oo,cnv=cnvs))
+}
+
+
 
 
 toptables <- function(oo1,oo2,pv=0.05,prt=T) {
@@ -819,7 +1052,7 @@ plot.lrr.CNVR <- function(thisCNVR,dir,genes=T,BAF=F,type="l",DEL=T,cex=1) {
 
 
   
-full.cnvr.summary <- function(cnvs1,dir,thr=c(.5,.75,.9)) {
+full.cnvr.summary <- function(cnvs1,oo1,dir,thr=c(.5,.75,.9)) {
   sample.info <- read.sample.info(dir)
   p.c <- table(sample.info$phenotype,sample.info$QCfail)[,1]
   case.d <- p.c[2]; cont.d <- p.c[1]
@@ -835,8 +1068,9 @@ full.cnvr.summary <- function(cnvs1,dir,thr=c(.5,.75,.9)) {
                         qc90_ct=int,qc90_cs=int,qc90_sig=nm,
                         r1=ch,r1_ct=int,r1_cs=int,r1_sig=nm,
                         r2=ch,r2_ct=int,r2_cs=int,r2_sig=nm,
-                        r3=ch,r3_ct=int,r3_cs=int,r3_sig=nm)
+                        r3=ch,r3_ct=int,r3_cs=int,r3_sig=nm,stringsAsFactors=FALSE)
   typ <- sapply(sapply(results,is),"[",1)
+  
   for (cc in 1:nreg) {
     # total counts by pheno
     ph.tl <- tapply(cnvs1$score[cnvs1$cnvr==all.reg[cc]],cnvs1$phenotype[cnvs1$cnvr==all.reg[cc]],length)
@@ -862,11 +1096,11 @@ full.cnvr.summary <- function(cnvs1,dir,thr=c(.5,.75,.9)) {
     sws <- summary.wd.set(sets1.2,wds1,wds2)
     
     cp <- function(x) { paste(x,collapse="-") }
-    rngs <- sapply(sws$ranges,cp)
-    ctrl <- sapply(sws$counts,"[",1)
-    case <- sapply(sws$counts,"[",2)
+    rngs <- paste(sapply(sws$ranges,cp))
+    ctrl <- (sapply(sws$counts,"[",1))
+    case <- (sapply(sws$counts,"[",2))
     case[is.infinite(case)] <- 0; ctrl[is.infinite(ctrl)] <- 0
-    sum.info <- cbind(rngs,ctrl,case,format(FET(case,ctrl,case.d=case.d,cont.d=cont.d),digits=3))
+    sum.info <- cbind(rngs,paste(ctrl),paste(case),paste(format(FET(case,ctrl,case.d=case.d,cont.d=cont.d),digits=3)))
     results[cc,] <- c(ph.tl,ph.mn,unlist(ph.thr),as.vector(t(sum.info)))
     loop.tracker(cc,nreg)
   }
@@ -874,6 +1108,7 @@ full.cnvr.summary <- function(cnvs1,dir,thr=c(.5,.75,.9)) {
     results[[cc]] <- as(results[[cc]],typ[cc])
   }
   rownames(results) <- paste(unique(cnvs1$cnvr))
+  print(head(results))
   results <- results[match(rownames(oo1),rownames(results)),]
   return(results)
 }
@@ -924,6 +1159,7 @@ cluster.wd.set <- function(wds1,wds2) {
   if(length(wds1)<length(wds2)) {
     sw <- T; wds3 <- wds1; wds1 <- wds2; wds2 <- wds3
   } else { sw <- F }
+  # do we need to worry about log10 existing?
   wds1 <- round(log10(wds1),1); wds2 <- round(log10(wds2),1)
   if((length(which(wds1==(Mode(wds1)[1])))/length(wds1))>.4) {
     cat1 <- which(wds1==Mode(wds1)[1])  } else { cat1 <- 1:length(wds1) }
@@ -953,24 +1189,274 @@ cluster.wd.set <- function(wds1,wds2) {
 # }
 
 
-add.scores.to.cnvrs <- function(cnvs.r,cnvs.d) {
+add.scores.to.cnvrs <- function(cnvs.r,cnvs.d,colname="score") {
   # for a dataset of individual samples with CNVRs,
   # add scores from the cnvResults to this, e.g, cnvs1, cnvResults[[4]]
-  cnvs.r[["score"]] <- rep(NA,nrow(cnvs.r))
+  cnvs.r[[colname]] <- rep(NA,nrow(cnvs.r))
   all.sids <- unique(cnvs.r$id)
   for (dd in 1:length(all.sids)) {
     sset1 <- which(cnvs.r$id==all.sids[dd])
     sset2 <- which(cnvs.d$id==all.sids[dd])
     if(length(sset1)==length(sset2)) {
-      cnvs.r$score[sset1] <- cnvs.d$score[sset2]
+      cnvs.r[[colname]][sset1] <- cnvs.d[[colname]][sset2]
     } else {
       new <- (cnvs.r[sset1,])
       old <- (cnvs.d[sset2,])
-      new.id <- paste(chr(new),start(new),end(new),sep=".")
-      old.id <- paste(chr(old),start(old),end(old),sep=".")
+      new.id <- paste(chr2(new),start(new),end(new),sep=".")
+      old.id <- paste(chr2(old),start(old),end(old),sep=".")
       sset0 <- match(new.id,old.id)
-      cnvs.r[["score"]][sset1] <- old[["score"]][sset0]
+      cnvs.r[[colname]][sset1] <- old[[colname]][sset0]
     }
   }
   return(cnvs.r)
 }
+
+
+
+#' Extend an interval by percentage
+#' 
+#' For various reasons, such as applying windows, setting custom range limits for plots, it may 
+#' be desirable to extend an interval by a certain percentage.
+#' @param X a numeric range, should be length 2. If a longer numeric, will be coerced with range()
+#' @param pc percentage by which to extend X, can be entered in either percentage style: 0<pc<1; 
+#' or 1<pc<100
+#' @param swap logical, if TRUE, flip the extension directions if X[2]<X[1], ie, not in numerical
+#' order
+#' @param pos logical, if TRUE, make an extension in the positive direction
+#' @param neg logical, if TRUE, make an extension in the negative direction
+#' @examples
+#' extend.pc(c(2,10),0.25) # extend X symmetrically
+#' extend.pc(c(2:10),0.25) # extend the range of X
+#' # the following 3 examples extend X by 1% only in the 'positive' direction
+#' extend.pc(c(25000,55000),.01,neg=FALSE) # standard positive extension
+#' extend.pc(c(55000,25000),.01,neg=FALSE) # ranges in reverse order, not swapped
+#' extend.pc(c(55000,25000),.01,neg=FALSE,swap=TRUE) # ranges in reverse order, swapped
+extend.pc <- function(X,pc=.5,pos=TRUE,neg=TRUE,swap=FALSE) {
+  if(!is.numeric(X)) { stop("X must be numeric") }
+  if(length(X)==0) { stop("X was empty") }
+  if(length(X)==1) { X <- c(X,X); warning("X was length=1, extended by repeating X twice") }
+  if(length(X)>2) { X <- range(X) } #; warning("X was length>2, coerced using X <-range(X)") }
+  pc <- force.percentage(pc)
+  yn <- yp <- abs(X[2]-X[1])*pc
+  if(!pos) { yp <- 0 }; if(!neg) { yn <- 0 }
+  if(swap) {
+    # flip the extension directions if X[2]<X[1], ie, not in numerical order
+    if(X[1]>X[2]) { temp <- yn; yn <- yp; yp <- temp }
+  }
+  return(c(X[1]-yn,X[2]+yp))
+}
+
+
+#' Draw a scatterplot with a fit line
+#'
+#' Drawing a fit line usually requires some manual steps requiring several lines of code,
+#' such as ensuring the data is sorted by x, and for some functions doesn't contain missing values.
+#' This function takes care of these steps and automatically adds a loess fitline, or non-linear 
+#' fitline. The type of scatter defaults to 'plot', but other scatter plot functions can be 
+#' specified, such as graphics::smoothScatter(), for example. If 'file' is specifed, will 
+#' automatically plot to a pdf of that name.
+#' @param x data for the horizontal axis (independent variable)
+#' @param y data for the vertical axis (dependent variable)
+#' @param file file name for pdf export, leave as NULL if simply plotting to the GUI. File 
+#' extension will be added automatically if missing
+#' @param loess logical, if TRUE, fit using loess(), else use a polynomial fit
+#' @param scatter function, by default is graphics::plot(), but any scatter-plot function of the 
+#' form F(x,y,...) can be used, for example graphics::smoothScatter().
+#' @param return.vectors logical, if TRUE, do not plot anything, just return the x and y coordinates
+#' of the fit line as a list of vectors, x and y.
+#' @param fit.col colour of the fit line
+#' @param fit.lwd width of the fit line
+#' @param fit.lty type of the fit line
+#' @param fit.leg whether to include an automatic legend for the fit line (will alter the y-limits
+#' to fit)
+#' @param fit.R2 logical, whether to display r squared of the fit in the fit legend
+#' @param ... further arguments to the plot function specified by 'scatter', e.g, 'main', 'xlab', etc
+#' @return if file is a character argument, plots data x,y to a file, else will generate a plot to
+#' the current plotting environment/GUI. The display of the x,y points defaults to 'plot', but 
+#' alternate scatter plot functions can be specified, such as graphics::smoothScatter() which used 
+#' density smoothing, for example. Also, another option is to set return.vectors=TRUE, and then
+#' the coordinates of the fit line will be returned, and no plot will be produced.
+#' @examples
+#' library(NCmisc)
+#' DD <- sim.cor(1000,4) # create a simulated, correlated dataset
+#' loess.scatter(DD[,3],DD[,4],loess=FALSE,bty="n",pch=".",cex=2)
+#' loess.scatter(DD[,3],DD[,4],scatter=smoothScatter)
+#' xy <- loess.scatter(DD[,3],DD[,4],return.vectors=TRUE)
+#' prv(xy) # preview the vectors produced
+loess.scatter <- function(x,y,file=NULL,loess=TRUE,scatter=plot,...,ylim=NULL,return.vectors=FALSE,
+                          fit.col="red",fit.lwd=2,fit.lty="solid",fit.leg=TRUE,fit.r2=TRUE) {
+  if(length(Dim(x))!=1 | length(Dim(y))!=1) { stop("x and y must be vectors") }
+  if(length(x)<1 | length(y)<1) { warning("x/y must have positive length"); return(NULL) }
+  if(!is.numeric(x) | !is.numeric(y)) { stop("x and y must be numeric") }
+  if(length(x)!=length(y)) { stop("x and y must be vectors of the same length") }
+  y1 <- y[order(x)]
+  x1 <- x[order(x)]
+  missing.either <- is.na(x1) | is.na(y1)
+  if(length(which(missing.either))>0) { y1 <- y1[!missing.either]; x1 <- x1[!missing.either] }
+  if(length(y1)<5) { 
+    do.fit=F; warning("not enough points remain to generate plot with fit-line") 
+  } else { do.fit <- T }
+  if(do.fit) {
+   if(!loess) {
+   # if(all(x1>0)) {
+   #   fit <- "non-linear"
+   #   lo <- lm(y1~x1+sqrt(x1)+log(x1))
+   # } else {
+       fit <- "polynomial"
+       lo <- lm(y1~x1 + (x1^2) + (x1^3) + (x1^4))
+   # }
+   } else {
+     fit <- "loess"
+     lo <- loess(y1~x1)
+   }
+   y2 <- predict(lo)
+   if(fit.r2) {
+     r2 <- round(cor(y1,y2,use="pairwise.complete"),3)
+     leg.txt <- paste(fit,"fit line, r2 =",r2)
+   } else {
+     leg.txt <- paste(fit,"fit line")
+   }
+  }
+  if(!return.vectors) {
+    if(is.character(file)) { fnm <- cat.path("",fn=file[1],ext="pdf"); pdf(fnm) }
+    if(fit.leg & do.fit) {
+      y.range <- range(y1)
+      ## this section of code allows a custom 'ylim' setting to override the internal ylim
+      if(is.numeric(ylim) & length(ylim)==2) {
+        if(ylim[1]>y.range[1] | ylim[2]<y.range[2]) { warning("ylim will truncate the y vector in the plot") }
+        y.range <- ylim
+      } 
+      y.lims <- extend.pc(y.range,pc=0.25,neg=F)
+      y.lims <- extend.pc(y.lims,pc=0.1,pos=F)
+    } else { y.lims <- NULL }
+    
+    y <- y1; x <- x1 # ensures default x,y labels are x,y
+    scatter(x,y,...,ylim=y.lims)
+    if(do.fit) { lines(x1,y2,col=fit.col,lwd=fit.lwd,lty=fit.lty) }
+    if(fit.leg & do.fit) { legend("topright",legend=leg.txt, lty=fit.lty, col=fit.col, lwd=fit.lwd, bty="n") }
+    if(is.character(file)) { cat("wrote file",file,"\n"); dev.off() }
+  } else {
+    return(list(x=x1,y=y2))
+  }
+}
+
+
+#internal
+# gives the percent of a series failing a bonferroni test
+percent.fail.bonf <- function(X,bonf=.05/length(X)) {
+  if(max(X,na.rm=T)>1 | min(X,na.rm=T)<0) { stop("X must be p-values (and was <0 or >1)") }
+  dd <- length(X)  
+  nn <- length(X[X<bonf])
+  return(nn/dd)
+}
+
+
+
+
+age.analyse <- function(dir,ph,corrected=F,select.col="phenotype",
+                        select.val="no",cor.var="ageatbleed",cor.not.p=FALSE,n.cores=20) {
+  # select.col is the column containing phenotype values
+  # select.val is the value to analyse, e.g, 'ctrls', 't1d', 'cases', etc, depending on coding
+  # cor.var is the variable to perform association with
+  # corrected is whether to use the PC-corrected lrr matrix or the raw
+  if(corrected) { mat.nm <- "big.pcc" } else { mat.nm <- "big.qc" }
+  DT <- read.data.tracker(dir)
+  big.pcc <- get.big.matrix(getSlot(DT,mat.nm)[[1]],dir$big) # raw
+  #prv.big.matrix(big.pcc) #snp.info <- read.snp.info(dir)
+  if(!cor.var %in% colnames(ph)) { stop("ph was missing column name",cor.var) }
+  age <- ph[[cor.var]]
+  names(age) <- ph[[1]]
+  age.vec <- (age[(match(colnames(big.pcc),names(age)))])
+  #print(head(ph))
+  pheno <- (ph[[select.col]][(match(colnames(big.pcc),ph[[1]]))])
+  #print(length(pheno))
+  #ph[["phenotype"]] <- as.numeric(ph[[select.col]]!=select.val)
+  select <- pheno==select.val
+  select[is.na(select)] <- F
+  bs1 <- big.select(big.pcc,select.cols=colnames(big.pcc)[select],dir=dir$big, pref="sel1")
+  big.bs1 <- get.big.matrix(bs1,dir$big) # load descriptor as big.matrix
+  rownames(ph) <- ph[[1]]
+  PH1 <- ph[match(colnames(big.bs1),ph[[1]]),]
+  #print(head(PH1));print(table(PH1$t1d));print(table(PH1$t1d,PH1$sample_type))
+  #prv(pheno,select,age.vec,age,PH1,big.bs1,cor.var)
+  if(cor.not.p) { a1 <- a2 <- FALSE } else { a1 <- a2 <- TRUE }
+  qpa1 <- quick.pheno.assocs(big.bs1,PH1,cor.var,F.values=a1,p.values=a2,dir=dir$big,verbose=T,n.cores=n.cores)
+  # run qpa with F.values=FALSE and p.values=FALSE to get correlations #
+  if(cor.not.p) { 
+    X <- qpa1; Y <- X[abs(X)>.1]
+    qpa1 <- data.frame(r=as.numeric(X)); rownames(qpa1) <- names(X)
+  } else { 
+    X <- qpa1$p; Y <- X[abs(X)<(.05/nrow(qpa1))]
+  }
+  print(summary(X))
+  cat(out.of(length(Y),length(X)),"\n")
+  return(qpa1)
+}
+
+analyse.age.effect <- function(QPA,stat="percent.fail.bonf",scl=1000000,use.cor=FALSE,pref="") {
+  if(scl==1000) { scl.lab <- "Kb" } else { scl.lab <- "base-pair"} 
+  if(scl==1000000) { scl.lab <- "Mb" }
+  if(!use.cor) {
+    log10.1 <- (c(-1*log10(QPA$p)))
+    log10.1[log10.1==-Inf] <- -324
+    log10.1[log10.1==Inf] <- 324
+    QPA[["log10"]] <- log10.1
+  }
+  QPA[["Pos"]] <- Pos(rownames(QPA))
+  QPA[["Chr"]] <- Chr(rownames(QPA))
+  QPA[["Mb"]] <- round(QPA[,"Pos"]/scl,0)
+  QPA[["Chr.Mb"]] <- paste(QPA[["Chr"]],round(QPA[,"Pos"]/scl,0),sep=".")
+  chrz <- gtools:::mixedsort(unique(QPA[,"Chr"]))
+  mito <- which(chrz %in% c("MT","Mt","M","m","mt","XY","xy"))
+  if(length(mito)>0) { chrz <- paste(chrz[-mito]) }
+  tlm <- get.telomere.locs(bioC=T,kb=100)
+  ctm <- get.centromere.locs(bioC=T)
+  chrl <- get.chr.lens()/scl
+  if(stat=="percent.fail.bonf") { 
+    colm <- "p"  } else { 
+    if(use.cor) { 
+      colm <- "r" 
+    } else { 
+      colm <- "log10"
+  } }
+  ofn <- cat.path(getwd(),fn=stat,pref=pref,suf=colm,ext="pdf")
+  pdf(ofn)
+  statz <- vector("list",length(chrz))
+  for (cc in 1:length(chrz)) {
+    sel <- which(QPA[,"Chr"]==chrz[cc])
+    if(stat=="percent.fail.bonf") {
+      statz[[cc]] <- tapply(QPA[[colm]][sel],QPA$Mb[sel],function(X) { do.call(stat,args=list(X,bonf=.05/150000)) })
+    } else {
+      statz[[cc]] <- tapply(QPA[[colm]][sel],QPA$Mb[sel],function(X) { do.call(stat,args=list(X)) })
+    }
+    poz <- tapply(QPA$Mb[sel],QPA$Mb[sel],median)
+    xl <- extend.pc(c(0,chrl[cc]),pc=.05)
+    # main plot of analysis
+    loess.scatter(poz,statz[[cc]],main=paste("Chromosome",chrz[cc]),type="l",
+                  xlab=scl.lab,xlim=xl,ylab=paste(stat,colm,"value"))
+    # add telomere and centromere to plot
+    plot.ranges(rbind(tlm[chrz[cc]],ctm[chrz[cc]]),skip.plot.new=T,
+                scl=scl.lab,ylim=c(0,.5),lty="dotted",full.vertical=TRUE)
+  }
+  dev.off()
+  cat("wrote file:",ofn,"\n")
+  return()            
+}
+
+
+convert.to.sampid <- function(orig,alt,dir) {
+  tt <- reader(orig)
+  ss <- reader(alt)
+  tt[["sampleid"]] <- ss[,1][match(tt[,1],ss[,2])]
+  tt <- tt[!is.na(tt$sampleid),]
+  if(length(which(duplicated(tt$sampleid)))>0) {
+    tt <- tt[-which(duplicated(tt$sampleid)),]
+  }
+  rownames(tt) <- tt$sampleid
+  tt <- tt[,-which(colnames(tt) %in% "sampleid")]
+  sample.information <- tt
+  write.csv(sample.information,file=cat.path(dir,basename(orig),suf="idconv"))
+}
+
+
+

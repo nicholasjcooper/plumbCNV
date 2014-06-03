@@ -8324,31 +8324,62 @@ snp.cr.summary <- function(bigMat,histo=F,print=F,n.cores=1) {
 }
 
 
-length.analysis <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75) {
-  thrsh <- .05/length(LL); blnk <- rep(NA,times=length(LL))
-  resultsDEL <- resultsDUP <- data.frame(length=LL,cases=blnk,controls=blnk,ratio=blnk,FET=blnk,pass=blnk)
+length.analysis.suf <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75) {
   DELqs <- reader(cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt"))
   DUPqs <- reader(cat.path(dir$res,"qs.dup.results",suf=suffix,ext="txt"))
-  sample.info <- read.sample.info(dir)
-  cnts <- table(sample.info$phenotype[sample.info$QCfail==0])
   X <- cnvResult[[1]]
   X[[4]] <- X[[4]][DELqs[[1]]>del.thr,]
   X[[5]] <- X[[5]][DUPqs[[1]]>dup.thr,]
+  return(length.analysis(LL=LL,DEL=X[[4]],DUP=X[[5]],del.thr=del.thr,dup.thr=dup.thr))
+}
 
+
+length.analysis <- function(LL,dir,DEL,DUP,del.thr=.95,dup.thr=.75,thr.col="score",cnts=NULL) {
+  thrsh <- .05/length(LL); blnk <- rep(NA,times=length(LL))
+  resultsDEL <- resultsDUP <- data.frame(length=LL,cases=blnk,controls=blnk,ratio=blnk,FET=blnk,pass=blnk)
+  if(!is.null(cnts)) {
+    if(length(cnts)!=2) { warning("cnts needs to be length 2"); cnts <- NULL }
+  } 
+  if(is.null(cnts)) {
+    sample.info <- read.sample.info(dir)
+    warning("used counts from sample.info, only valid when using the whole dataset, if using a subset, utilise the cnts parameter")
+    cnts <- table(sample.info$phenotype[sample.info$QCfail==0])
+  } 
+  if(!is.null(DEL)) { 
+    DEL <- remove.duplicated.id.ranges(DEL) 
+    if(thr.col %in% colnames(DEL) & nrow(DEL)>0) {
+      DEL <- DEL[DEL[[thr.col]]>=del.thr,]
+      if(nrow(DEL)<1) { warning("filter 'del.thr' on deletions DEL removed all records!"); return(NULL) }
+    } else { warning(thr.col,"not found in DEL, so thresholds were not applied") }
+  }
+  if(!is.null(DUP)) { 
+    DUP <- remove.duplicated.id.ranges(DUP) 
+    if(thr.col %in% colnames(DUP) & nrow(DUP)>0) {
+      DUP <- DUP[DUP[[thr.col]]>=dup.thr,]
+      if(nrow(DUP)<1) { warning("filter 'dup.thr' on duplicates DUP removed all records!"); return(NULL) }
+    } else { warning(thr.col,"not found in DUP, so thresholds were not applied") }
+  }
+  
   for(ll in 1:length(LL)) {
-    ii <- print.biggest.cnvs(X,cutoff=LL[ll],print=F)
+    ii <- print.biggest.cnvs(DEL=DEL,DUP=DUP,cutoff=LL[ll],print=F)
     jj <- table(ii[[1]]$phenotype); if(length(jj)<2) { jj <- c(0,jj) };kk <-  table(ii[[2]]$phenotype) 
     resultsDEL[ll,"controls"] <- jj[1]
     resultsDEL[ll,"cases"] <- jj[2]
     resultsDUP[ll,"controls"] <- kk[1]
     resultsDUP[ll,"cases"] <- kk[2]
     ff <-  FET(c(jj[2],kk[2]),c(jj[1],kk[1]),case.d=cnts[2],cont.d=cnts[1])
+    ff2 <-  FET(c(jj[2],kk[2]),c(jj[1],kk[1]),case.d=cnts[2],cont.d=cnts[1],stat="estimate")
+    ff3 <-  FET(c(jj[2],kk[2]),c(jj[1],kk[1]),case.d=cnts[2],cont.d=cnts[1],stat="conf.int")
     DELcc.ratio <- ((jj[2]/cnts[2]) / (jj[1]/cnts[1]))
     DUPcc.ratio <- ((kk[2]/cnts[2]) / (kk[1]/cnts[1]))
     resultsDEL[ll,"FET"] <- ff[1]
     resultsDUP[ll,"FET"] <- ff[2]
     resultsDEL[ll,"ratio"] <- DELcc.ratio
     resultsDUP[ll,"ratio"] <- DUPcc.ratio
+    resultsDEL[ll,"estimate"] <- ff2[1]
+    resultsDUP[ll,"estimate"] <- ff2[2]
+    resultsDEL[ll,"conf.int"] <- ff3[1]
+    resultsDUP[ll,"conf.int"] <- ff3[2]
   }
   resultsDEL$pass <- resultsDEL$FET<thrsh
   resultsDUP$pass <- resultsDUP$FET<thrsh
@@ -8433,37 +8464,50 @@ power.analysis.fet2 <- function(bonf=.05/1000,bu=10000) {
 
 
 # print the longest CNVs in the whole (towards end of pipeline in plumbCNV())
-print.biggest.cnvs <- function(cnvResult,cutoff=3000000,print=TRUE,add.genes=FALSE) {
-  if(!is.list(cnvResult)) { stop("invalid 'cnvResult, should be list returned by plumbCNV()") }
-  if(!all(names(cnvResult) %in% c("allCNV","allDel","allDup","rareDEL","rareDUP"))) {
-    stop("invalid 'cnvResult', first element should be list of RangedData objects")
+# either input cnvResult or separate DEL and DUP
+print.biggest.cnvs <- function(cnvResult=NULL,DEL=NULL,DUP=NULL,cutoff=3000000,print=TRUE,add.genes=FALSE) {
+  if(!is.null(DEL) | !is.null(DUP)) {
+    if(!any(c(is(DEL)[1],is(DUP)[1]) %in% c("RangedData","GRanges"))) { 
+      stop("invalid DEL/DUP, should be RangedData or GRanges") }
+    if(!is.null(DEL)) { DEL <- as(DEL,"GRanges") }
+    if(!is.null(DUP)) { DUP <- as(DUP,"GRanges") }
+  } else {
+    if(!is.list(cnvResult)) { stop("invalid 'cnvResult, should be list returned by plumbCNV()") }
+    if(!all(names(cnvResult) %in% c("allCNV","allDel","allDup","rareDEL","rareDUP"))) {
+      stop("invalid 'cnvResult', first element should be list of RangedData objects")
+    }
+    DEL <- as(cnvResult[[4]],"GRanges")
+    DUP <- as(cnvResult[[5]],"GRanges")
   }
   if(add.genes) { 
-    for (dd in 4:5) {  cnvResult[[dd]] <- annot.cnv(cnvResult[[dd]]) } 
+    DEL <- annot.cnv(DEL)
+    DUP <- annot.cnv(DUP)
   }
-  DEL <- as(cnvResult[[4]],"GRanges")
-  rl <- rev(sort(width(DEL)))
-  n <- length(rl[rl>cutoff])
-  if(n>0) {
-    cat(n,"DEL CNVs found longer than",cutoff,"base pairs\n")
-    cnv1 <- toGenomeOrder(DEL[head(rev(order(width(DEL))),n),])
-    cnv1 <- as(cnv1,"RangedData")
-    if(add.genes) { cnv1[["n.genes"]] <- count.genes(cnv1[["gene"]]) }
-    if(print) { print(cnv1) }
-  } else {
-    cat("no DEL CNVs found longer than",cutoff,"base pairs\n")
+  if(!is.null(DEL)) {
+    rl <- rev(sort(width(DEL)))
+    n <- length(rl[rl>cutoff])
+    if(n>0) {
+      cat(n,"DEL CNVs found longer than",cutoff,"base pairs\n")
+      cnv1 <- toGenomeOrder(DEL[head(rev(order(width(DEL))),n),])
+      cnv1 <- as(cnv1,"RangedData")
+      if(add.genes) { cnv1[["n.genes"]] <- count.genes(cnv1[["gene"]]) }
+      if(print) { print(cnv1) }
+    } else {
+      cat("no DEL CNVs found longer than",cutoff,"base pairs\n")
+    }
   }
-  DUP <- as(cnvResult[[5]],"GRanges")
-  rl <- rev(sort(width(DUP)))
-  n <- length(rl[rl>cutoff])
-  if(n>0) {
-    cat(n,"DUP CNVs found longer than",cutoff,"base pairs\n")
-    cnv2 <- toGenomeOrder(DUP[head(rev(order(width(DUP))),n),])
-    cnv2 <- as(cnv2,"RangedData")
-    if(add.genes) { cnv2[["n.genes"]] <- count.genes(cnv2[["gene"]]) }
-    if(print) { print(cnv2) }
-  } else {
-    cat("no DUP CNVs found longer than",cutoff,"base pairs\n")
+  if(!is.null(DUP)) {
+    rl <- rev(sort(width(DUP)))
+    n <- length(rl[rl>cutoff])
+    if(n>0) {
+      cat(n,"DUP CNVs found longer than",cutoff,"base pairs\n")
+      cnv2 <- toGenomeOrder(DUP[head(rev(order(width(DUP))),n),])
+      cnv2 <- as(cnv2,"RangedData")
+      if(add.genes) { cnv2[["n.genes"]] <- count.genes(cnv2[["gene"]]) }
+      if(print) { print(cnv2) }
+    } else {
+      cat("no DUP CNVs found longer than",cutoff,"base pairs\n")
+    }
   }
   if(!print) { 
     #cnv1 <- as(cnv1,"RangedData"); cnv2 <- as(cnv2,"RangedData")
@@ -9468,11 +9512,23 @@ dlrs <- function(X,na.rm=T)
   return(out/sqrt(2))
 }
 
-gene.duplicate.report <- function(ga,full.listing=F) {
+gene.duplicate.report <- function(ga,full.listing=F,colname="gene") {
   # for a RangedData object, report on any multiple listings for the same gene
   if(is(ga)[1]!="RangedData") { warning("not a RangedData object") ; return(NULL) }
-  if("gene" %in% tolower(colnames(ga)))
-    gene.col <- (which(tolower(colnames(ga)) %in% c("gene","genes","geneid")))
+  if(colname=="gene") {
+    if("gene" %in% tolower(colnames(ga)))
+    { 
+      gene.col <- (which(tolower(colnames(ga)) %in% c("gene","genes","geneid")))
+    } else {
+      gene.col <- 0
+    }
+  } else {
+    if(colname %in% colnames(ga)) { 
+      gene.col <- which(colnames(ga)==colname) 
+    } else { 
+      stop("colname not found in ga") 
+    } 
+  }
   if(length(gene.col)>0) { gene.col <- gene.col[1] } else { warning("no 'gene' column"); return(NULL) }
   colnames(ga)[gene.col] <- "gene" #force this colname
   duplicate.report <- T  ### when would this be FALSE???
@@ -9485,15 +9541,15 @@ gene.duplicate.report <- function(ga,full.listing=F) {
     for (cc in 1:length(culprits)) { 
       mini <- (ga[ga$gene %in% culprits[cc],]) 
       if(full.listing) {
-        cat("Gene:",culprits[cc],"# same start:",anyDuplicated(start(mini)),
+        cat(colname,":",culprits[cc],"# same start:",anyDuplicated(start(mini)),
             "# same end:",anyDuplicated(end(mini)),"\n") }
       start.same.ct <- start.same.ct+anyDuplicated(start(mini))
       end.same.ct <- end.same.ct+anyDuplicated(end(mini))
       if(anyDuplicated(start(mini)) | anyDuplicated(end(mini))) { which.ss <- c(which.ss,cc) }
     }
-    cat(" genes with split ranges:\n"); print(culprits,quote=F); cat("\n")
-    cat(" genes with same start or end:\n"); print(culprits[which.ss],quote=F); cat("\n")
-    cat(" total gene-segments with same start",start.same.ct,"; total with same end:",end.same.ct,"\n")
+    cat(" ",colname,"s with split ranges:\n"); print(culprits,quote=F); cat("\n")
+    cat(" ",colname,"s with same start or end:\n"); print(culprits[which.ss],quote=F); cat("\n")
+    cat(" total ",colname,"-segments with same start",start.same.ct,"; total with same end:",end.same.ct,"\n")
   }
   return(culprits)
 }

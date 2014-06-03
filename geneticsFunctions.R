@@ -57,15 +57,15 @@ sortna <- function(...) {
   sort(..., na.last=TRUE)
 }
 
+# allows an sapply style function to only work on valid values
 clean.fn <- function(x,fail=NA,fn=function(x) { x }) {
-  # allows an sapply style function to only work on valid values
   if(!is.null(x)) { 
     x <- x[!is.na(x)]; x <- x[(x!="")]; return(fn(x)) 
   } else {  return(fail) } 
 }
 
+# convert text locations like chr5:12344-5253553 into a matrix with cols: chr, start, end
 convert.textpos.to.data <- function(text) {
-  # convert text locations like chr5:12344-5253553 into a matrix with cols: chr, start, end
   do.one <- function(X) {
     chr.pos <- strsplit(X,":",fixed=T)[[1]]  
     chr <- as.integer(gsub("chr","",chr.pos[[1]],ignore.case=T))
@@ -136,6 +136,8 @@ jlapply <- function(list1, list2, FUN=NULL, select=F, pc=F, collapse=NULL) {
 
 
 ## forces a 2d table with every possible cell (allow zero counts)
+#col and row are the categories of which to force tabulation
+# cn and rn are optional col and rownames for the output table
 table2d <- function(...,col,row,rn=NULL,cn=NULL,remove.na=TRUE) {
   clmn <- paste(col); rowe <- paste(row)
   if(remove.na) { clmn <- narm(clmn); rowe <- narm(rowe); rn <- narm(rn); cn <- narm(cn) }
@@ -163,8 +165,8 @@ table2d <- function(...,col,row,rn=NULL,cn=NULL,remove.na=TRUE) {
 
 
 
+## takes a RangedData object from some annotation lookup functions and converts to standard text positions
 Ranges.to.txt <- function(chr.list) {
-  ## takes a RangedData object from some annotation lookup functions and converts to standard text positions
   if(is(chr.list)[1]!="RangedData") { stop("Not a RangedData object")}
   text.out <- paste("chr",chr2(chr.list),":",format(start(chr.list),scientific=F,trim=T),"-",
                     format(end(chr.list),scientific=F,trim=T),sep="")
@@ -172,9 +174,8 @@ Ranges.to.txt <- function(chr.list) {
 }
 
 
-
+# select autosomes only in RangedData object
 select.autosomes <- function(snp.info,deselect=FALSE) {
-  # select autosomes only in RangedData object
   must.use.package("genoset",bioC=T)
   if(!is(snp.info)[1]=="RangedData") { warning("not a RangedData object"); return(snp.info) }
   if(length(unique(space(snp.info))) < length(levels(space(snp.info)))) {
@@ -192,8 +193,55 @@ select.autosomes <- function(snp.info,deselect=FALSE) {
 }
 
 
+# removes all but the first of any overlapping ranges within the same sample
+# should be a list of cnvs with a column 'id', e.g, sample id
+remove.duplicated.id.ranges <- function(X,column="id") {
+  if(column %in% colnames(X)) { 
+    coln <- which(colnames(X)==column)
+  } else {
+    stop("column not found in X") 
+  }
+  if(!is(X)[1]=="RangedData") { stop("X wasn't RangedData") }
+  prn <- nrow(X)
+  XX <- vector("list",length(chrNames2(X)))
+  do.one.chr <- function(X,coln) {
+    idz <- X[[coln]]; 
+    idz <- idz[duplicated(idz)]
+    udz <- unique(idz)
+    n.id <- length(udz)
+    #prv(udz)
+    for (cc in 1:n.id) {
+      select <- which(X[[coln]] %in% udz[cc])
+      U <- X[select,]
+      ov <- findOverlaps(U)
+      qq <- queryHits(ov)
+      ss <- subjectHits(ov)  
+      tt <- table(qq,ss)
+      diag(tt) <- 0
+      tt[lower.tri(tt)] <- 0
+      to.kill <- colnames(tt)[colSums(tt)>0]
+      if(length(to.kill)>0) {
+        X <- X[-c(select[as.numeric(to.kill)]),]
+      }
+      # loop.tracker(cc,n.id); #cat("x")
+    }
+    #print(X)
+    return(X)
+  }
+  ct <- 1
+  for(chrz in chrNames2(X)) {
+    XX[[ct]] <- do.one.chr(X[chrz],coln)
+    ct <- ct + 1
+  }
+  X <- do.call("rbind",args=XX)
+  ND <- prn - nrow(X)
+  if(ND>0) { cat("NOTE: removed",ND,"ids that were duplicates\n") }
+  return(X)
+}
+
+
+# note that this will preserve only chr,start,end, nothing else including rownames
 ranged.to.data.frame <- function(ranged,include.cols=FALSE) {
-  # note that this will preserve only chr,start,end, nothing else including rownames
   if(!include.cols) {
     u <- Ranges.to.txt(ranged)
     v <- convert.textpos.to.data(u)
@@ -210,7 +258,7 @@ ranged.to.data.frame <- function(ranged,include.cols=FALSE) {
   }
 }
 
-
+# version of toGenomeOrder() that is guaranteed to work for IRanges or GRanges
 toGenomeOrder2 <- function(X,...) {
   if(has.method("toGenomeOrder",X)) {
     return(toGenomeOrder(X))
@@ -225,6 +273,7 @@ toGenomeOrder2 <- function(X,...) {
   }
 }
 
+# version of chrInfo() that is guaranteed to work for IRanges or GRanges
 chrInfo2 <- function(X) {
   if(has.method("chrInfo",X)) {
     return(chrInfo(X))
@@ -234,6 +283,7 @@ chrInfo2 <- function(X) {
   }
 }
 
+# version of chrIndices() that is guaranteed to work for IRanges or GRanges
 chrIndices2 <- function(X,...) {
   if(has.method("chrIndices",X)) {
     return(chrIndices(X,...))
@@ -243,6 +293,7 @@ chrIndices2 <- function(X,...) {
   }
 }
 
+# version of chr() that is guaranteed to work for IRanges or GRanges
 chr2 <- function(X) {
   if(has.method("chr",X)) {
     return(chr(X))
@@ -263,17 +314,17 @@ has.method <- function(FUN,CLASS) {
   if(!is.character(FUN) & !is.function(FUN)) { stop("FUN must be an R function, as a string or function") }
   test <- showMethods(FUN,classes=CLASS,printTo=F)
   if(length(grep("not an S4 generic function",test))>0) {
-    stop(FUN," was not an S4 generic function")
+    stop(FUN," was not an S4 generic function or required package not loaded")
   }
   return(!(length(grep("No methods",test))>0))
 }
 
 
+## convert any data frame with chr,start,end, or pos data into a RangedData object
+# not case sensitive
 data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL,
                                  chr="chr",exclude=NULL,ucsc="hg18") 
 {
-  ## convert any data frame with chr,start,end, or pos data into a RangedData object
-  # not case sensitive
   ## abandon longer names as they clash with function names
   st <- paste(start); en <- paste(end); ch <- paste(chr); wd <- paste(width)
   ucsc <- ucsc.sanitizer(ucsc)
@@ -462,7 +513,7 @@ range.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,nearest=T) {
   return(start.snp(snp.info=snp.info,chr=chr,pos=pos,ranged=ranged,start=T,end=T,nearest=nearest))
 }
 
-
+# get nearby number of snps?? also defined again below????
 get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
   snp.info <- toGenomeOrder2(snp.info,strict=TRUE); rw.cnt <- 1
   all.fl <- matrix(ncol=4, nrow=0)
@@ -486,6 +537,7 @@ get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
   fl[fl[,3]>fl[,4],1] <- fl[fl[,3]>fl[,4],4]
   return(fl)
 }
+
 
 # for given genome ranges will try to find the closest snps to the start of the ranges
 start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,nearest=T) {
@@ -552,32 +604,7 @@ start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,neare
 }
 
 
-get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
-  snp.info <- toGenomeOrder2(snp.info,strict=T); rw.cnt <- 1
-  all.fl <- matrix(ncol=4, nrow=0)
-  for(cc in chrNums(ranged)) {
-    nxt.nm <- rownames(snp.info[paste(cc)]); pos <- start(snp.info[paste(cc)])
-    rng <- ranged[paste(cc)]
-    st.en.snp <- range.snp(snp.info,ranged=rng)
-    fl <- matrix(ncol=4, nrow=nrow(st.en.snp))
-    fl[,2] <- start(rng); fl[,3] <- end(rng);
-    for(dd in 1:nrow(st.en.snp)) {
-      x1 <- pos[max(1,match(st.en.snp[dd,1],nxt.nm)-nsnp)]
-      x2 <- pos[min(length(nxt.nm),match(st.en.snp[dd,2],nxt.nm)+nsnp)]
-      #print(x1); print(x2); print(length(x1)); print(length(x2))
-      fl[dd,1] <- x1[1]
-      fl[dd,4] <- x2[1]
-    }
-    all.fl <- rbind(all.fl,fl)
-  }
-  fl <- (all.fl)
-  fl[fl[,1]>fl[,2],1] <- fl[fl[,1]>fl[,2],2]
-  fl[fl[,3]>fl[,4],1] <- fl[fl[,3]>fl[,4],4]
-  return(fl)
-}
-
-
-
+# force a valid pair of positions, given the inputted chromosome
 force.chr.pos <- function(Pos,Chr,snp.info=NULL,ucsc="hg18",dir=NULL) {
   ucsc <- ucsc.sanitizer(ucsc)
   # convert any non autosomes to numbers:
@@ -587,7 +614,8 @@ force.chr.pos <- function(Pos,Chr,snp.info=NULL,ucsc="hg18",dir=NULL) {
   Chr[grep("M",Chr,ignore.case=T)] <- 25
   Chr[grep("NT",Chr,ignore.case=T)] <- 26  # prevent issues with NT_11387, etc
   Chr <- as.numeric(Chr)
-  if(any(!paste(Chr) %in% paste(c(1:25)))) { stop("invalid chromosome(s) entered") }
+  if(any(!paste(Chr) %in% paste(c(1:26)))) { stop("invalid chromosome(s) entered") }
+  if(any(paste(Chr) == paste(26))) { warning("'NT' chromosome(s) entered, not supported, NAs produced") }
   if(length(Pos)==2 & is.numeric(Pos)) {
     if(is(snp.info)[1]!="RangedData" & is(snp.info)[1]!="GRanges") { 
       maxln <- get.chr.lens(dir=dir,mito=T,autosomes=FALSE,ucsc=ucsc)[Chr] 
@@ -603,8 +631,74 @@ force.chr.pos <- function(Pos,Chr,snp.info=NULL,ucsc="hg18",dir=NULL) {
 }
 
 
+
+
+# retreive GO terms from biomart for a given gene list
+# can retrieve biological function, cellular component, or molecular description
+get.GO.for.genes <- function(gene.list,bio=T,cel=F,mol=F) {
+  must.use.package(c("biomaRt","genoset","gage"),T)
+  ens <- useMart("ENSEMBL_MART_ENSEMBL",
+                 dataset="hsapiens_gene_ensembl",
+                 host="may2009.archive.ensembl.org",
+                 path="/biomart/martservice",
+                 archive=FALSE)
+  ens <- useDataset("hsapiens_gene_ensembl",mart=ens)
+  data(egSymb)
+  base.attr <- c("hgnc_symbol", "chromosome_name")
+  if(bio) { base.attr <- c(base.attr,"go_biological_process_description") }
+  if(cel) { base.attr <- c(base.attr,"go_cellular_component_description") }
+  if(mol) { base.attr <- c(base.attr,"go_molecular_function_description") }
+  dat <- getBM(attributes = c("hgnc_symbol", "chromosome_name",
+                              "start_position", "end_position", "band"), filters = "hgnc_symbol",
+               values = egSymb[,2], mart = ens)
+  results <- getBM(attributes = base.attr, filters = "hgnc_symbol",
+                   values = c(gene.list), mart = ens)
+  return(results)
+}
+
+
+
+# fishers exact test given case and control obs counts, then total group counts from info object or manual counts.
+FET <- function(case,ctrl,dir=NULL,sample.info=NULL,case.d=NA,cont.d=NA,stat=c("p.value","conf.int","estimate")) {
+  skip.c <- F
+  DIGITS <- 3
+  stat <- tolower(paste(stat[1]))
+  if(!stat %in% c("p.value","conf.int","estimate")) { 
+    warning("invalid stat value, setting to p.value"); stat <- "p.value" }
+  if(is.null(sample.info)) {
+    if(!is.null(dir)) {
+      sample.info <- read.sample.info(dir)
+    } else {
+      if(!all(!is.na(c(case.d,cont.d)))) {
+        warning("must provide case.d, cont.d, or 'dir' or sample.info to ",
+                "calculate the case/control denominators"); return(NULL)
+      } else {
+        skip.c <- T
+      }
+    }
+  }
+  if(!skip.c) {
+    p.c <- table(sample.info$phenotype,sample.info$QCfail)[,1]
+    case.d <- p.c[2]; cont.d <- p.c[1]
+  }
+  fet <- numeric(length(case))
+  for (cc in 1:length(case)) {
+    if(length(case[cc])>0 & length(ctrl[cc])==0) { ctrl[cc] <- 0 }
+    if(length(case[cc])==0 & length(ctrl[cc])>0) { case[cc] <- 0 }
+    if(length(case[cc])>0 & length(ctrl[cc])>0) { 
+      FTR <- fisher.test(x=matrix(c(case[cc],case.d,ctrl[cc],cont.d),nrow=2))[[stat]]
+      if(stat=="conf.int") { fet[cc] <- paste(round(FTR,digits=DIGITS),collapse=",") } else { fet[cc] <- FTR }
+    } else {
+      fet[cc] <- NA
+    }
+    #loop.tracker(cc,length(case))
+  }
+  return(fet)
+}
+
+
+# select everything in a ranges format that is in a window of a chromosome; 
 unique.in.range <- function(ranged,chr,pos,full.overlap=F, unit=c("b","kb","mb","gb"), rmv.dup=T) {
-  # select everything in a ranges format that is in a window of a chromosome; 
   if(length(pos)>2 | !is.numeric(pos)) { warning("pos should be a start and end numeric range"); return(NULL) }
   if(length(pos)==1) { pos <- rep(pos,2) }
   if(length(chr)>1 | is.na(as.numeric(chr))) { warning("chr should be a single number"); return(NULL) }
@@ -626,15 +720,15 @@ unique.in.range <- function(ranged,chr,pos,full.overlap=F, unit=c("b","kb","mb",
 }
 
 
+# add gene annotation to existing plot with y range 'ylim',
+#  in range 'sect' using 'parse.annot.file' formmated
+#  annotation data read in from dataframe 'DF'. step is a scaling
+#  factor that will adjust the gene position units based on the 
+#  the step size of the rest of the plot.
+# more args to 'rect' ...
 plot.gene.annot <- function(gs=NULL, chr=1, pos=NA, x.scl=10^6, y.ofs=0, width=1, txt=T, chr.pos.offset=0,
                             ucsc="hg18", dir="", box.col="green", txt.col="black", join.col="red", ...)
 {
-  # add gene annotation to existing plot with y range 'ylim',
-  #  in range 'sect' using 'parse.annot.file' formmated
-  #  annotation data read in from dataframe 'DF'. step is a scaling
-  #  factor that will adjust the gene position units based on the 
-  #  the step size of the rest of the plot.
-  # more args to 'rect' ...
   dir <- validate.dir.for(dir,"ano")
   ucsc <- ucsc.sanitizer(ucsc)
   if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(dir=dir,ucsc=ucsc) }
@@ -684,13 +778,13 @@ plot.gene.annot <- function(gs=NULL, chr=1, pos=NA, x.scl=10^6, y.ofs=0, width=1
 }
 
 
+# should enter a ranged object with data for only 1 chromosome
+# yadj controls offset from the default y-axis location of the plotted ranges (default is integers)
+# adjust scl if the plot is in Mb units or Kb units (ranged object should always be in base-pairs)
+# full vertical plots the ranges with abline() instead of as horizontal lines
+# plot a set of ranges from a RangedData object
 plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,lty="solid",
                         full.vertical=FALSE,ylim=NULL,scl=c("b","Kb","Mb","Gb"),...) {
-  # should enter a ranged object with data for only 1 chromosome
-  # yadj controls offset from the default y-axis location of the plotted ranges (default is integers)
-  # adjust scl if the plot is in Mb units or Kb units (ranged object should always be in base-pairs)
-  # full vertical plots the ranges with abline() instead of as horizontal lines
-  # plot a set of ranges from a RangedData object
   #if(is(ranges)[1]!="RangedData") { warning("need RangedData object") ; return(NULL) }
   chk <- chrNums(rangedat)
   if(length(chk)>1) { warning(length(chk)," chromosomes in 'rangedat', only using the first, chr",chk[1]) ; rangedat <- rangedat[1] }
@@ -833,15 +927,14 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
 }
 
 
-
+# like 'findOverlaps' but according to a specific percentage
+# specify own reference comparison or use standard 'gene', 'exon' or 'dgv'
+# can filter on several criteria prior to matching (length/snps/dels/dups), or after matching (overlap %)
+# can get a list of overlap hits, or just a filtered RangedData object
 find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.out=F, vals.out=F, vec.out=F, delim=",",
                           ref=NULL, none.val=0, fill.blanks=T, DEL=T, DUP=T, min.sites=0, len.lo=NA, len.hi=NA,
                           autosomes.only=T, alt.name=NULL, testy=F,
                           db=c("gene","exon","dgv"), txid=F, ucsc="hg18", n.cores=1, dir="", quiet=F) {
-  # like 'findOverlaps' but according to a specific percentage
-  # specify own reference comparison or use standard 'gene', 'exon' or 'dgv'
-  # can filter on several criteria prior to matching (length/snps/dels/dups), or after matching (overlap %)
-  # can get a list of overlap hits, or just a filtered RangedData object
   if(is(cnv.ranges)[1]!="RangedData") {
     warning("'cnv.ranges' must be 'RangedData' type; returning null")
     return(NULL)
@@ -950,10 +1043,9 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   return(out)
 }
 
-
+## mainly to tidy up the function below - does the processing for 1 chromosome
 get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.query=T, txid=F, prog=F, alt.name=NULL) {
   #prv(next.chr, x, y, xx, yy)
-  ## mainly to tidy up function below - does the processing for 1 chromosome
   olp <- findOverlaps(x[[next.chr]],y[[next.chr]])  
   if(length(olp)==0 | length(subjectHits(olp))==0 | length(queryHits(olp))==0) {
     return(list(NULL,NULL,NULL)) } # if no matches return list of 3 NULL elements
@@ -1018,7 +1110,7 @@ get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.q
 }
 
 
-
+# flattens list - old version
 reduce.list.to.scalars.old <- function(ll) {
   if(is.list(ll)) {
     for (cc in length(ll):1) {
@@ -1032,8 +1124,10 @@ reduce.list.to.scalars.old <- function(ll) {
   return(ll)
 }
 
+# make null vector
 nmoo <- function(x) { x <- rep(NULL,1) }
 
+# flattens list 
 reduce.list.to.scalars.2 <- function(ll,max.ln=1000) {
   if(is.list(ll)) {
     if(length(ll)>max.ln) { return(sapply(ll,nmoo)) }
@@ -1048,6 +1142,7 @@ reduce.list.to.scalars.2 <- function(ll,max.ln=1000) {
   return(ll)
 }
 
+# gated list flattening
 rlts <- function(X) {
   if(is(X)[1]=="list") { 
     X <- reduce.list.to.scalars(X) 
@@ -1057,6 +1152,7 @@ rlts <- function(X) {
   return(X)
 }
 
+# flattens list 
 reduce.list.to.scalars <- function(ll) {
   if(is.list(ll)) {
     ll <- rev(lapply(rev(ll),rlts))
@@ -1065,6 +1161,7 @@ reduce.list.to.scalars <- function(ll) {
 }
 
 
+# for all non overlaps enter some missing value to preserve length of output list
 fill.blank.matches <- function(newlist,missing.val="",full.len=NA)
 {
   #ensure a blank entry for cnvs with no overlaps
@@ -1088,10 +1185,10 @@ fill.blank.matches <- function(newlist,missing.val="",full.len=NA)
 }
 
 
+# uses 'findOverlaps' and reports the percentage overlap for each region/etc
+# most sense when: x is reference (e.g, genes); y is regions of interest, eg.  CNVs
 overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autosomes.only=T,
                        text.out=F,delim=",",none.val=0,n.cores=1, txid=F, prog=F, alt.name=NULL) {
-  # uses 'findOverlaps' and reports the percentage overlap for each region/etc
-  # most sense when: x is reference (e.g, genes); y is regions of interest, eg.  CNVs
   must.use.package(c("genoset","IRanges"),T)
   if(is(query)[1]!="RangedData" | is(subj)[1]!="RangedData") {
     warning("'query' and 'subj' must both be 'RangedData' type; returning null")
@@ -1177,7 +1274,7 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   return(by.chr.list)
 }
 
-
+## get the locations of the immunoglobin regions
 get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
   nchr <- 22
   ucsc <- ucsc.sanitizer(ucsc[1])
@@ -1211,7 +1308,7 @@ get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
   return(outData)
 }
 
-
+## get the locations of the centromeres
 get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE)
 {
   dir <- validate.dir.for(dir,c("ano"),warn=FALSE); success <- TRUE
@@ -1247,6 +1344,7 @@ get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=TRUE,text=FALS
 }
 
 
+## get the locations of each cytoband (karotype)
 # if dir left blank won't leave a trace
 get.cyto <- function(ucsc="hg18",dir=NULL,bioC=TRUE) {
   ucsc <- ucsc.sanitizer(ucsc)
@@ -1290,7 +1388,7 @@ get.cyto <- function(ucsc="hg18",dir=NULL,bioC=TRUE) {
 }
 
 
-
+## get list of all exons, names, starts, ends
 get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
   ucsc <- ucsc.sanitizer(ucsc)
   ## load exon annotation (store locally if not there already)
@@ -1348,7 +1446,7 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
   return(ts)
 }
 
-
+## get list of all genes, names, starts, ends, optionally bands
 get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=TRUE,duplicate.report=FALSE,unique=FALSE,map.cox.to.6=TRUE) {
   # faster than exon, but only contains whole gene ranges, not transcripts
   # allows report on duplicates as some might be confused as to why some genes
@@ -1393,6 +1491,7 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=TRUE,duplicate.report=
     outData <- toGenomeOrder2(outData,strict=T)
     if(duplicate.report) {
       dup.genes <- gene.duplicate.report(outData)
+      # but haven't done anything about them or removed them! 
     }
   } else {
     outData <- dat; colnames(outData) <- c("gene","chr","start","end","band")
@@ -1401,6 +1500,7 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=TRUE,duplicate.report=
 }
 
 
+## create telomere locations - artibrary number of kb at start and end of each CHR
 get.telomere.locs <- function(dir="",kb=10,ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE,mito.zeros=FALSE)
 {
   # the actual telomeres are typically about 10kb, but
@@ -1552,11 +1652,12 @@ get.chr.lens <- function(dir="",ucsc=c("hg18","hg19")[1],autosomes=FALSE,len.fn=
 }
 
 
+#create a snp.info object
+# calculate chromosome-wise position and ID for each SNP in list()
+# dir should be contain the annotation directory assumed to contain the snp list (dir.ano)
 import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames.txt", anot=c("bim","vcf","map","map3")[4],
                                snp.col=NA, pos.col=NA, chr.col=NA, verbose=F )
 {
-  # calculate chromosome-wise position and ID for each SNP in list()
-  # dir should be contain the annotation directory assumed to contain the snp list (dir.ano)
   dir <- validate.dir.for(dir,c("ano"),warn=F)
   # read in gene annotation (vcf file/bim file) if not passed as fn. arg.
   # sort info by chromosome and position
@@ -1638,7 +1739,7 @@ import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames
 
 ### LESS GENERAL ###
 
-
+# calculate relative chip coverage vs gwas
 chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
                           full.chr.lens=T,verbose=T,dir="",ucsc="hg18",ranges=F) {
   # calculate % of chromosomes/genome covered by a set of microarray markers in terms of
@@ -1693,9 +1794,8 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
   return(outlist)
 }
 
-
+# internal function used by chip.coverage() to calculate coverage gaps
 calc.cov <- function (snp.info, targ.int, min.snps) {
-  # function used by chip.coverage() to calculate coverage gaps
   cur.chr <- chr2(snp.info)
   if(nrow(snp.info)<10) { warning("not enough snps to calculate coverage"); return(NA) }
   nsnp <- nrow(snp.info)-min.snps;
@@ -1733,7 +1833,7 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
   return(rd)
 }
 
-
+# import the DGV into a rangedData object
 get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=TRUE,text=FALSE,shortenID=TRUE, compact=FALSE, alt.url=NULL)
 {
   ## download or use local version of DGV (database for Genomic Variants)
@@ -1799,10 +1899,9 @@ get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=TRUE,text=FALSE,shortenID=T
 
 
 
-
-
+# do abline at start and end of all CNV positions
+# ie to make a graph of a CNV easier to read
 draw.cnv.bounds <- function(cnv,chr.offset=NA,pos=NA,cnv.lty="dashed",cnv.col="orange",plot.scl=10^6) {
-  # do abline at start and end of all CNV positions
   done <- F
   if(is(cnv)[1]=="RangedData") {
     # highlight CNVs in rangedData object
@@ -1849,6 +1948,7 @@ draw.cnv.bounds <- function(cnv,chr.offset=NA,pos=NA,cnv.lty="dashed",cnv.col="o
   return(cnv)
 }
 
+# read in a penn cnv file (with standard suffixes)
 read.penn.cnv.file <- function(filename,readtable=TRUE) {
   cN <- c("coords","n.snps","length","copy.number","file","first.snp","last.snp")
   if(!file.exists(filename)) { stop("specified penn-cnv file did not exist") }
@@ -1867,14 +1967,13 @@ read.penn.cnv.file <- function(filename,readtable=TRUE) {
 }
 
 
-
+# remove directories from filenames in a plink file
 rmv.dir.plink.file <- function(...)
 {
   rmv.dir.penn.cnv.file(...,plink=T)
 }
 
-
-
+# remove specifix sample list from a plink file, e.g, after applying Qc
 remove.samp.from.plink <- function(samps,plink,why="TMcnvs",dir="")
 {
   # remove specific sample from a plink file - eg because had too many cnvs
@@ -1912,8 +2011,8 @@ remove.samp.from.plink <- function(samps,plink,why="TMcnvs",dir="")
   }
 }
 
+# read in a plink cnv file and return Ranged data object
 plink.to.Ranges <- function(plink.cnv) {
-  # read in a plink cnv file and return Ranged data object
   if(get.ext(plink.cnv)!="cnv") {
     warning(paste("this function is meant for importing plink *.cnv files so using a file with",
                   "extension",get.ext(plink.cnv),"may cause unpredictable results\n"))
@@ -1929,9 +2028,9 @@ plink.to.Ranges <- function(plink.cnv) {
 }
 
 
+# convert an Ranged data object to a cnv-gsa object
+# for use with the package cnvGSA
 Ranges.to.cnvgsa <- function(dat) {
-  # convert an Ranged data object to a cnv-gsa object
-  # for use with the package cnvGSA
   if(!is(dat)[1]=="RangedData") { stop("This function only accepts objects of type 'RangedData") }
   # cnvGSA format below:
   #SampleID ID assigned to the subject’s DNA sample in which the CNV was found
@@ -1953,8 +2052,8 @@ Ranges.to.cnvgsa <- function(dat) {
 }
 
 
+## use cnvGSA function 'getCnvGenes' to add gene annotation to a cnv slot object for cnvGSA
 add.genes.to.GSA <- function(cnv.frame, delim=";", ucsc="hg18", genemap=NULL) {
-  ## use cnvGSA function 'getCnvGenes' to add gene annotation to a cnv slot object for cnvGSA
   gsa.cols <- c("SampleID","Chr","Coord_i","Coord_f","Type","Genes","CnvID")
   ucsc <- ucsc.sanitizer(ucsc)
   if(!all(colnames(cnv.frame)==gsa.cols))
@@ -1976,10 +2075,9 @@ add.genes.to.GSA <- function(cnv.frame, delim=";", ucsc="hg18", genemap=NULL) {
   return(cnv.frame)
 }
 
-
+# get object needed for cnvGSA package
+# contains lookup of SYMBOL vs Entrez ID, and descriptions of genes
 get.geneData.obj <- function() {
-  # get object needed for cnvGSA package
-  # contains lookup of SYMBOL vs Entrez ID, and descriptions of genes
   must.use.package("org.Hs.eg.db",T)
   ann <- list( gene2sy = character(0), gene2name = character(0) )
   x <- org.Hs.egSYMBOL
@@ -1993,12 +2091,11 @@ get.geneData.obj <- function() {
   return(geneData)
 }
 
-
+# create a cnvGSA object using cnv.frame or RangedData object generated by plumb cnv
 full.cnvGSA <- function(do.assoc=F, cnv.frame=NULL, gmt.file=NULL, grandtotals.mode=c("all","cnv","cnvGen"),
                         sample.classes=c("case","ctrl"),fdr.iter=2,ext.report=200,boxplots=F,
                         limit.type=c("DEL","DUP"),limits.size=NULL,rem.genes=NULL,
                         delim=";", ucsc="hg18", genemap=NULL) {
-  # create a cnvGSA object using cnv.frame or RangedData object generated by plumb cnv
   must.use.package("cnvGSA",T)
   ucsc <- ucsc.sanitizer(ucsc)
   if(is(cnv.frame)[1]=="RangedData") { 
@@ -2045,9 +2142,8 @@ full.cnvGSA <- function(do.assoc=F, cnv.frame=NULL, gmt.file=NULL, grandtotals.m
   }
 }
 
-
+# read in a plink cnv file and return cnvGSA object
 plink.to.cnvGSA <- function(cnv.data) {
-  # read in a plink cnv file and return cnvGSA object
   if(get.ext(cnv.data)!="cnv") {
     warning(paste("this function is meant for importing plink *.cnv files so using a file with",
                   "extension",get.ext(cnv.data),"may cause unpredictable results"))
@@ -2057,10 +2153,9 @@ plink.to.cnvGSA <- function(cnv.data) {
   return(dat)
 }
 
-
+# whether to read files using 'read.table()' or manual method.. speed varies
 rmv.dir.penn.cnv.file <- function(filename,append=".nodir",ext=F,verbose=F,
                                   plink=F,readtable=T) {
-  # whether to read files using 'read.table()' or manual method.. speed varies
   raw.file <- readLines(filename)
   if(plink) {
     p.file <- read.plink.file(filename,readtable=readtable); cL <- "IID"
@@ -2094,9 +2189,9 @@ rmv.dir.penn.cnv.file <- function(filename,append=".nodir",ext=F,verbose=F,
 }
 
 
+## return detailed summary of CNVs in a plink .cnv file
 stats.on.CNV.file <- function(fn,use.dat=F) 
 {
-  ## return detailed summary of CNVs in a plink .cnv file
   dat <- read.table(fn,header=TRUE,stringsAsFactors=FALSE)  
   tt <- as.numeric(table(dat$IID))[order(as.numeric(table(dat$IID)))]
   # headers in file
@@ -2138,9 +2233,9 @@ stats.on.CNV.file <- function(fn,use.dat=F)
   print(summary(tt),digits=2)
 }
 
+## convert from penn cnv format to plink format
+## plink has tab delimited and fixed width formats. can do either
 convert.penn.to.plink <- function(penn.in,plink.out=NULL,fixed.width=F) {
-  ## convert from penn cnv format to plink format
-  ## plink has tab delimited and fixed width formats. can do either
   penn <- read.penn.cnv.file(penn.in)
   if(ncol(penn)<1 | nrow(penn)<1) { stop("file ",penn.in," was empty, returning NULL") }
   colnames(penn) <- c("location","numsnp","length","cn","id","startsnp","endsnp")
@@ -2162,7 +2257,7 @@ convert.penn.to.plink <- function(penn.in,plink.out=NULL,fixed.width=F) {
   }
 }
 
-
+# import a ped file to pedData format used by snpStats
 get.pedData <- function(file,correct.codes=TRUE,silent=FALSE) {
   rr <- read.ped.file(file,keepsix = TRUE)
   want <- c("familyid","individual","father","mother","sex","affected")
@@ -2194,120 +2289,8 @@ get.pedData <- function(file,correct.codes=TRUE,silent=FALSE) {
 
 
 
-tdt.snp2 <- function (ped, id, father, mother, affected, data = sys.parent(), 
-    snp.data, rules = NULL, snp.subset = NULL, check.inheritance = TRUE, 
-    robust = FALSE, uncertain = FALSE, score = FALSE) 
-{
-    if (!is.null(rules) || !check.inheritance) 
-        robust <- TRUE
-    mcall <- match.call()
-    if (!is(snp.data, "SnpMatrix")) 
-        stop("snp.data argument must be of class SnpMatrix")
-    if (missing(data)) {
-        ped <- as.character(ped)
-        nped <- length(ped)
-        if (nped != nrow(snp.data)) 
-            stop("length of `ped' argument incompatible with `snp.data'")
-        id <- as.character(id)
-        if (length(id) != nped) 
-            stop("incompatible length for `id' and `ped' arguments")
-        father <- as.character(father)
-        if (length(father) != nped) 
-            stop("incompatible length for `father' and `ped' arguments")
-        mother <- as.character(mother)
-        if (length(mother) != nped) 
-            stop("incompatible length for `mother' and `ped' arguments")
-        affected <- as.logical(affected)
-        if (length(affected) != nped) 
-            stop("incompatible length for `affected' and `ped' arguments")
-        subject.names <- rownames(snp.data)
-        in.snp <- 1:nped
-        have.snps <- rep(TRUE, nped)
-       print("here")
-    }
-    else {
-        data <- as.data.frame(data)
-        nped <- nrow(data)
-        subject.names <- rownames(data)
-        if (missing(ped)) 
-            ped <- as.character(data[, 1])
-        else ped <- as.character(eval(mcall$ped, envir = data))
-        if (is.null(ped)) 
-            stop("pedigree identifiers not found in data frame")
-        if (missing(id)) 
-            id <- as.character(data[, 2])
-        else id <- as.character(eval(mcall$id, envir = data))
-        if (is.null(id)) 
-            stop("subject identifiers not found in data frame")
-        if (missing(father)) 
-            father <- as.character(data[, 3])
-        else father <- as.character(eval(mcall$father, envir = data))
-        if (is.null(father)) 
-            stop("father identifiers not found in data frame")
-        if (missing(mother)) 
-            mother <- as.character(data[, 4])
-        else mother <- as.character(eval(mcall$mother, envir = data))
-        if (is.null(mother)) 
-            stop("mother identifiers not found in data frame")
-        if (missing(affected)) 
-            affected <- (data[, 6] == 2)
-        else affected <- as.logical(eval(mcall$affected, envir = data))
-        if (is.null(affected)) 
-            stop("disease status not found in data frame")
-        in.snp <- match(subject.names, rownames(snp.data))
-        have.snps <- !is.na(in.snp)
-        print("there")
-    }
-    affected[is.na(affected)] <- FALSE
-    s.unique <- paste(ped, id, sep = ":")
-    if (any(duplicated(s.unique))) 
-        warning("Combination of pedigree ID and ID within pedigree does not generate unique IDs")
-    f.unique <- paste(ped, father, sep = ":")
-    fpos <- match(f.unique, s.unique)
-    m.unique <- paste(ped, mother, sep = ":")
-    mpos <- match(m.unique, s.unique)
-    prv(have.snps,affected,fpos,mpos)
 
-    trio <- have.snps & affected & (!is.na(fpos)) & (have.snps[fpos]) & 
-        (!is.na(mpos)) & (have.snps[mpos])
-    ntrio <- sum(trio, na.rm = TRUE)
-    if (ntrio == 0) {
-        cat("No potentially complete trios to analyse\n")
-        return(NULL)
-    }
-    pd.snps <- in.snp[trio]
-    fr.snps <- in.snp[fpos[trio]]
-    mr.snps <- in.snp[mpos[trio]]
-    clust <- as.integer(factor(ped[trio]))
-    cord <- order(clust)
-    cat("Analysing", ntrio, "potentially complete trios in", 
-        max(clust), "different pedigrees\n")
-    scores <- .Call("score_tdt", pd.snps[cord], fr.snps[cord], 
-        mr.snps[cord], clust[cord], snp.data, rules, snp.subset, 
-        check.inheritance, robust, uncertain, PACKAGE = "snpStats")
-    chisq <- .Call("chisq_single", scores, PACKAGE = "snpStats")
-    if (is.null(rules)) {
-        if (is.null(snp.subset)) 
-            tested <- colnames(snp.data)
-        else tested <- colnames(snp.data)[snp.subset]
-    }
-    else {
-        if (is.null(snp.subset)) 
-            tested <- names(rules)
-        else tested <- names(rules)[snp.subset]
-    }
-    if (score) 
-        res <- new("SingleSnpTestsScore", snp.names = tested, 
-            chisq = chisq, N = scores$N, N.r2 = scores$N.r2, 
-            U = scores$U, V = scores$V)
-    else res <- new("SingleSnpTests", snp.names = tested, chisq = chisq, 
-        N = scores$N, N.r2 = scores$N.r2)
-    res
-}
-
-
-
-
+# read in a plink format CNV file
 read.plink.file <- function(filename,readtable=TRUE) {
   cN <- c("FID","IID","CHR","BP1","BP2","TYPE","SCORE","SITES")
   if(readtable) {
@@ -2347,6 +2330,7 @@ read.plink.file <- function(filename,readtable=TRUE) {
 
 #### ROH functions
 
+# core function to find runs of ROH
 extractROH <- function(dd,min.size=100,merge.gap.pc=.01,verbose=F) {
   missing <- which(dd==0)
   ld <- length(dd)
@@ -2386,6 +2370,7 @@ extractROH <- function(dd,min.size=100,merge.gap.pc=.01,verbose=F) {
   return(pozzies)
 }
 
+# for an ROHlist, converts raw snp index information back into a position
 convert.snp.indx.to.pos <- function(ROHlist,snpMat,snp.info) {
   must.use.package("genoset")
   snp.info <- toGenomeOrder2(select.autosomes(snp.info),strict=T)
@@ -2476,4 +2461,117 @@ get.ROH.for.SnpMatrix <- function(snpMat,snp.info=NULL,snp.fail=NULL,dir=NULL,sa
   # names(ROHpos) <- rownames(snpRaw)[select.samps]
   cat("done\n")
   return(ROHpos)  
+}
+
+
+## copyof snpStats::tdt.snp = don't think it's used anymore
+tdt.snp2 <- function (ped, id, father, mother, affected, data = sys.parent(), 
+                      snp.data, rules = NULL, snp.subset = NULL, check.inheritance = TRUE, 
+                      robust = FALSE, uncertain = FALSE, score = FALSE) 
+{
+  if (!is.null(rules) || !check.inheritance) 
+    robust <- TRUE
+  mcall <- match.call()
+  if (!is(snp.data, "SnpMatrix")) 
+    stop("snp.data argument must be of class SnpMatrix")
+  if (missing(data)) {
+    ped <- as.character(ped)
+    nped <- length(ped)
+    if (nped != nrow(snp.data)) 
+      stop("length of `ped' argument incompatible with `snp.data'")
+    id <- as.character(id)
+    if (length(id) != nped) 
+      stop("incompatible length for `id' and `ped' arguments")
+    father <- as.character(father)
+    if (length(father) != nped) 
+      stop("incompatible length for `father' and `ped' arguments")
+    mother <- as.character(mother)
+    if (length(mother) != nped) 
+      stop("incompatible length for `mother' and `ped' arguments")
+    affected <- as.logical(affected)
+    if (length(affected) != nped) 
+      stop("incompatible length for `affected' and `ped' arguments")
+    subject.names <- rownames(snp.data)
+    in.snp <- 1:nped
+    have.snps <- rep(TRUE, nped)
+    print("here")
+  }
+  else {
+    data <- as.data.frame(data)
+    nped <- nrow(data)
+    subject.names <- rownames(data)
+    if (missing(ped)) 
+      ped <- as.character(data[, 1])
+    else ped <- as.character(eval(mcall$ped, envir = data))
+    if (is.null(ped)) 
+      stop("pedigree identifiers not found in data frame")
+    if (missing(id)) 
+      id <- as.character(data[, 2])
+    else id <- as.character(eval(mcall$id, envir = data))
+    if (is.null(id)) 
+      stop("subject identifiers not found in data frame")
+    if (missing(father)) 
+      father <- as.character(data[, 3])
+    else father <- as.character(eval(mcall$father, envir = data))
+    if (is.null(father)) 
+      stop("father identifiers not found in data frame")
+    if (missing(mother)) 
+      mother <- as.character(data[, 4])
+    else mother <- as.character(eval(mcall$mother, envir = data))
+    if (is.null(mother)) 
+      stop("mother identifiers not found in data frame")
+    if (missing(affected)) 
+      affected <- (data[, 6] == 2)
+    else affected <- as.logical(eval(mcall$affected, envir = data))
+    if (is.null(affected)) 
+      stop("disease status not found in data frame")
+    in.snp <- match(subject.names, rownames(snp.data))
+    have.snps <- !is.na(in.snp)
+    print("there")
+  }
+  affected[is.na(affected)] <- FALSE
+  s.unique <- paste(ped, id, sep = ":")
+  if (any(duplicated(s.unique))) 
+    warning("Combination of pedigree ID and ID within pedigree does not generate unique IDs")
+  f.unique <- paste(ped, father, sep = ":")
+  fpos <- match(f.unique, s.unique)
+  m.unique <- paste(ped, mother, sep = ":")
+  mpos <- match(m.unique, s.unique)
+  prv(have.snps,affected,fpos,mpos)
+  
+  trio <- have.snps & affected & (!is.na(fpos)) & (have.snps[fpos]) & 
+    (!is.na(mpos)) & (have.snps[mpos])
+  ntrio <- sum(trio, na.rm = TRUE)
+  if (ntrio == 0) {
+    cat("No potentially complete trios to analyse\n")
+    return(NULL)
+  }
+  pd.snps <- in.snp[trio]
+  fr.snps <- in.snp[fpos[trio]]
+  mr.snps <- in.snp[mpos[trio]]
+  clust <- as.integer(factor(ped[trio]))
+  cord <- order(clust)
+  cat("Analysing", ntrio, "potentially complete trios in", 
+      max(clust), "different pedigrees\n")
+  scores <- .Call("score_tdt", pd.snps[cord], fr.snps[cord], 
+                  mr.snps[cord], clust[cord], snp.data, rules, snp.subset, 
+                  check.inheritance, robust, uncertain, PACKAGE = "snpStats")
+  chisq <- .Call("chisq_single", scores, PACKAGE = "snpStats")
+  if (is.null(rules)) {
+    if (is.null(snp.subset)) 
+      tested <- colnames(snp.data)
+    else tested <- colnames(snp.data)[snp.subset]
+  }
+  else {
+    if (is.null(snp.subset)) 
+      tested <- names(rules)
+    else tested <- names(rules)[snp.subset]
+  }
+  if (score) 
+    res <- new("SingleSnpTestsScore", snp.names = tested, 
+               chisq = chisq, N = scores$N, N.r2 = scores$N.r2, 
+               U = scores$U, V = scores$V)
+  else res <- new("SingleSnpTests", snp.names = tested, chisq = chisq, 
+                  N = scores$N, N.r2 = scores$N.r2)
+  res
 }

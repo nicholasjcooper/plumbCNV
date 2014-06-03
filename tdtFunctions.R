@@ -1,34 +1,9 @@
-#play with TDT
 
 
-if(F & !exists("tdt3")) {
-  # only bother recalculating if these vars not already present
-  #print(load("/chiswick/data/ncooper/ImmunochipFamilies/RESULTS/TDT_results.RData"))
-  #print(load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData")))
-  dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
-  
-  dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
-  family.check.and.validate(dir,"famstats_trios",suffix="")
-  plot.each.family.for.cnv(dir,reg="S1",chromo=1,cnv.bounds=c(197158752,197170596),suffix=48)
-  #tdt3 <- add.all.ids(tdt3,ped,dir)
-  #tdt4 <- add.all.ids(tdt4,ped,dir)
-  #add in the snp data # note that missing will get coded as 0 (zero) in this step
-  #  ww[["S51"]] <- as.numeric(tdt3[,"S51"][match(rownames(ww),rownames(tdt3))])
-  
-  # key families are those which have a parent with the cnv
-  #  keyfams <- names(which(tapply(ww$S51[parz],factor(ww$familyid[parz]),function(X) { any(X==2) })))
-  #just the key families
-  #  with(ww[ww$familyid %in% keyfams,],table(affected,S51))
-  # key families are those which have a child with the cnv
-  #  keyfams2 <- names(which(tapply(ww$S51[kidz],factor(ww$familyid[kidz]),function(X) { any(X==2) })))
-  #look at just the families with affected kids but not parents
-  #  with(ww[ww$familyid %in% keyfams2 & !ww$familyid %in% keyfams,],table(affected,S51)) 
-}
-
-
-
+# convert Z scores to p values
 Z.to.p <- function(Z) { p <- 2*pnorm(-abs(Z)); p[!is.finite(p)] <- NA; return(p) }
 
+# conduct a test of proportions
 t.o.p <- function(p1,p2,n1,n2) {
  p <- (p1 * n1 + p2 * n2) / (n1 + n2)
  SE <- sqrt((p*(1 - p)) * ((1/n1) + (1/n2)))
@@ -37,6 +12,7 @@ t.o.p <- function(p1,p2,n1,n2) {
 }
 
 
+## make a modified version of the top table that takes into account quality scores and 'decline'
 compile.qs.results.to.cc.toptable <- function(qs.results,dir,suffix,cnvResult,decline.thresh=-.1) {
   results1 <- qs.results$DEL
   results1 <- within(results1,{decline <- rowMeans(cbind(c(qc90_cs-qc50_cs)/qc50_cs, c(qc90_ct-qc50_ct)/qc50_ct),na.rm=T)})
@@ -48,8 +24,8 @@ compile.qs.results.to.cc.toptable <- function(qs.results,dir,suffix,cnvResult,de
 
   tt1 <- (results1[order(results1$qc90_sig),])
   tt2 <- (results2[order(results2$qc75_sig),])
-  oo1 <- cnvResult[[5]][[1]][which(rownames(cnvResult[[5]][[1]]) %in% (rownames(tt1[tt1$decline> decline.thresh,]))),]
-  oo2 <- cnvResult[[5]][[2]][which(rownames(cnvResult[[5]][[2]]) %in% (rownames(tt2[tt2$decline> decline.thresh,]))),]
+  oo1 <- cnvResult[[5]][[1]][which(rownames(cnvResult[[5]][[1]]) %in% (rownames(tt1[tt1$decline>= decline.thresh,]))),]
+  oo2 <- cnvResult[[5]][[2]][which(rownames(cnvResult[[5]][[2]]) %in% (rownames(tt2[tt2$decline>= decline.thresh,]))),]
   oo1$sig  <- results1$qc90_sig[match(rownames(oo1),rownames(results1))]
   oo2$sig  <- results2$qc75_sig[match(rownames(oo2),rownames(results2))]
   oo1$cases  <- results1$qc90_cs[match(rownames(oo1),rownames(results1))]
@@ -60,7 +36,9 @@ compile.qs.results.to.cc.toptable <- function(qs.results,dir,suffix,cnvResult,de
   return(list(DEL=oo1,DUP=oo2))
 }
 
-
+# internal function called by family.check.and.validate
+# prints statistics checking transmission/denovo rates in mothers/ fathers, affected/unaffected, etc
+# input parameters are quite specific objects
 print.family.check <- function(tt1,tt2,mothrate,fathrate,denov_ctrl,denov_case,trans.del,trans.dup,ZZ1,ZZ2,ZZ3,ZZ4,ZZ5,ZZ6) {
   cat("Controls, denovo rate [vs trans]: DELs, DUPs",denov_ctrl,"\n") # ctrl denovo rate
   cat("Cases, denovo rate [vs trans]: DELs, DUPs",denov_case,"\n") # overall denovo rate for affected
@@ -81,6 +59,8 @@ print.family.check <- function(tt1,tt2,mothrate,fathrate,denov_ctrl,denov_case,t
 }
 
 
+# runs then print statistics checking transmission/denovo rates in mothers/ fathers, affected/unaffected, etc
+# famstats is part of a name of the file to store family analysis statistics in
 family.check.and.validate <- function(dir,fam.stats="famstats",top.dels=NULL,top.dups=NULL,suffix="") {
   load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData"))
   fam.stats <- cat.path(dir$res,fam.stats,ext="RData")
@@ -158,53 +138,6 @@ plot.each.family.for.cnv <- function(dir,ped,reg="S1",chromo=1,cnv.bounds=c(1971
   return(NULL)
 }
 
-
-  # ONLY USE below to make plots of families for the CNV 'S6'
-# DN --\
-# ---NN, NN, DN, DN
-# NN --/ 
-#   
-#   DN --\:q
-
-# ---DD, DN, DN, NN
-# DN --/ 
-#   
-#   
-#   105889 mother has, 1 af child dont, 1 af does, 1 unaf dont
-# 157828 father has, 1 af does, 1 af qc-ed
-# 162020 mother has, 1 af child dont,  1 af qc-ed, 1 unaf qc-ed
-# 231234 father has, 1 af child dont,  1 af qc-ed, 1 unaf qc-ed
-# 263224 father has, 2 af child dont, 1 unaf qc-ed
-# 282433 father has, 1 unaf has, 1 af doesn't, 1 af qc-ed
-# 297972 mother has, 1 af has, 1 af qc-ed
-# 298496 mother has, 1 af dont, 1 af qc-ed
-# 468821 father has, 1 unaf dont, 2 af dont
-# 
-# 1 1
-#   1
-# 1
-# 1
-# 2
-# 1
-#   1
-# 1
-# 2
-# 
-# 
-# 9 dont, 3 do
-# 
-# 36/12 = 3
-
-
-# want to know the general rate of transmission for all DELs/DUPs
-# want to know the denovo rate of DELs/DUPs
-# 
-# 8:1 'denovos' are affected
-# next step, count within each family how many times each CNV is passed 
-# on versus not, sum for all. get transmission rate.
-
-
-
 # add column to a ped file, showing in plain english who is who within families, mum dad, boy, girl, etc
 ped.interp <- function(ped,long=TRUE) {
   want <- c("familyid","member","father","mother","sex","affected")
@@ -222,7 +155,7 @@ ped.interp <- function(ped,long=TRUE) {
   return(ped)
 }
 
-
+# the core function to just calculate the TDT for a set of CNVs/CNVRs
 core.tdt <- function(dir,cnvrs,cnvs,ped,double.table,DEL=TRUE) {
   cnvs <- update.cnvrs.with.cn(cnvs,double.table,DEL=DEL)
   tdt3 <- make.cnv.reg.snp.matrix(cnvs)
@@ -239,6 +172,7 @@ core.tdt <- function(dir,cnvrs,cnvs,ped,double.table,DEL=TRUE) {
 }
 
 
+## main function to conduct an analysis using trios, TDT, etc
 trio.analysis <- function(dir=NULL, cnvResults, ped.file, result.pref="",quality.scores=FALSE,restore=TRUE) {
   dir <- validate.dir.for(dir,c("res","cnv.qc"))
   if(!is.list(cnvResults) | length(cnvResults)!=5 | !is(cnvResults[[1]])[1]=="RangedData") { 
@@ -354,6 +288,7 @@ add.all.ids <- function(tdt.cnv, ped, dir) {
 }
 
 
+#make a snp matrix that represents a set of CNVs
 make.cnv.reg.snp.matrix <- function(X) {
   # imagine a CNV region... call the CNV (copy 1/3) as heterozygous = 2
   #                               Normal (copy 2)   as homozygous  =  1
@@ -399,16 +334,7 @@ make.cnv.reg.snp.matrix <- function(X) {
   return(data.frame.to.SnpMatrix(out))
 }
 
-# take the named elements of a list and put them into the current environment
-list.to.env <- function(list) {
-  if(!is.list(list)) { stop("this function's sole parameter must be a list object")}
-  if(is.null(names(list))) { stop("list elements must be named") }
-  if(length(list)>1000) { warning("list contains over 1000 elements, this operation will crowd the workspace") }
-  for(cc in 1:length(list)) {
-    assign(x=names(list)[cc],value=list[[cc]],pos=parent.frame())
-  }
-  return(NULL)
-}
+
 
 ## extract family links from a ped file
 get.ped.linked.sets <- function(ped,tdt3) {
@@ -443,9 +369,8 @@ get.ped.linked.sets <- function(ped,tdt3) {
   return(list(kk=kk,mm=mm,ff=ff,kmlink=kmlink,kflink=kflink,mklink=mklink,fklink=fklink))
 }
 
-# sumof{for each mum, sum of how many times she passes a del to her children} / numkids
-# sumof{for each dad, sum of how many times  he passes a del to his children} / numkids
 
+## generate table of counts, transmissions, etc for each CNV that is used for TDT and other transmission analysis
 get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
                                             replace.na=FALSE,replace.with=c(M=0.5,D=0.5,C=0.5)) {
   if(is(tdt.snp)[1]=="SnpMatrix") {  TDT <- SnpMatrix.to.data.frame(tdt.snp) } else { TDT <- tdt.snp }
@@ -597,4 +522,78 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
 
 
 
+
+#play with TDT
+
+
+if(F & !exists("tdt3")) {
+  # only bother recalculating if these vars not already present
+  #print(load("/chiswick/data/ncooper/ImmunochipFamilies/RESULTS/TDT_results.RData"))
+  #print(load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData")))
+  dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
+  
+  dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
+  family.check.and.validate(dir,"famstats_trios",suffix="")
+  plot.each.family.for.cnv(dir,reg="S1",chromo=1,cnv.bounds=c(197158752,197170596),suffix=48)
+  #tdt3 <- add.all.ids(tdt3,ped,dir)
+  #tdt4 <- add.all.ids(tdt4,ped,dir)
+  #add in the snp data # note that missing will get coded as 0 (zero) in this step
+  #  ww[["S51"]] <- as.numeric(tdt3[,"S51"][match(rownames(ww),rownames(tdt3))])
+  
+  # key families are those which have a parent with the cnv
+  #  keyfams <- names(which(tapply(ww$S51[parz],factor(ww$familyid[parz]),function(X) { any(X==2) })))
+  #just the key families
+  #  with(ww[ww$familyid %in% keyfams,],table(affected,S51))
+  # key families are those which have a child with the cnv
+  #  keyfams2 <- names(which(tapply(ww$S51[kidz],factor(ww$familyid[kidz]),function(X) { any(X==2) })))
+  #look at just the families with affected kids but not parents
+  #  with(ww[ww$familyid %in% keyfams2 & !ww$familyid %in% keyfams,],table(affected,S51)) 
+}
+
+
+
+
+# ONLY USE below to make plots of families for the CNV 'S6'
+# DN --\
+# ---NN, NN, DN, DN
+# NN --/ 
+#   
+#   DN --\:q
+
+# ---DD, DN, DN, NN
+# DN --/ 
+#   
+#   
+#   105889 mother has, 1 af child dont, 1 af does, 1 unaf dont
+# 157828 father has, 1 af does, 1 af qc-ed
+# 162020 mother has, 1 af child dont,  1 af qc-ed, 1 unaf qc-ed
+# 231234 father has, 1 af child dont,  1 af qc-ed, 1 unaf qc-ed
+# 263224 father has, 2 af child dont, 1 unaf qc-ed
+# 282433 father has, 1 unaf has, 1 af doesn't, 1 af qc-ed
+# 297972 mother has, 1 af has, 1 af qc-ed
+# 298496 mother has, 1 af dont, 1 af qc-ed
+# 468821 father has, 1 unaf dont, 2 af dont
+# 
+# 1 1
+#   1
+# 1
+# 1
+# 2
+# 1
+#   1
+# 1
+# 2
+# 
+# 
+# 9 dont, 3 do
+# 
+# 36/12 = 3
+
+
+# want to know the general rate of transmission for all DELs/DUPs
+# want to know the denovo rate of DELs/DUPs
+# 
+# 8:1 'denovos' are affected
+# next step, count within each family how many times each CNV is passed 
+# on versus not, sum for all. get transmission rate.
 

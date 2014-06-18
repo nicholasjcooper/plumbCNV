@@ -1,7 +1,8 @@
 
 
 # convert Z scores to p values
-Z.to.p <- function(Z) { p <- 2*pnorm(-abs(Z)); p[!is.finite(p)] <- NA; return(p) }
+# this should be in iFunctions
+# Z.to.p <- function(Z) { p <- 2*pnorm(-abs(Z)); p[!is.finite(p)] <- NA; return(p) }
 
 # conduct a test of proportions
 t.o.p <- function(p1,p2,n1,n2) {

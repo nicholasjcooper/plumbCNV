@@ -673,7 +673,8 @@ logiti <- function(case,ctrl,case.d=NA,cont.d=NA,inclusive=T,...,stat=c("p.value
   cnv <- c(ctrl.vec,case.vec)
  # print(table(cnv,ph))
   res <- glm(ph~cnv,family=binomial("logit"))
-  out <- (mysumfun(res,ci=T))
+ # return(res) ##### HERE!!!!
+  out <- (logistic.summary(res,ci=T))
   #OR OR-low OR-hi  p-value
   if(stat=="conf.int") { 
     Out <- paste(round(as.numeric(out[[1]][,"OR-low"]),3),

@@ -22,19 +22,6 @@ auto.mode <- function(on=T,set=F) {
 }
 
 
-comify <- function(x) {
-  x <- (paste(x))
-  splt <- strsplit(x,"")[[1]]
-  nm <- rev(splt)
-  cnt <- 0; new <- NULL
-  LL <- length(nm)
-  for (cc in 1:LL) {
-    new <- c(nm[cc],new)
-    cnt <- cnt+1
-    if(cnt>2 & cc!=LL) { new <- c(",",new); cnt <- 0 }
-  }
-  return(paste(new,collapse=""))
-}
 
 
 

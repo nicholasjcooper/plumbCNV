@@ -22,6 +22,21 @@ auto.mode <- function(on=T,set=F) {
 }
 
 
+comify <- function(x) {
+  x <- (paste(x))
+  splt <- strsplit(x,"")[[1]]
+  nm <- rev(splt)
+  cnt <- 0; new <- NULL
+  LL <- length(nm)
+  for (cc in 1:LL) {
+    new <- c(nm[cc],new)
+    cnt <- cnt+1
+    if(cnt>2 & cc!=LL) { new <- c(",",new); cnt <- 0 }
+  }
+  return(paste(new,collapse=""))
+}
+
+
 
 #' Internal function to assess whether data is a character or list of characters
 is.ch <- function(x) { 
@@ -8324,17 +8339,116 @@ snp.cr.summary <- function(bigMat,histo=F,print=F,n.cores=1) {
 }
 
 
-length.analysis.suf <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75) {
-  DELqs <- reader(cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt"))
-  DUPqs <- reader(cat.path(dir$res,"qs.dup.results",suf=suffix,ext="txt"))
-  X <- cnvResult[[1]]
-  X[[4]] <- X[[4]][DELqs[[1]]>del.thr,]
-  X[[5]] <- X[[5]][DUPqs[[1]]>dup.thr,]
-  return(length.analysis(LL=LL,DEL=X[[4]],DUP=X[[5]],del.thr=del.thr,dup.thr=dup.thr))
+## internal function to get range() when there might be infinite values
+range.fin <- function(X) {
+  X <- X[is.finite(X)]
+  X <- narm(X)
+  return(range(X))
 }
 
 
-length.analysis <- function(LL,dir,DEL,DUP,del.thr=.95,dup.thr=.75,thr.col="score",cnts=NULL) {
+length.analysis.pic <- function(LL,dir,DEL,DUP,thr.col="score",cnts=NULL,title="Sanger vs UVA",below=2*10^6) {
+  del.thrs <- c(0,0.5,0.75,0.9,0.95)
+  dup.thrs <- c(0,0.5,0.75,0.9,0.95)
+  LL[1] <- LL[1] +1
+  NN <- length(del.thrs)
+  out <- vector("list",NN)
+  DEL <- remove.duplicated.id.ranges(DEL)
+  DUP <- remove.duplicated.id.ranges(DUP)
+  for(cc in 1:NN) {
+    out[[cc]] <- length.analysis(LL,dir,DEL=DEL,DUP=DUP,del.thr=del.thrs[cc],
+                                 dup.thr=dup.thrs[cc],thr.col=thr.col,cnts=cnts,upper.thr=below)
+  } 
+  DELZ <- lapply(out,"[[","DEL")
+  DUPZ <- lapply(out,"[[","DUP")
+  plot.one.la(DELZ,NN,LL,del.thrs,typ="rDEL",title=title)
+  plot.one.la(DUPZ,NN,LL,dup.thrs,typ="rDUP",title=title)
+}
+
+
+
+## make a plot of the confidence intervals of ratio across CNV length for each quality threshold
+plot.one.la <- function(X,NN,LL,thrz,typ="rDEL",title="") {
+  htcc <- c("red","orange","lightgreen","turquoise","blue")
+  null.col <- "grey"
+  MAX.Y <- 10
+  X <- do.call("rbind",args=X[1:NN])
+  X[["thr"]] <- rep(thrz,each=length(LL))
+  est <- as.numeric(X$estimate)
+  lo <- sapply(strsplit(X$conf.int,","),"[",1)
+  hi <- sapply(strsplit(X$conf.int,","),"[",2)
+  lo <- as.numeric(lo) ; hi <- as.numeric(hi)
+  yl <- range.fin(c(lo,hi))
+  if(any(yl>MAX.Y)) { 
+    warning("upper confidence ratio exceeded",MAX.Y,
+            "so such scores will be truncated to 10 for plotting"); yl[2] <- 10 }
+  hi[!is.finite(hi)] <- yl[2]
+  est[!is.finite(est)] <- yl[2]
+  fn <- cat.path(dir=getwd(),fn=title,pref="ratio.by.lengths",suf=typ,ext="pdf")
+  tqt <- if(title=="") { "Quality thresholds" } else { paste(title,"by quality threshold") }
+  pdf(fn)
+  plot(x=(LL), y=rep(1,length(LL)), col="white",
+       main=tqt, ylab="Odds-Ratio",xlab="CNVs > length",log="x",ylim=yl)
+  #abline(h=c(0.99,1.01),col="black",lty="dotted")
+  txt <- character(NN)
+  for(ee in 1:NN) {
+    txt[ee] <- paste(typ,"QS >",thrz[ee])
+    sel <- X$thr==thrz[ee]
+    segments(y0=.001*(995:1005),x0=rep(LL[1],11),x1=rep(tail(LL,1),11),col=null.col)
+    lines(x=LL,y=lo[sel],col=htcc[ee],lty="dotted")
+    lines(x=LL,y=hi[sel],col=htcc[ee],lty="dotted")
+    lines(x=LL,y=est[sel],col=htcc[ee],lwd=1.4)
+  }
+  legend("topleft",bty="n",legend=txt,col=htcc[1:NN],lty="solid")
+  legend("bottomleft",bty="n",legend="NO EFFECT (ratio = 1)",col=null.col,lty="solid",lwd=3)
+  cat("wrote",fn,"\n")
+  dev.off()
+  return(NULL)
+}
+
+
+## earlier version of the plot making separate graphs with error bars. clearer but harder to get in one pic
+plot.one.errbar <- function(X,NN,LL,thrz,typ="rDEL") {
+  require(Hmisc)
+  X <- do.call("rbind",args=X[1:NN])
+  X[["thr"]] <- rep(thrz,each=length(LL))
+  est <- as.numeric(X$estimate)
+  lo <- sapply(strsplit(X$conf.int,","),"[",1)
+  hi <- sapply(strsplit(X$conf.int,","),"[",2)
+  lo <- as.numeric(lo) ; hi <- as.numeric(hi)
+  yl <- range.fin(c(lo,hi))
+  hi[!is.finite(hi)] <- yl[2]
+  est[!is.finite(est)] <- yl[2]
+  fn <- cat.path(dir=getwd(),fn="testplotforlengths",suf=typ,ext="pdf")
+  pdf(fn)
+  for(ee in 1:NN) {
+    txt <- paste(typ,"Quality threshold",del.thrs[ee])
+    plot(x=(LL), y=rep(1,length(LL)), col="white",
+         main=txt, ylab="Odds-Ratio",xlab="CNVs > length",log="x",ylim=yl)
+    sel <- X$thr==del.thrs[ee]
+    segments(y0=.001*(995:1005),x0=rep(LL[1],11),x1=rep(tail(LL,1),11),col="yellow")
+    errbar( x=(LL), y=est[sel], hi[sel], lo[sel] ,col=ee, add=T)
+    abline(h=c(0.99,1.01),col="darkgrey",lty="dotted")
+  }
+  cat("wrote",fn,"\n")
+  dev.off()
+  return(NULL)
+}
+
+
+length.analysis.suf <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75,...) {
+  DELqs <- reader(cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt"))
+  DUPqs <- reader(cat.path(dir$res,"qs.dup.results",suf=suffix,ext="txt"))
+  X <- cnvResult[[1]]
+  X[[4]][["score"]] <- DELqs[[1]]
+  X[[5]][["score"]] <- DUPqs[[1]]
+  X[[4]] <- X[[4]][DELqs[[1]]>del.thr,]
+  X[[5]] <- X[[5]][DUPqs[[1]]>dup.thr,]
+  return(length.analysis(LL=LL,dir,DEL=X[[4]],DUP=X[[5]],del.thr=del.thr,dup.thr=dup.thr,...))
+}
+
+
+length.analysis <- function(LL,dir,DEL,DUP,del.thr=.95,dup.thr=.75,thr.col="score",cnts=NULL,upper.thr=3000000) {
   thrsh <- .05/length(LL); blnk <- rep(NA,times=length(LL))
   resultsDEL <- resultsDUP <- data.frame(length=LL,cases=blnk,controls=blnk,ratio=blnk,FET=blnk,pass=blnk)
   if(!is.null(cnts)) {
@@ -8346,23 +8460,26 @@ length.analysis <- function(LL,dir,DEL,DUP,del.thr=.95,dup.thr=.75,thr.col="scor
     cnts <- table(sample.info$phenotype[sample.info$QCfail==0])
   } 
   if(!is.null(DEL)) { 
+    #print(head(DEL))
     DEL <- remove.duplicated.id.ranges(DEL) 
     if(thr.col %in% colnames(DEL) & nrow(DEL)>0) {
       DEL <- DEL[DEL[[thr.col]]>=del.thr,]
       if(nrow(DEL)<1) { warning("filter 'del.thr' on deletions DEL removed all records!"); return(NULL) }
     } else { warning(thr.col,"not found in DEL, so thresholds were not applied") }
   }
-  if(!is.null(DUP)) { 
+  if(!is.null(DUP)) {
+    #print(head(DUP)) 
     DUP <- remove.duplicated.id.ranges(DUP) 
     if(thr.col %in% colnames(DUP) & nrow(DUP)>0) {
       DUP <- DUP[DUP[[thr.col]]>=dup.thr,]
       if(nrow(DUP)<1) { warning("filter 'dup.thr' on duplicates DUP removed all records!"); return(NULL) }
     } else { warning(thr.col,"not found in DUP, so thresholds were not applied") }
   }
-  
+  #  to retrieve final filtered lists : return(list(DEL=DEL,DUP=DUP)) 
   for(ll in 1:length(LL)) {
-    ii <- print.biggest.cnvs(DEL=DEL,DUP=DUP,cutoff=LL[ll],print=F)
-    jj <- table(ii[[1]]$phenotype); if(length(jj)<2) { jj <- c(0,jj) };kk <-  table(ii[[2]]$phenotype) 
+    ii <- print.biggest.cnvs(DEL=DEL,DUP=DUP,above=LL[ll],below=upper.thr[ll],print=F)
+    jj <- table(ii[[1]]$phenotype); while(length(jj)<2) { jj <- c(0,jj) };
+    kk <-  table(ii[[2]]$phenotype) ; while(length(kk)<2) { kk <- c(0,kk) };
     resultsDEL[ll,"controls"] <- jj[1]
     resultsDEL[ll,"cases"] <- jj[2]
     resultsDUP[ll,"controls"] <- kk[1]
@@ -8465,7 +8582,8 @@ power.analysis.fet2 <- function(bonf=.05/1000,bu=10000) {
 
 # print the longest CNVs in the whole (towards end of pipeline in plumbCNV())
 # either input cnvResult or separate DEL and DUP
-print.biggest.cnvs <- function(cnvResult=NULL,DEL=NULL,DUP=NULL,cutoff=3000000,print=TRUE,add.genes=FALSE) {
+print.biggest.cnvs <- function(cnvResult=NULL,DEL=NULL,DUP=NULL,above=3000000,below=NA,
+                               print=TRUE,add.genes=FALSE) {
   if(!is.null(DEL) | !is.null(DUP)) {
     if(!any(c(is(DEL)[1],is(DUP)[1]) %in% c("RangedData","GRanges"))) { 
       stop("invalid DEL/DUP, should be RangedData or GRanges") }
@@ -8479,34 +8597,46 @@ print.biggest.cnvs <- function(cnvResult=NULL,DEL=NULL,DUP=NULL,cutoff=3000000,p
     DEL <- as(cnvResult[[4]],"GRanges")
     DUP <- as(cnvResult[[5]],"GRanges")
   }
+  if(!is.na(below)) {
+    if(is.numeric(below)) {
+      if(below<=above) { 
+        warning("below must be > above, set to NA"); below <- NA 
+      }
+    } else { warning("below set to NA, must be numeric"); below <- NA }
+  }
   if(add.genes) { 
     DEL <- annot.cnv(DEL)
     DUP <- annot.cnv(DUP)
   }
+  if(!is.na(below)) { bltxt <- paste("and shorter than ",below,"",sep="") } else { bltxt <- "" }
   if(!is.null(DEL)) {
     rl <- rev(sort(width(DEL)))
-    n <- length(rl[rl>cutoff])
+    n <- length(rl[rl>above])
+    if(is.na(below)) { bb <- n } else { bb <- length((rl[rl>above])[rl[rl>above]<below]) }
     if(n>0) {
-      cat(n,"DEL CNVs found longer than",cutoff,"base pairs\n")
-      cnv1 <- toGenomeOrder(DEL[head(rev(order(width(DEL))),n),])
+      cat(n,"DEL CNVs found longer than",above,bltxt,"base pairs\n")
+      cnv1 <- toGenomeOrder(DEL[tail(head(rev(order(width(DEL))),n),bb),])
       cnv1 <- as(cnv1,"RangedData")
       if(add.genes) { cnv1[["n.genes"]] <- count.genes(cnv1[["gene"]]) }
       if(print) { print(cnv1) }
     } else {
-      cat("no DEL CNVs found longer than",cutoff,"base pairs\n")
+      cnv1 <- NULL
+      cat("no DEL CNVs found longer than",above,bltxt,"base pairs\n")
     }
   }
   if(!is.null(DUP)) {
     rl <- rev(sort(width(DUP)))
-    n <- length(rl[rl>cutoff])
+    n <- length(rl[rl>above])
+    if(is.na(below)) { bb <- n } else { bb <- length((rl[rl>above])[rl[rl>above]<below]) }
     if(n>0) {
-      cat(n,"DUP CNVs found longer than",cutoff,"base pairs\n")
-      cnv2 <- toGenomeOrder(DUP[head(rev(order(width(DUP))),n),])
+      cat(n,"DUP CNVs found longer than",above,bltxt,"base pairs\n")
+      cnv2 <- toGenomeOrder(DUP[tail(head(rev(order(width(DUP))),n),bb),])
       cnv2 <- as(cnv2,"RangedData")
       if(add.genes) { cnv2[["n.genes"]] <- count.genes(cnv2[["gene"]]) }
       if(print) { print(cnv2) }
     } else {
-      cat("no DUP CNVs found longer than",cutoff,"base pairs\n")
+      cnv2 <- NULL
+      cat("no DUP CNVs found longer than",above,bltxt,"base pairs\n")
     }
   }
   if(!print) { 
@@ -10882,7 +11012,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   
   ##
   if(print.summary.overlaps | !(tolower(results) %in% c("dt","ranges"))) {
-    print.biggest.cnvs(cnvResults,cutoff=3000000)      
+    print.biggest.cnvs(cnvResults,above=3000000)      
     big.summary <- do.CNV.all.overlaps.summary(cnvResults,dir,comps=c(1:5),dbs=1:3,len.lo=1, len.hi=5000000,
                                                min.sites=min.sites,n.cores=1) #n.cores) 1 is faster?
     n.phenos <- length(unique(cnvResults[[1]][["phenotype"]]))
@@ -10985,7 +11115,7 @@ plumbcnv <- function(settings=list(),...) {
 
 
 # load other files with functions
-#library(NCmisc)
-#library(reader)
-#source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/bigHelpers.R")
-#source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/TempFunctions.R")
+# library(NCmisc)
+# library(reader)
+## source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/bigHelpers.R")
+## source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/TempFunctions.R")

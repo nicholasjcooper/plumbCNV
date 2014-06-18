@@ -131,15 +131,15 @@ full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,45),no.trios=c(5
   rr <- pp[pp$father==0 & pp$mother==0,]
   kidz <- qq$sample; adultz <- rr$sample
   if(is.null(labels)) { labels <- rep("",length(trios)) }
-  big.table <- matrix(nrow=length(trios)*6,ncol=22)
-  colnames(big.table) <- c("HMM","Type","Who","tr.tr","ntr.tr","tr.dnv","ntr.dnv","incr.tp.samp","its.pc","decr.fp.samp","dfs.pc",
+  big.table <- matrix(nrow=length(trios)*6,ncol=20)
+  colnames(big.table) <- c("HMM","Type","Who","tr.rate","denov","incr.tp.samp","its.pc","decr.fp.samp","dfs.pc",
                            "consis.tp.samp","cts.pc","CNV.bef","CNV.aft",
                             "incr.tp","it.pc","decr.fp","df.pc","pers.tp","pc.pre","pc.post")
   big.table <- as.data.frame(big.table,stringsAsFactors=FALSE)
   big.table[[1]] <- rep(labels,each=6)
   big.table[[2]] <- c(rep("rDELs",3),rep("rDUPs",3))
   big.table[[3]] <- rep(c("ALL","Kids","Parents"),2)
-  cl <- 8:(ncol(big.table))
+  cl <- 6:(ncol(big.table))
   for (cc in 1:length(trios)) {
     if(!silent) { Header(paste(labels[cc],trios[cc],"vs",no.trios[cc])) }
     load(paste("RESULTS/fullresult",trios[cc],".RData",sep=""))
@@ -154,18 +154,18 @@ full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,45),no.trios=c(5
     cnvResult.trio[[1]][[5]][["score"]] <- dup.qs.tr[[1]]
     cnvResult.raw[[1]][[4]][["score"]] <- del.qs.ntr[[1]]
     cnvResult.raw[[1]][[5]][["score"]] <- dup.qs.ntr[[1]]
-    ccm <-  c(6291,1514)/sum(c(6291,1514))  #c(.37,.63) #cae-control ratio
+    ccm <- c(.37,.63) #cae-control ratio
     # get denovo and transmission rates
-    tt1.tr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=trios[cc],ext="RData"))$tt1)[c(1,2,7,8)]
-    tt1.ntr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=no.trios[cc],ext="RData"))$tt1)[c(1,2,7,8)]
-    tt2.tr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=trios[cc],ext="RData"))$tt2)[c(1,2,7,8)]
-    tt2.ntr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=no.trios[cc],ext="RData"))$tt2)[c(1,2,7,8)]     
-    tr.change1 <- round(c(sum(tt1.tr[1:2]*ccm) , sum(tt1.ntr[1:2]*ccm)),3)
-    tr.change2 <- round(c(sum(tt2.tr[1:2]*ccm) , sum(tt2.ntr[1:2]*ccm)),3)
-    dn.change1 <- round(c(sum(tt1.tr[3:4]*ccm) , sum(tt1.ntr[3:4]*ccm)),3)
-    dn.change2 <- round(c(sum(tt2.tr[3:4]*ccm) , sum(tt2.ntr[3:4]*ccm)),3)
-    big.table[((cc-1)*6)+1,4:5] <- tr.change1; big.table[((cc-1)*6)+1,6:7] <- dn.change1 
-    big.table[((cc-1)*6)+4,4:5] <- tr.change2; big.table[((cc-1)*6)+4,6:7] <- dn.change2
+    tt1.tr <- trans.test(reader(cat.path("RESULTS","famstats_trios",suf=trios[cc],ext="RData"))$tt1)[c(1,2,7,8)]
+    tt1.ntr <- trans.test(reader(cat.path("RESULTS","famstats_trios",suf=no.trios[cc],ext="RData"))$tt1)[c(1,2,7,8)]
+    tt2.tr <- trans.test(reader(cat.path("RESULTS","famstats_trios",suf=trios[cc],ext="RData"))$tt2)[c(1,2,7,8)]
+    tt2.ntr <- trans.test(reader(cat.path("RESULTS","famstats_trios",suf=no.trios[cc],ext="RData"))$tt2)[c(1,2,7,8)]     
+    tr.change1 <- round(sum(tt1.tr[1:2]*ccm) - sum(tt1.ntr[1:2]*ccm),3)
+    tr.change2 <- round(sum(tt2.tr[1:2]*ccm) - sum(tt2.ntr[1:2]*ccm),3)
+    dn.change1 <- round(sum(tt1.tr[3:4]*ccm) - sum(tt1.ntr[3:4]*ccm),3)
+    dn.change2 <- round(sum(tt2.tr[3:4]*ccm) - sum(tt2.ntr[3:4]*ccm),3)
+    big.table[((cc-1)*6)+1,4] <- tr.change1; big.table[((c-1)*6)+1,5] <- dn.change1 
+    big.table[((cc-1)*6)+4,4] <- tr.change2; big.table[((c-1)*6)+4,5] <- dn.change2
     #return(cnvResult.raw)
     if(!silent) { print("rDELs") }
     big.table[((cc-1)*6)+1,cl] <- summary.of.cnv.change.with.trios(cnvResult.trio, cnvResult.raw,DEL=T,silent=silent,thr=thr)

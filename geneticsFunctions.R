@@ -199,7 +199,7 @@ remove.duplicated.id.ranges <- function(X,column="id") {
   if(column %in% colnames(X)) { 
     coln <- which(colnames(X)==column)
   } else {
-    stop("column not found in X") 
+    return(X) ; warning("column '",column,"' not found in X, duplicates may still exist") 
   }
   if(!is(X)[1]=="RangedData") { stop("X wasn't RangedData") }
   prn <- nrow(X)
@@ -657,13 +657,48 @@ get.GO.for.genes <- function(gene.list,bio=T,cel=F,mol=F) {
 }
 
 
+# basically same format as the fishers test but uses logistic regression (more power)
+logiti <- function(case,ctrl,case.d=NA,cont.d=NA,inclusive=T,...,stat=c("p.value","conf.int","estimate","all")) { 
+  stat <- tolower(paste(stat[1]))
+  if(inclusive) {
+    case.d <- case.d-case
+    cont.d <- cont.d-ctrl
+  }
+  if(length(case)>1 | length(ctrl)>1) { case <- case[1]; ctrl <- ctrl[1]; warning("only first elements of count vectors will be used") }
+  if(!stat %in% c("p.value","conf.int","estimate","all")) { 
+    warning("invalid stat value, setting to p.value"); stat <- "p.value" }
+  case.vec <- c(rep(0,(case.d)),rep(1,case))
+  ctrl.vec <- c(rep(0,(cont.d)),rep(1,ctrl))
+  ph <- c(rep(0,length(ctrl.vec)),rep(1,length(case.vec)))
+  cnv <- c(ctrl.vec,case.vec)
+ # print(table(cnv,ph))
+  res <- glm(ph~cnv,family=binomial("logit"))
+  out <- (mysumfun(res,ci=T))
+  #OR OR-low OR-hi  p-value
+  if(stat=="conf.int") { 
+    Out <- paste(round(as.numeric(out[[1]][,"OR-low"]),3),
+     round(as.numeric(out[[1]][,"OR-hi"]),3),sep=",") 
+    #return(out)
+  } else {
+    if(stat=="estimate") {
+      Out <- out[[1]][,"OR"]
+    } else { 
+      if(stat=="all") {
+        Out <- out
+      } else {
+        Out <- (out[[1]][,"p-value"])
+      }
+    }
+  }
+  return(Out)
+}
 
 # fishers exact test given case and control obs counts, then total group counts from info object or manual counts.
-FET <- function(case,ctrl,dir=NULL,sample.info=NULL,case.d=NA,cont.d=NA,stat=c("p.value","conf.int","estimate")) {
+FET <- function(case,ctrl,dir=NULL,sample.info=NULL,case.d=NA,cont.d=NA,stat=c("p.value","conf.int","estimate","all"),inclusive=T) {
   skip.c <- F
   DIGITS <- 3
   stat <- tolower(paste(stat[1]))
-  if(!stat %in% c("p.value","conf.int","estimate")) { 
+  if(!stat %in% c("p.value","conf.int","estimate","all")) { 
     warning("invalid stat value, setting to p.value"); stat <- "p.value" }
   if(is.null(sample.info)) {
     if(!is.null(dir)) {
@@ -681,15 +716,21 @@ FET <- function(case,ctrl,dir=NULL,sample.info=NULL,case.d=NA,cont.d=NA,stat=c("
     p.c <- table(sample.info$phenotype,sample.info$QCfail)[,1]
     case.d <- p.c[2]; cont.d <- p.c[1]
   }
-  fet <- numeric(length(case))
+  if(stat=="all") { fet <- vector("list",length(case)) } else { fet <- numeric(length(case)) }
   for (cc in 1:length(case)) {
     if(length(case[cc])>0 & length(ctrl[cc])==0) { ctrl[cc] <- 0 }
     if(length(case[cc])==0 & length(ctrl[cc])>0) { case[cc] <- 0 }
     if(length(case[cc])>0 & length(ctrl[cc])>0) { 
-      FTR <- fisher.test(x=matrix(c(case[cc],case.d,ctrl[cc],cont.d),nrow=2))[[stat]]
+      if(inclusive) {
+        case.d2 <- case.d-case[cc]
+        cont.d2 <- cont.d-ctrl[cc]
+      } else { case.d2 <- case.d; cont.d2 <- cont.d }
+      ftr <- fisher.test(x=matrix(c(case[cc],case.d2,ctrl[cc],cont.d2),nrow=2))
+      FTR <- ftr[[stat]]
       if(stat=="conf.int") { fet[cc] <- paste(round(FTR,digits=DIGITS),collapse=",") } else { fet[cc] <- FTR }
+      if(stat=="all") { fet[[cc]] <- ftr }
     } else {
-      fet[cc] <- NA
+      if(stat=="all") { fet[[cc]] <- NA } else { fet[cc] <- NA }
     }
     #loop.tracker(cc,length(case))
   }
@@ -1389,7 +1430,7 @@ get.cyto <- function(ucsc="hg18",dir=NULL,bioC=TRUE) {
 
 
 ## get list of all exons, names, starts, ends
-get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
+get.exon.annot <- function(dir=NULL,ucsc="hg18",bioC=T,list.out=F) {
   ucsc <- ucsc.sanitizer(ucsc)
   ## load exon annotation (store locally if not there already)
   from.scr <- T
@@ -1397,8 +1438,8 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
     ex.fn <- cat.path(dir$ano,"exonAnnot.RData")
     if(file.exists(ex.fn)) {
       ts <- get(paste(load(ex.fn)))
-      if((range.out|!list.out) & is.data.frame(ts)) { from.scr <- F }
-      if((list.out & !range.out) & is.list(ts)) { from.scr <- F }
+      if((bioC|!list.out) & is.data.frame(ts)) { from.scr <- F }
+      if((list.out & !bioC) & is.list(ts)) { from.scr <- F }
     }
   } 
   must.use.package("GenomicFeatures",T)
@@ -1420,7 +1461,7 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
     select <- match(names(ts),egSymb[,1])
     names(ts)[!is.na(select)] <- egSymb[,2][select[!is.na(select)]]
   }
-  if(!list.out | range.out) {
+  if(!list.out | bioC) {
     if(from.scr) {
       ts <- as.data.frame(ts)
       chrs <- paste(ts$seqnames); chrs <- gsub("chr","",chrs)
@@ -1429,12 +1470,12 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
         colnames(ts) <- c("gene","chr","start","end","width","strand","txid","txname")
       } else {
         cat(" unexpected colnames found using makeTranscriptDbFromUCSC()\n")
-        if(range.out) { cat(" therefore returning data.frame instead of RangedData object\n") ;
-                        range.out <- F }
+        if(bioC) { cat(" therefore returning data.frame instead of RangedData object\n") ;
+                        bioC <- F }
       }
       if(exists("ex.fn")) { save(ts,file=ex.fn) }
     }
-    if(range.out) {
+    if(bioC) {
       ts <- RangedData(ranges=IRanges(start=ts$start,end=ts$end),
                        space=ts$chr,gene=ts$gene, strand=ts$strand,
                        txid=ts$txid, txname=ts$txname,universe=ucsc)
@@ -1447,7 +1488,8 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",range.out=T,list.out=F) {
 }
 
 ## get list of all genes, names, starts, ends, optionally bands
-get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=TRUE,duplicate.report=FALSE,unique=FALSE,map.cox.to.6=TRUE) {
+#' @param ens.id logical, whether to include the ensembl id in the dataframe
+get.gene.annot <- function(dir=NULL,ucsc="hg18",bioC=TRUE,duplicate.report=FALSE,unique=FALSE,map.cox.to.6=TRUE,ens.id=FALSE,refresh=FALSE) {
   # faster than exon, but only contains whole gene ranges, not transcripts
   # allows report on duplicates as some might be confused as to why some genes
   # have more than one row in the listing (split across ranges usually)
@@ -1458,12 +1500,16 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=TRUE,duplicate.report=
   if(!is.null(dir)) {
     dir <- validate.dir.for(dir,"ano")
     utxt <- ""; if(unique) { utxt <- "_unq" }
+    if(ens.id) { utxt <- paste(utxt,"ens",sep="_") }
     gn.fn <- cat.path(dir$ano,"geneAnnot",pref=ucsc,suf=utxt,ext="RData")
-    if(file.exists(gn.fn)) {
+    if(file.exists(gn.fn) & !refresh) {
       dat <- get(paste(load(gn.fn)))
       from.scr <- F
     }
   }
+  # colnames for output
+  nm.list <- c("gene","chr","start","end","band")
+  if(ens.id & bioC) { warning("ens.id=TRUE only has an effect when bioC=FALSE") }
   if(from.scr) {
     if(ucsc=="hg18") {
       ens <- useMart("ENSEMBL_MART_ENSEMBL",
@@ -1475,17 +1521,20 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=TRUE,duplicate.report=
       ens <- useMart("ensembl")
     }
     ens <- useDataset("hsapiens_gene_ensembl",mart=ens)
-    data(egSymb)
-    dat <- getBM(attributes = c("hgnc_symbol", "chromosome_name",
-                                "start_position", "end_position", "band"), filters = "hgnc_symbol",
-                 values = egSymb[,2], mart = ens)
+    #data(egSymb)
+    attr.list <- c("hgnc_symbol", "chromosome_name",
+      "start_position", "end_position", "band")
+    if(ens.id) { attr.list <- c(attr.list,"ensembl_gene_id"); nm.list <- c(nm.list,"ens.id") }
+    #dat <- getBM(attributes = attr.list, filters = "hgnc_symbol",
+    #             values = egSymb[,2], mart = ens)
+    dat <- getBM(attributes = attr.list,  mart = ens)
     if(exists("gn.fn")) { save(dat,file=gn.fn) }
   } 
   if(map.cox.to.6) {
     dat$chromosome_name[grep("c6",dat$chromosome_name,ignore.case=T)] <- 6  # prevent issues with c6_COX, c6_QBL  
     dat$chromosome_name[grep("NT",dat$chromosome_name,ignore.case=T)] <- "Z_NT"  # merge all NT regions to one label
   }
-  if(range.out) {
+  if(bioC) {
     outData <- RangedData(ranges=IRanges(start=dat$start_position,end=dat$end_position),
                           space=dat$chromosome_name,gene=dat$hgnc_symbol, band=dat$band, universe=ucsc)
     outData <- toGenomeOrder2(outData,strict=T)
@@ -1494,10 +1543,11 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",range.out=TRUE,duplicate.report=
       # but haven't done anything about them or removed them! 
     }
   } else {
-    outData <- dat; colnames(outData) <- c("gene","chr","start","end","band")
+    outData <- dat; colnames(outData) <- nm.list
   }
   return(outData)
 }
+
 
 
 ## create telomere locations - artibrary number of kb at start and end of each CHR
@@ -2060,7 +2110,7 @@ add.genes.to.GSA <- function(cnv.frame, delim=";", ucsc="hg18", genemap=NULL) {
   { cat(" invalid frame, genes not added\n") ; return(cnv.frame) }
   must.use.package("cnvGSA",T)
   if(is.null(genemap)) {
-    genemap <- get.gene.annot(ucsc=ucsc,range.out=F)
+    genemap <- get.gene.annot(ucsc=ucsc,bioC=F)
     gga.cn <- c("gene","chr","start","end","band")
     if(all(colnames(genemap)==gga.cn)) {
       genemap <- genemap[,c(2,3,4,1)]

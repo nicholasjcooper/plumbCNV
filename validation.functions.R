@@ -461,7 +461,7 @@ process.quality.scores <- function(DT,suffix,dir,restore=T) {
   if(length(cnvResults)==5) { if(!all(names(cnvResults) %in% exp.names)) { names(cnvResults) <- exp.names } }
   #x.result$rareDEL <- x.result$rareDEL[!x.result$rareDEL$roh,]
   ofn <- cat.path(dir$res,"qs.del.backup",suf=suffix,ext="RData")
-  if(file.exists(ofn) & restore) { print(load(ofn)) } else {
+  if(F & file.exists(ofn) & restore) { print(load(ofn)) } else {
     qs.sc <- get.quality.scores(x.result$rareDEL,dir)
     save(qs.sc,file=ofn)
   }
@@ -472,12 +472,15 @@ process.quality.scores <- function(DT,suffix,dir,restore=T) {
   cat(length(scrs[scrs>=.95]),"/",length(scrs)," DELs pass .95 threshold\n",sep="")
   print(summary(scrs))
   # save QS to file
-  cnvResults$rareDEL <- x.result$rareDEL; 
+  #print(Dim(cnvResults))
+  #cnvResults$rareDEL <- remove.duplicated.id.ranges(x.result$rareDEL); 
+  cnvResults$rareDEL <- x.result$rareDEL;
+  #print(Dim(cnvResults))
   cnvResults$rareDEL[["score"]] <- scrs;
   save(cnvResults,file=res.fn)
   x.result$rareDEL <- x.result$rareDEL[scrs>=thr,]
   ofn <- cat.path(dir$res,"qs.dup.backup",suf=suffix,ext="RData")
-  if(file.exists(ofn) & restore) { print(load(ofn)) } else {
+  if(F & file.exists(ofn) & restore) { print(load(ofn)) } else {
     qs.sc2 <- get.quality.scores(x.result$rareDUP,dir)
     save(qs.sc2,file=ofn)
   }
@@ -488,9 +491,11 @@ process.quality.scores <- function(DT,suffix,dir,restore=T) {
   cat(length(scrs2[scrs2>=.75]),"/",length(scrs2)," DUPs pass .75 threshold\n",sep="")
   print(summary(scrs2))
   # save QS to file
-  cnvResults$rareDUP <- x.result$rareDUP; 
+  #cnvResults$rareDUP <- remove.duplicated.id.ranges(x.result$rareDUP); 
+  cnvResults$rareDUP <- x.result$rareDUP;
   cnvResults$rareDUP[["score"]] <- scrs2;
   save(cnvResults,file=res.fn)
+  cat("wrote file results with quality scores inserted to:",res.fn,"\n")
   x.result$rareDUP <- x.result$rareDUP[scrs2>=thr,] # what is the different to cnvResults???
   
   ## add QS to cnvrs
@@ -578,6 +583,176 @@ plot.all.samples.for.cnv <- function(dir,reg="S1",dup=F,cnvResult=NULL,suffix=""
 
 ## functions totally specific to me
 
+## take a set of tables produced by the below commands and convert to independent counts/stats
+# L1 <- 200000; fun <- logiti
+# Rrr40 <- length.over.hap(del[del$score>=.95,],c(0,L1),T,FUN=fun,col="Hap40")
+# Rrr55 <- length.over.hap(del[del$score>=.95,],c(0,L1),T,FUN=fun,col="Hap55")
+# Rrr70 <- length.over.hap(del[del$score>=.95,],c(0,L1),T,FUN=fun,col="Hap70")
+# 
+# L1 <- 200000; fun <- FET
+# rr40 <- length.over.hap(del[del$score>=.95,],c(0,L1),T,FUN=fun,col="Hap40")
+# rr55 <- length.over.hap(del[del$score>=.95,],c(0,L1),T,FUN=fun,col="Hap55")
+# rr70 <- length.over.hap(del[del$score>=.95,],c(0,L1),T,FUN=fun,col="Hap70")
+# 
+# tab1 <- rbind(rr40,rr55,rr70)[c(1,3,5,2,4,6),]
+# tab2 <- rbind(Rrr40,Rrr55,Rrr70)[c(1,3,5,2,4,6),]
+#
+# n1b <- 82; n2b <- 90; n1a <- 529; n2a <- 799
+# independize(tab1,n1a,n2a,n1b,n2b,confs=c(0,55,70), labs=c("0-200 kb","> 200 kb"),FUN=FET)  
+# n1b <- 6524; n2b <- 9238; n1a <- 6524; n2a <- 9238
+# independize(tab1,n1a,n2a,n1b,n2b,confs=c(0,55,70), labs=c("0-200 kb","> 200 kb"),FUN=FET) 
+
+independize <- function(tab,n1a,n2a,n1b,n2b,confs=c(0,55,70), labs=c("0-200 kb","> 200 kb"),FUN=FET,digits=6) { 
+  new.tab <- as.data.frame(tab,stringsAsFactors=FALSE)
+  for (cc in 1:ncol(new.tab)) {
+    if(is(new.tab[[cc]])[1]=="factor") { new.tab[[cc]] <- paste(new.tab[[cc]]) }
+  }
+  lab.col <- 1
+  hf <- nrow(tab)/2
+  cas.con.cols <- c(2,3) # which columns have the case and control counts respectively
+  change.rows <- (1:nrow(tab))[-c(nrow(tab),(hf))] # rows to change to difs
+  if(tail(confs,1)!=100) { confs <- c(confs,100) }
+  HapLabs <- character(hf)
+  for (cc in 1:(length(confs)-1)) {
+    HapLabs[cc] <- paste(confs[cc],"%-",confs[cc+1],"%",sep="")
+  }
+  for (ee in change.rows) {
+    for (dd in cas.con.cols) {
+      new.tab[ee,dd] <- tab[ee,dd]-tab[ee+1,dd] 
+    }
+  }
+  new.tab[[lab.col]] <- rep(labs,each=hf)
+  Cs <- cas.con.cols[1]; Ct <- cas.con.cols[2]
+  n1 <- c(rep(n1a,hf),rep(n1b,hf))
+  n2 <- c(rep(n2a,hf),rep(n2b,hf))
+  for (cc in 1:nrow(tab)) {
+    cS <- new.tab[cc,Cs]; cT <- new.tab[cc,Ct] # case and control counts
+    #prv(cS,cT)
+    new.tab$CI[cc] <- FUN(cS,cT,cont.d=n2[cc],case.d=n1[cc],stat="conf.int")
+    new.tab$OR[cc] <- round(FUN(cS,cT,cont.d=n2[cc],case.d=n1[cc],stat="estimate"),3)
+    new.tab$p.value[cc] <- round(FUN(cS,cT,cont.d=n2[cc],case.d=n1[cc]),digits)
+    new.tab$n1[cc] <- n1[cc];     new.tab$n2[cc] <- n2[cc]; 
+  }
+  new.tab[["HapConfidence"]] <- rep(HapLabs,2)
+  return(new.tab)
+}
+                        
+more.than.0 <- function(X) { length(narm(X)[narm(X)>0]) }
+
+
+# eg
+# del[["Hap40"]] <- hap.mean(del,JS,FUN=num.more.than.55,n=.4)
+# r40 <- length.over.hap(del[del$score>=.95,],LL2,T,rel.hap=T,col="Hap40")
+# r50 <- length.over.hap(del[del$score>=.95,],LL2,T,rel.hap=T,col="Hap50")
+# r60 <- length.over.hap(del[del$score>=.95,],LL2,T,rel.hap=T,col="Hap60")
+# r70 <- length.over.hap(del[del$score>=.95,],LL2,T,rel.hap=T,col="Hap70")
+# length.over.hap(del[del$score>=.95,],LL2,F,rel.hap=T,col="Hap55")
+# length.over.hap(del[del$score>=.95,],LL2,F,rel.hap=F,col="Hap55")
+# length.over.hap(del[del$score>=.95,],LL2,T,rel.hap=F,col="Hap55")
+length.over.hap <- function(X,LL=0,gt=T,rel.hap=T,col="Hap55",FUN=FET) {
+  nn <- length(LL)
+  ll <- cnt <- matrix(nrow=nn,ncol=2)
+  LL <- c(LL,250*10^6)
+  CI <- character(nn)
+  rat <- p <- numeric(nn)
+  X <- remove.duplicated.id.ranges(X)
+  for (cc in 1:nn) {
+    if(gt) {
+#      del.sh <- X[width(X) >= LL[cc],]      
+      del.sh <- X[width(X) >= LL[cc] & width(X) <= LL[cc+1],]
+      #print(cc) ;print(nrow(del.sh))
+    } else {
+      del.sh <- X[width(X) <= LL[cc],]
+    }
+    if(rel.hap) {
+      ll[cc,] <- tapply(del.sh[[col]],factor(del.sh[["phenotype"]]),length)
+    } else {
+      ll[cc,] <- c(9238,6524) # cases and controls passing QC
+    }
+    if(nrow(del.sh)>0){
+      cnt[cc,] <- tapply(del.sh[[col]],factor(del.sh[["phenotype"]]),more.than.0)
+    } else { cnt[cc,] <- c(0,0) }
+    CI[cc] <- FUN(cnt[cc,2],cnt[cc,1],cont.d=ll[cc,1],case.d=ll[cc,2],stat="conf.int")
+    rat[cc] <- FUN(cnt[cc,2],cnt[cc,1],cont.d=ll[cc,1],case.d=ll[cc,2],stat="estimate")
+    p[cc] <- FUN(cnt[cc,2],cnt[cc,1],cont.d=ll[cc,1],case.d=ll[cc,2])
+  }
+  LL <- head(LL,nn)
+  results <- data.frame(length=LL,cases=cnt[,2], controls=cnt[,1], n1=ll[,2], n2=ll[,1], 
+                        OR=rat, CI=CI, p.value=p)
+  return(results)
+}
+
+num.more.than.55 <- function(X,n=.55) {
+  if(!is.numeric(X)) { X <- as.numeric(X) }
+  out <- length(X[X>n])
+  return(out)
+}
+
+## retrieve a mean/median/max haploinsufficiency probability vector
+hap.mean <- function(X,ref,FUN=mean,...,gene.col="gene",build=36) {
+  if(!is(X)[1] %in% c("GRanges","RangedData")) { stop("X needs to be RangedData") }
+  if(!is.data.frame(ref))  { stop("ref should be a dataframe containing haploinsufficiency scores by GENE id")}
+  X <- Gene.pos(ranges=X,bioC=T,build=build)
+  gn.l <- X[[gene.col]]
+  gen.list <- paste(unique(gn.l))
+  gen.list <- gen.list[gen.list!=""]
+  LL <- length(gen.list)
+  ll <- nrow(X)
+  hapMean <- rep(NA,ll)
+  for (cc in 1:LL) {
+    gnz <- gen.list[cc]  # X[cc,gene.col]
+    if(is.character(gnz)) { 
+      if(length(gnz)>0) {  ZZZ <- ref[strsplit(gnz,";",fixed=T)[[1]],1] } 
+      #prv(ZZZ)
+      ZZ <- narm(as.numeric(ZZZ))
+      if(length(ZZ)>0) { hapMean[gn.l %in% gnz] <- FUN(ZZ,...) }
+    }
+    #loop.tracker(cc,LL)
+  }
+  return(hapMean)
+}
+
+## retrieve a mean/median/max haploinsufficiency probability vector
+hap.gene.list <- function(X,ref,gene.col="gene",thr=.55) {
+  if(!is(X)[1] %in% c("GRanges","RangedData")) { stop("X needs to be RangedData") }
+  if(!is.data.frame(ref))  { stop("ref should be a dataframe containing haploinsufficiency scores by GENE id")}
+  X <- remove.duplicated.id.ranges(X)
+  X <- Gene.pos(ranges=X,bioC=T)
+  ph <- X$phenotype
+  gn.l <- X[[gene.col]]
+  gen.list <- paste(unique(gn.l))
+  gen.list <- gen.list[gen.list!=""]
+  LL <- length(gen.list)
+  ll <- nrow(X)
+  outlist <- vector("list",ll)
+  hapMean <- rep(NA,ll)
+  for (cc in 1:LL) {
+    gnz <- gen.list[cc]  # X[cc,gene.col]
+    if(is.character(gnz)) { 
+      if(length(gnz)>0) {  
+        ZZZ <- ref[strsplit(gnz,";",fixed=T)[[1]],1]
+        YYY <- rownames(ref[strsplit(gnz,";",fixed=T)[[1]],]) 
+        XXX <- narm(YYY[ZZZ>=thr & !is.na(ZZZ)])
+      } 
+      #prv(ZZZ)
+      if(length(XXX)>0) { 
+        #cat(XXX)
+        band <- Band(XXX[1])
+        times <- length(which(gn.l %in% gnz))
+        cnts <- table(c(ph[gn.l %in% gnz],1,2))-1        
+        OR <- round((cnts[["2"]]/6500) / (cnts[["1"]]/9500),3)
+        cat(paste("T1D: ",cnts[2],", Ctrls: ",cnts[1],", OR: ",OR, ", Locus: ",band," | Haplogenes: ",comma(XXX),"\n",sep=""))
+        cat("\n")
+        #print(times)
+        for (dd in 1:times) {
+          outlist[gn.l %in% gnz][[dd]] <- XXX 
+        }
+      }
+    }
+    #loop.tracker(cc,LL)
+  }
+  return(outlist)
+}
 
 ## add up number of case and control fails in DUPs and DELs
 extract.qs.qc <- function(XX,DEL.thr=.9,DUP.thr=.9) {
@@ -1002,7 +1177,7 @@ age.analyse <- function(dir,ph,corrected=F,select.col="phenotype",
   select[is.na(select)] <- F
   bs1 <- big.select(big.pcc,select.cols=colnames(big.pcc)[select],dir=dir$big, pref="sel1")
   big.bs1 <- get.big.matrix(bs1,dir$big) # load descriptor as big.matrix
-  rownames(ph) <- ph[[1]]
+  if(is.null(rownames(ph)) & !anyDuplicated(ph[[1]])) { rownames(ph) <- ph[[1]] }
   PH1 <- ph[match(colnames(big.bs1),ph[[1]]),]
   #print(head(PH1));print(table(PH1$t1d));print(table(PH1$t1d,PH1$sample_type))
   #prv(pheno,select,age.vec,age,PH1,big.bs1,cor.var)

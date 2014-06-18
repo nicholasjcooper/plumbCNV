@@ -1,11 +1,11 @@
 
-suffix <- 994
+suffix <- 998
 metabo <- F
 plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 2
+my.st <- 6
 my.end <- 6
 do.cnv <- T
 comp <- F
@@ -14,7 +14,7 @@ pca.set <- 24
 restore <- F
 sex.correct <- F
 q.cores <- 100 #NA
-hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hhdup2.hmm"
+hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hh0+.hmm"
 
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
 source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
@@ -164,7 +164,13 @@ final.tables <- compile.qs.results.to.cc.toptable(qs.results,dir,suffix,cnvResul
 
 LL <- c(0,10000,50000,100000,200000,300000,400000,500000,1000000,2000000,3000000,4000000)
 # test case:controls for different length and QS thresholds
-length.analysis(LL,dir,cnvResult,suffix,del.thr=.75,dup.thr=.75)
+
+LL <- c(0,1000*c(200,2000))
+LLB <- c(LL[-1],250000000)
+ 
+length.analysis.suf(LL,dir,cnvResult,suffix,thr.col="score",cnts=c(9238,6524),upper.thr=LLB)
+
+#length.analysis(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75)
 
 
 #plot.all.samples.for.cnv(dir,reg="S21",dup=F,suffix="98")

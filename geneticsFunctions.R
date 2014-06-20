@@ -167,7 +167,7 @@ table2d <- function(...,col,row,rn=NULL,cn=NULL,remove.na=TRUE) {
 
 ## takes a RangedData object from some annotation lookup functions and converts to standard text positions
 Ranges.to.txt <- function(chr.list) {
-  if(is(chr.list)[1]!="RangedData") { stop("Not a RangedData object")}
+  if(!is(chr.list)[1] %in% c("RangedData","GRanges")) { stop("Not a GRanges or RangedData object") }
   text.out <- paste("chr",chr2(chr.list),":",format(start(chr.list),scientific=F,trim=T),"-",
                     format(end(chr.list),scientific=F,trim=T),sep="")
   return(text.out)
@@ -176,20 +176,31 @@ Ranges.to.txt <- function(chr.list) {
 
 # select autosomes only in RangedData object
 select.autosomes <- function(snp.info,deselect=FALSE) {
-  must.use.package("genoset",bioC=T)
-  if(!is(snp.info)[1]=="RangedData") { warning("not a RangedData object"); return(snp.info) }
-  if(length(unique(space(snp.info))) < length(levels(space(snp.info)))) {
+  #must.use.package("genoset",bioC=T)
+  typ <- is(snp.info)[1]
+  if(!typ %in% c("RangedData","GRanges")) { warning("not a RangedData or GRanges object"); return(snp.info) }
+  if(length(unique(chr2(snp.info))) < length(levels(chr2(snp.info)))) {
     # this fixes the problem when a subset of a ranges object with less 
     #  chromosomes still has empty chr slots from previous object
-    snp.info <- snp.info[as.numeric(unique(space(snp.info)))]
+    if(typ=="RangedData") { snp.info <- snp.info[as.numeric(unique(chr2(snp.info)))] }
   }
-  select <- which(rownames(chrInfo2(snp.info)) %in% paste(1:22))
-  if(deselect) {
-    ok.chrs <- rownames(chrInfo2(snp.info))[!select]
+  Chrz <- (rownames(chrInfo2(snp.info)))
+  chrz <- tolower(Chrz)
+  if(length(grep("chr",chrz))>0) {
+    select <- which(chrz %in% paste("chr",1:22,sep=""))
   } else {
-    ok.chrs <- rownames(chrInfo2(snp.info))[select]
+    select <- which(chrz %in% paste(1:22))
   }
-  return(snp.info[ok.chrs])
+  if(deselect) {
+    ok.chrs <- Chrz[!select]
+  } else {
+    ok.chrs <- Chrz[select]
+  }
+  if(typ=="RangedData") {
+    return(snp.info[ok.chrs])
+  } else {
+    return(snp.info[chr2(snp.info) %in% ok.chrs,])
+  }
 }
 
 
@@ -249,11 +260,19 @@ ranged.to.data.frame <- function(ranged,include.cols=FALSE) {
   } else {
     u <- as(ranged,"data.frame")
     cn <- tolower(colnames(u))
-    if("names" %in% cn) { 
-      rownames(u) <- u[["names"]]
-      u <- u[,-which(cn=="names")]
+    if(is(ranged)[1]=="RangedData") {
+      if("names" %in% cn) { 
+        rownames(u) <- u[["names"]]
+        u <- u[,-which(cn=="names")]
+      } 
+      if("space" %in% cn) { colnames(u)[which(cn=="space")] <- "chr" }
+    } else {
+      if(is(ranged)[1]=="GRanges") {
+        if("seqnames" %in% cn) { colnames(u)[which(cn=="seqnames")] <- "chr" }
+      } else {
+        warning("'ranged' should be RangedData or GRanges, coercion could fail")
+      }
     }
-    if("space" %in% cn) { colnames(u)[which(cn=="space")] <- "chr" }
     return(u)
   }
 }
@@ -320,10 +339,15 @@ has.method <- function(FUN,CLASS) {
 }
 
 
+# convenience function to use GRanges
+data.frame.to.granges <- function(dat,...) {
+  return(data.frame.to.ranged(dat=dat,...,GRanges=TRUE))
+}
+  
 ## convert any data frame with chr,start,end, or pos data into a RangedData object
 # not case sensitive
 data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL,
-                                 chr="chr",exclude=NULL,ucsc="hg18") 
+                                 chr="chr",exclude=NULL,ucsc="hg18",GRanges=FALSE) 
 {
   ## abandon longer names as they clash with function names
   st <- paste(start); en <- paste(end); ch <- paste(chr); wd <- paste(width)
@@ -381,13 +405,20 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
       outData[[more.cols[cc]]] <- dat[[more.cols[cc]]][reorder]
     }
   }
-  return(outData)
+  if(GRanges) {
+    return(as(outData,"GRanges"))
+  } else {
+    return(outData)
+  }
 }
 
 
 # convert snpStats:SnpMatrix object nicely to a dataframe where coding becomes 0,1,2,NA
-SnpMatrix.to.data.frame <- function(SnpMat) {
-  cov.data <- as.data.frame(SnpMat)
+SnpMatrix.to.data.frame <- function(X) {
+  if(!any(c("SnpMatrix","snp.matrix") %in% is(X))) { 
+    warning("Invalid input type for 'X', this function is only designed ",
+            "for snpStats::SnpMatrix or chopsticks::snp.matrix objects") }
+  cov.data <- as.data.frame(X)
   for(jj in 1:ncol(cov.data)) { 
     nuxt <- as.numeric(cov.data[,jj])-1
     nuxt[nuxt<0] <- NA
@@ -400,6 +431,10 @@ SnpMatrix.to.data.frame <- function(SnpMat) {
 # convert from a dataframe to a SnpMatrix
 data.frame.to.SnpMatrix <- function(X){
   must.use.package("snpStats",T)
+  if(!any(c("data.frame","matrix") %in% is(X))) { 
+    warning("Invalid input type for 'X', this function is only designed ",
+            "for data.frame or matrix objects") }
+  if(is.matrix(X)) { X <- as.data.frame(X) }
   if(is.data.frame(X)) {
     if(any(sapply(lapply(X,is),"[",1) %in% c("character","factor"))) {
       for(cc in 1:ncol(X)) {
@@ -410,7 +445,7 @@ data.frame.to.SnpMatrix <- function(X){
   ## Test whether there are any valid values in X
   if(!all(is.na(X))) {
     mxx <- max(X,na.rm=TRUE)
-    if(mxx>3) { warning("Dataframe does not appear to contain allele codes") }
+    if(mxx>3) { warning("X does not appear to contain allele codes") }
     X <- round(X)
     if(mxx==3) { X <- X-1 ; X[X<0] <- NA }
   }
@@ -446,6 +481,31 @@ get.SnpMatrix.in.file <- function(file){
   return(ret.out)
 }
 
+#internal
+chr.sel <- function(X,chr) {
+  # One of the main differences between RangedData and GRanges is the way
+  # of selecting the subset for a chromosome. RangedData just uses [n] where
+  # 'n' is the chromosome name or number. Whereas GRanges, does not have a
+  # method like this, so need to select using [chr(X)==chr.num,]
+  # This wrapper allows selection of a chromosome or chromosomes regardless of
+  # whether the object is RangedData or GRanges type
+  typ <- is(X)[1]
+  if(!typ %in% c("RangedData","GRanges")) { stop("not a GRanges or RangedData object") }
+  if(!(is.character(chr) | is.numeric(chr))) { stop("chr must be character or numeric type") }
+  if(is.numeric(chr)) { if(!all(chr %in% 1:99)) { 
+    stop("illegal chromosome index, valid range 1-99 [although 1-28 typical for human]") } }
+  if(typ=="RangedData") { return(X[chr])}
+  all.chr <- chr2(X)
+  if(!all(chr %in% unique(all.chr))) { 
+    if(!any(chr %in% unique(all.chr))) { 
+      warning("none of the specified chromosome indices were present in the GRanges object, returning NULL")
+      return(NULL)
+    } else { 
+      warning("some of the specified chromosome indices were not present in the GRanges object") 
+    }
+  }
+  return(X[all.chr %in% chr,])
+}
 
 
 ### MORE GENERAL ###
@@ -459,8 +519,8 @@ get.SnpMatrix.in.file <- function(file){
 #'  Y, XY, and MT are always allocated the same integer, so table is only useful where there are extra NT, COX, HLA
 #'  regions, etc.
 chrNums <- function(ranged,warn=F,table.out=F,table.in=NULL) {
-  must.use.package("genoset",bioC=T)
-  if(!is(ranged)[1]=="RangedData") { warning("not a RangedData object"); return(NULL) }
+  #must.use.package("genoset",bioC=T)
+  if(!is(ranged)[1] %in% c("RangedData","GRanges")) { warning("not a GRanges or RangedData object"); return(NULL) }
   lookup <- c("X","Y","XY","MT")
   txt1 <- chrNames2(ranged)
   txt <- gsub("chr","",txt1,fixed=T)
@@ -519,7 +579,7 @@ get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
   all.fl <- matrix(ncol=4, nrow=0)
   for(cc in chrNums(ranged)) {
     nxt.nm <- rownames(snp.info[paste(cc)]); pos <- start(snp.info[paste(cc)])
-    rng <- ranged[paste(cc)]
+    rng <- chr.sel(ranged,paste(cc)) # ranged[paste(cc)]
     st.en.snp <- range.snp(snp.info,ranged=rng)
     fl <- matrix(ncol=4, nrow=nrow(st.en.snp))
     fl[,2] <- start(rng); fl[,3] <- end(rng);
@@ -542,30 +602,31 @@ get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
 # for given genome ranges will try to find the closest snps to the start of the ranges
 start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,nearest=T) {
   # will preferably find an exact match but if nearest=T, will fall-back on nearest match
-  must.use.package("genoset",T)
+  #must.use.package("genoset",T)
   nmz <- NULL
-  if(!is(ranged)[1]=="RangedData") {
+  if(!is(ranged)[1] %in% c("RangedData","GRanges")) {
     if(!is.null(chr) & !is.null(pos)) {
       if(is.null(dim(pos))) { st <- pos[1]; en <- pos[2] } else {
         st <- pos[,1]; en <- pos[,2]
       }
       if(length(st)>length(chr)) { chr <- rep(chr[1],length(st)) } else { chr <- chr[1:length(st)] }
     } else {
-      stop("if not using 'ranged', then chr and pos must be valid")
+      stop("if not using 'ranged' input, then chr and pos must be valid")
     }
   } else {
     st <- start(ranged); en <- end(ranged); chr <- chr2(ranged)
     nmz <- rownames(ranged)
   }
-  if(!is(snp.info)[1]=="RangedData") {
-    stop("snp.info must be of type RangedData")
+  if(!is(ranged)[1] %in% c("RangedData","GRanges")) {
+    stop("snp.info must be of type RangedData or GRanges")
   } else {
     if(is.null(rownames(snp.info))) {  rownames(snp.info) <- paste(1:nrow(snp.info)) }
   }
   st.snps <- en.snps <- character(length(chr)) ; prch <- 0
   for (cc in 1:length(chr)) {
     if(chr[cc]!=prch) { 
-      ref <- snp.info[paste(chr[cc])] ; st.ref <- start(ref); rnref <- rownames(ref)
+      ref <- chr.sel(snp.info,paste(chr[cc])) # snp.info[paste(chr[cc])]
+      st.ref <- start(ref); rnref <- rownames(ref)
       if(is.null(ref)) { stop(paste("snp.info did not contain chr",chr[cc])) }
     }
     #exact
@@ -744,10 +805,11 @@ unique.in.range <- function(ranged,chr,pos,full.overlap=F, unit=c("b","kb","mb",
   if(length(pos)>2 | !is.numeric(pos)) { warning("pos should be a start and end numeric range"); return(NULL) }
   if(length(pos)==1) { pos <- rep(pos,2) }
   if(length(chr)>1 | is.na(as.numeric(chr))) { warning("chr should be a single number"); return(NULL) }
-  if(!any(is(ranged)[1] %in% c("RangedData","IRanges","GRanges","RangesList"))) { warning("'ranged' should be a RangedData type or similar"); return(NULL) }
+  if(!any(is(ranged)[1] %in% c("RangedData","IRanges","GRanges","RangesList"))) { 
+    warning("'ranged' should be a RangedData type or similar"); return(NULL) }
   unit <- tolower(unit[1]) ; mult <- switch(unit,b=0,kb=3,mb=6,gb=9); pos <- pos*10^mult
   # get set of genes in a position range for a chromosome
-  chr.genez <- ranged[paste(chr)]; 
+  chr.genez <- chr.sel(ranged,paste(chr)) 
   if(full.overlap) {
     ranged <- chr.genez[which(start(chr.genez)>min(pos) & end(chr.genez)<max(pos)),]
   } else {
@@ -887,8 +949,8 @@ plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,lty="soli
 
 #' @param keep whether to keep as object or just return the chr
 set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
-  must.use.package("genoset",bioC=T)
-  if(!is(ranged)[1]=="RangedData") { warning("not a RangedData object"); return(NULL) }
+  #must.use.package("genoset",bioC=T)
+  if(!is(ranged)[1] %in% c("GRanges","RangedData")) { warning("not a GRanges or RangedData object"); return(NULL) }
   if(!all(unique(chr2(select.autosomes(ranged))) %in% paste("chr",1:22,sep=""))) {
     ranged <- toGenomeOrder2(ranged,strict=TRUE)
     #prv(ranged)
@@ -904,14 +966,25 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
       mychr2 <- gsub("X","chrX",mychr2)
       mychr2 <- gsub("Y","chrY",mychr2)
       mychr2 <- gsub("chrXchrY","XY",mychr2)
-      mychr2 <- gsub("chrYchrX","YX",mychr2)      
+      mychr2 <- gsub("chrYchrX","YX",mychr2) 
+      mychr2 <- gsub("MT","chrM",mychr2)
+      mychr2 <- gsub("XY","chrXY",mychr2)
+      mychr2 <- gsub("23","chrX",mychr2)
+      mychr2 <- gsub("24","chrY",mychr2)
     }
     #print(tail(mychr2)); print((all.nums))
     #prv(mychr2)
-    out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
+    if(is(ranged)[1]=="GRanges") {
+      all.chr <- chr2(ranged)
+      out <- GRanges(ranges=IRanges(start=start(ranged),end=end(ranged)),seqnames=mychr2)
+    } else {
+      out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
+    }
     out <- toGenomeOrder2(out,strict=TRUE)
     # prv(out)
-    if(ncol(ranged)>0 & keep) {
+    ###return(out)
+    ncr <- ncol(ranged); if(is.null(ncr)) { ncr <- 0 }
+    if(ncr>0 & keep) {
       cn <- colnames(ranged)
       for(cc in 1:ncol(ranged)) {
         out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
@@ -926,6 +999,7 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
 
 #' @param table.in, table.out extra parameters for chrNums (e.g, how to convert weird regions)
 set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
+  if(!is(ranged)[1] %in% c("GRanges","RangedData")) { warning("not a GRanges or RangedData object"); return(NULL) }
   if(table.out | suppressWarnings(any(is.na(as.numeric(paste(chr2(ranged))))))) {
     silly.name <- "adf89734t5b"
     ranged <- toGenomeOrder2(ranged,strict=T)
@@ -940,7 +1014,12 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
     #mychr2 <- all.nums.t[,2][match(mychr,all.nums.t[,1])]
     for (cc in 1:length(all.nams)) { mychr2[which(mychr==all.nams[cc])] <- all.nums[cc] }
     #print(tail(mychr2)); print((all.nums))
-    out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2,silly.name=ranged[[silly.name]])
+    if(is(ranged)[1]=="GRanges") {
+      all.chr <- chr2(ranged)
+      out <- GRanges(ranges=IRanges(start=start(ranged),end=end(ranged)),seqnames=mychr2,silly.name=ranged[[silly.name]])
+    } else {
+      out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2,silly.name=ranged[[silly.name]])
+    }
     out <- toGenomeOrder2(out,strict=T)
     if(all(!is.na(out[["silly.name"]]))) {
       rn <- narm(rownames(ranged)[match(out[["silly.name"]],ranged[[silly.name]])])
@@ -949,7 +1028,8 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
       warning("index column was corrupted")
     }
     # prv(out)
-    if(ncol(ranged)>0 & keep) {
+    ncr <- ncol(ranged); if(is.null(ncr)) { ncr <- 0 }
+    if(ncr>0 & keep) {
       cn <- colnames(ranged)
       for(cc in 1:ncol(ranged)) {
         out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
@@ -1592,22 +1672,6 @@ get.telomere.locs <- function(dir="",kb=10,ucsc=c("hg18","hg19"),bioC=TRUE,text=
 }
 
 
-# internal function to allow flexible input for the ucsc parameter
-ucsc.sanitizer <- function(ucsc,allow.multiple=FALSE) {
-  ucsc.alt <- c("hg15","hg20","hg17","hg18","hg19",17,18,19,35,36,37,
-                "build35","build36","build37","b35","b36","b37")
-  ucsc.new <- c("hg15","hg20",rep(c("hg17","hg18","hg19"),times=5))
-  ucsc <- ucsc.new[match(tolower(ucsc),ucsc.alt)]
-  if(any(is.na(ucsc))) { 
-    warning("Illegal ucsc parameter, defaulting to hg18") 
-    ucsc[is.na(ucsc)] <- "hg18" 
-  }
-  if(allow.multiple) {
-    return(ucsc)
-  } else {
-    return(ucsc[1])
-  }
-}
 
 #' Get chromosome lengths from UCSC database
 #' 
@@ -2423,7 +2487,7 @@ extractROH <- function(dd,min.size=100,merge.gap.pc=.01,verbose=F) {
 
 # for an ROHlist, converts raw snp index information back into a position
 convert.snp.indx.to.pos <- function(ROHlist,snpMat,snp.info) {
-  must.use.package("genoset")
+  #must.use.package("genoset")
   snp.info <- toGenomeOrder2(select.autosomes(snp.info),strict=T)
   valid.snps <- colnames(snpMat)[colnames(snpMat) %in% rownames(snp.info)]
   select <- which(rownames(snp.info) %in% valid.snps)

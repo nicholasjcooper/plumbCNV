@@ -393,7 +393,7 @@ plot.a.CNVR <- function(thisCNVR,dir,genes=T) {
   legend("top",legend=c("T1D","Controls"),col=c("red","blue"),pch="-",bty="n",ncol=2,pt.cex=2)
   if(genes) {
     gn <- plot.gene.annot(chr=ccc[1], pos=xl*10^6, x.scl=10^6, y.ofs=cc*1.15, width=cc/5, txt=T, chr.pos.offset=0,
-                          ucsc="hg18", dir=dir, box.col="green", txt.col="black", join.col="red")
+                          build="hg18", dir=dir, box.col="green", txt.col="black", join.col="red")
     return(gn)
   }
   return(NULL)
@@ -439,7 +439,7 @@ plot.lrr.CNVR <- function(thisCNVR,dir,genes=T,BAF=F,type="l",DEL=T,cex=1) {
   if(genes) {
     if(BAF) { y.ofsx=max(yl)*0.8; wd<-max(yl)/5 } else { y.ofsx=.5*max(yl); wd<-diff(yl)/5 }
     gn <- plot.gene.annot(chr=ccc[1], pos=xl*10^6, x.scl=10^6, y.ofs=y.ofsx, width=wd, txt=T, chr.pos.offset=0,
-                          ucsc="hg18", dir=dir, box.col="green", txt.col="black", join.col="red")
+                          build="hg18", dir=dir, box.col="green", txt.col="black", join.col="red")
     return(gn)
   }
   return(NULL)

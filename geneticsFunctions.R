@@ -183,11 +183,13 @@ select.autosomes <- function(snp.info,deselect=FALSE) {
     # this fixes the problem when a subset of a ranges object with less 
     #  chromosomes still has empty chr slots from previous object
     if(typ=="RangedData") { snp.info <- snp.info[as.numeric(unique(chr2(snp.info)))] }
-  }
+  } #else { cat("ok\n") }
   Chrz <- (rownames(chrInfo2(snp.info)))
-  chrz <- tolower(Chrz)
+  chrz <- tolower(paste(Chrz))
   if(length(grep("chr",chrz))>0) {
-    select <- which(chrz %in% paste("chr",1:22,sep=""))
+    select1 <- which(chrz %in% paste("chr",1:22,sep=""))
+    select2 <- which(chrz %in% paste(1:22))
+    if(length(select2)>length(select1)) { select <- select2 } else { select <- select1 }
   } else {
     select <- which(chrz %in% paste(1:22))
   }
@@ -252,10 +254,11 @@ remove.duplicated.id.ranges <- function(X,column="id") {
 
 
 # note that this will preserve only chr,start,end, nothing else including rownames
-ranged.to.data.frame <- function(ranged,include.cols=FALSE) {
+ranged.to.data.frame <- function(ranged,include.cols=FALSE,use.names=TRUE) {
   if(!include.cols) {
     u <- Ranges.to.txt(ranged)
     v <- convert.textpos.to.data(u)
+    if(!is.null(rownames(ranged)) & nrow(ranged)==nrow(v) & use.names) { rownames(v) <- rownames(ranged) }
     return(v)
   } else {
     u <- as(ranged,"data.frame")
@@ -347,11 +350,11 @@ data.frame.to.granges <- function(dat,...) {
 ## convert any data frame with chr,start,end, or pos data into a RangedData object
 # not case sensitive
 data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL,
-                                 chr="chr",exclude=NULL,ucsc="hg18",GRanges=FALSE) 
+                                 chr="chr",exclude=NULL,build="hg18",GRanges=FALSE) 
 {
   ## abandon longer names as they clash with function names
   st <- paste(start); en <- paste(end); ch <- paste(chr); wd <- paste(width)
-  ucsc <- ucsc.sanitizer(ucsc)
+  build <- ucsc.sanitizer(build)
   must.use.package(c("genoset","IRanges"),T)
   if(is.matrix(dat)) { dat <- as.data.frame(dat,stringsAsFactors=FALSE) }
   if(!is.data.frame(dat)) { stop("Error: not a dataframe")}
@@ -387,27 +390,41 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
       id <- paste(1:nrow(dat)) 
     }
   }
-  if(length(ch)>0) { ch1 <- gsub("X","chrX",gsub("chr","",dat[[ch]],ignore.case=T)) } else { ch1 <- NULL }
+  ## not sure why here are adding 'chr' to X and Y?
+  #this was here before? :  if(length(ch)>0) { ch1 <- gsub("Y","chrY",gsub("X","chrX",gsub("chr","",dat[[ch]],ignore.case=T))) } else { ch1 <- NULL }
+  if(length(ch)>0) { ch1 <- gsub("chr","",dat[[ch]],ignore.case=T) } else { ch1 <- NULL }
   if(length(st)>0) { st1 <- as.numeric(dat[[st]]) } else { st1 <- NULL }
   if(length(en)>0) { en1 <- as.numeric(dat[[en]]) } else { en1 <- NULL }
   if(length(wd)>0) { en1 <- st1+as.numeric(dat[[wd]]) } # { en1 <- st1+dat[[wd]] }
-  #print(length(st1)); print(head(st1))
-  outData <- RangedData(ranges=IRanges(start=st1,end=en1,names=id),space=ch1,universe=ucsc[1])
-  outData <- toGenomeOrder2(outData,strict=T)
+  #print(length(st1)); print(length(en1)); print(length(id)); print(length(ch1))
+  outData <- GRanges(ranges=IRanges(start=st1,end=en1,names=id),seqnames=ch1); genome(outData) <- build[1]
+  #outData <- RangedData(ranges=IRanges(start=st1,end=en1,names=id),space=ch1,universe=build[1])
+  ###  ###  ###  outData <- toGenomeOrder2(outData,strict=T)
   # note when adding data subsequently that 'RangedData' sorts by genome order, so need
-  # to resort any new data before adding.
+  # to re-sort any new data before adding.
   if(is.null(rownames(outData))) { rownames(outData) <- paste(1:nrow(outData)) }
   reorder <- match(rownames(outData),id)
   more.cols <- colnames(dat)[!colnames(dat) %in% key.nms]
   more.cols <- more.cols[!more.cols %in% exclude]
   if(length(more.cols)>0) {
     for (cc in 1:length(more.cols)) {
-      outData[[more.cols[cc]]] <- dat[[more.cols[cc]]][reorder]
+      u <- dat[[more.cols[cc]]][reorder]; #prv(u)
+      if(is(outData)[1]=="GRanges") {
+        mcols(outData)[[more.cols[cc]]] <- u
+      } else {
+        outData[[more.cols[cc]]] <- u
+      }
     }
   }
   if(GRanges) {
     return(as(outData,"GRanges"))
   } else {
+    cncn <- colnames(mcols(outData))
+    outData <- as(outData,"RangedData")
+    if(any(cncn %in% "strand")) {
+      outData <- outData[,-which(cncn=="strand")]
+    }
+    #outData <- toGenomeOrder2(outData,strict=T)
     return(outData)
   }
 }
@@ -666,8 +683,8 @@ start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,neare
 
 
 # force a valid pair of positions, given the inputted chromosome
-force.chr.pos <- function(Pos,Chr,snp.info=NULL,ucsc="hg18",dir=NULL) {
-  ucsc <- ucsc.sanitizer(ucsc)
+force.chr.pos <- function(Pos,Chr,snp.info=NULL,build="hg18",dir=NULL) {
+  build <- ucsc.sanitizer(build)
   # convert any non autosomes to numbers:
   Chr[grep("c6",Chr,ignore.case=T)] <- 6  # prevent issues with c6_COX, c6_QBL  
   Chr[grep("X",Chr,ignore.case=T)] <- 23
@@ -679,7 +696,7 @@ force.chr.pos <- function(Pos,Chr,snp.info=NULL,ucsc="hg18",dir=NULL) {
   if(any(paste(Chr) == paste(26))) { warning("'NT' chromosome(s) entered, not supported, NAs produced") }
   if(length(Pos)==2 & is.numeric(Pos)) {
     if(is(snp.info)[1]!="RangedData" & is(snp.info)[1]!="GRanges") { 
-      maxln <- get.chr.lens(dir=dir,mito=T,autosomes=FALSE,ucsc=ucsc)[Chr] 
+      maxln <- get.chr.lens(dir=dir,mito=T,autosomes=FALSE,build=build)[Chr] 
     } else { 
       maxln <- end(tail(snp.info[paste(Chr)],1)) # force start and end to be within 1:chr.len
     }
@@ -831,11 +848,11 @@ unique.in.range <- function(ranged,chr,pos,full.overlap=F, unit=c("b","kb","mb",
 #  the step size of the rest of the plot.
 # more args to 'rect' ...
 plot.gene.annot <- function(gs=NULL, chr=1, pos=NA, x.scl=10^6, y.ofs=0, width=1, txt=T, chr.pos.offset=0,
-                            ucsc="hg18", dir="", box.col="green", txt.col="black", join.col="red", ...)
+                            build="hg18", dir="", box.col="green", txt.col="black", join.col="red", ...)
 {
   dir <- validate.dir.for(dir,"ano")
-  ucsc <- ucsc.sanitizer(ucsc)
-  if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(dir=dir,ucsc=ucsc) }
+  build <- ucsc.sanitizer(build)
+  if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(dir=dir,build=build,GRanges=FALSE) }
   if(!"gene" %in% colnames(gs)) { warning("didn't find 'gene' column in annotation") ; return(NULL) }
   Col <- c("green", "darkgreen")
   if(all(is.na(pos))) { pos <- c(1,Inf) } 
@@ -950,44 +967,63 @@ plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,lty="soli
 #' @param keep whether to keep as object or just return the chr
 set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
   #must.use.package("genoset",bioC=T)
-  if(!is(ranged)[1] %in% c("GRanges","RangedData")) { warning("not a GRanges or RangedData object"); return(NULL) }
-  if(!all(unique(chr2(select.autosomes(ranged))) %in% paste("chr",1:22,sep=""))) {
+  typ <- is(ranged)[1]
+  if(!typ %in% c("GRanges","RangedData")) { warning("not a GRanges or RangedData object"); return(NULL) }
+  if(length(grep("chr",chrNames2(ranged)))<length(chrNames(ranged))) {
     ranged <- toGenomeOrder2(ranged,strict=TRUE)
     #prv(ranged)
     mychr2 <- mychr <- paste(chr2(ranged))
+    RN <- rownames(ranged)
     #all.nams <- chrNames2(ranged)
     #all.nums <- chrNums(ranged,table.in=table.in)
-    all.nums.t <- chrNums(select.autosomes(ranged),table.in=NULL,table.out=T) 
-    all.nams <- all.nums.t[,1]
-    all.nums <- all.nums.t[,2]
-    #mychr2 <- all.nums.t[,2][match(mychr,all.nums.t[,1])]
-    for (cc in 1:length(all.nams)) { mychr2[which(mychr==all.nams[cc])] <- paste("chr",all.nums[cc],sep="") }
+    if(length(grep("23",paste(mychr2)))>0) { 
+      warning("use of arbitrary chromosome numbers for non-autosomes (i.e, >=23)",
+              "can lead to annotation issues, try to use labels, X, Y, MT, and XY where possible") }
+    sar <- select.autosomes(ranged)
+    if(nrow(sar)>0) {
+      all.nums.t <- chrNums(sar,table.in=NULL,table.out=T) 
+      all.nams <- all.nums.t[,1]
+      all.nums <- all.nums.t[,2]
+      #mychr2 <- all.nums.t[,2][match(mychr,all.nums.t[,1])]
+      for (cc in 1:length(all.nams)) { mychr2[which(mychr==all.nams[cc])] <- paste("chr",all.nums[cc],sep="") }
+    } else {
+      # no autosomes
+    }
     if(do.x.y) {
       mychr2 <- gsub("X","chrX",mychr2)
       mychr2 <- gsub("Y","chrY",mychr2)
+      mychr2 <- gsub("23","chrX",mychr2)
+      mychr2 <- gsub("24","chrY",mychr2)
       mychr2 <- gsub("chrXchrY","XY",mychr2)
       mychr2 <- gsub("chrYchrX","YX",mychr2) 
       mychr2 <- gsub("MT","chrM",mychr2)
       mychr2 <- gsub("XY","chrXY",mychr2)
-      mychr2 <- gsub("23","chrX",mychr2)
-      mychr2 <- gsub("24","chrY",mychr2)
+      mychr2 <- gsub("chrchr","chr",mychr2)
     }
     #print(tail(mychr2)); print((all.nums))
     #prv(mychr2)
+    if(any(is.na(mychr2))) { prv(mychr2[which(is.na(mychr2))]) }
+    if(is.null(RN) | length(RN)!=nrow(ranged)) { RN <- 1:nrow(ranged) } #make sure RN's are valid
     if(is(ranged)[1]=="GRanges") {
       all.chr <- chr2(ranged)
-      out <- GRanges(ranges=IRanges(start=start(ranged),end=end(ranged)),seqnames=mychr2)
+      out <- GRanges(ranges=IRanges(start=start(ranged),end=end(ranged),names=RN),seqnames=mychr2)
     } else {
-      out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2)
+      out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged),names=RN),space=mychr2)
     }
     out <- toGenomeOrder2(out,strict=TRUE)
     # prv(out)
     ###return(out)
-    ncr <- ncol(ranged); if(is.null(ncr)) { ncr <- 0 }
+    # need to allow for different indexing of dataframe part for GRanges
+    ncr <- switch(typ,RangedData=ncol(ranged),GRanges=ncol(mcols(ranged)))
+    if(is.null(ncr)) { ncr <- 0 }
     if(ncr>0 & keep) {
-      cn <- colnames(ranged)
-      for(cc in 1:ncol(ranged)) {
-        out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
+      cn <- switch(typ,RangedData=colnames(ranged),GRanges=colnames(mcols(ranged)))
+      for(cc in 1:ncr) {
+        if(typ=="GRanges") {
+          mcols(out)[[paste(cn[cc])]] <- mcols(ranged)[[paste(cn[cc])]]
+        } else {
+          out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
+        }
       }
     }
     return(out)
@@ -999,11 +1035,16 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
 
 #' @param table.in, table.out extra parameters for chrNums (e.g, how to convert weird regions)
 set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
-  if(!is(ranged)[1] %in% c("GRanges","RangedData")) { warning("not a GRanges or RangedData object"); return(NULL) }
+  typ <- is(ranged)[1]
+  if(!typ %in% c("GRanges","RangedData")) { warning("not a GRanges or RangedData object"); return(NULL) }
   if(table.out | suppressWarnings(any(is.na(as.numeric(paste(chr2(ranged))))))) {
     silly.name <- "adf89734t5b"
     ranged <- toGenomeOrder2(ranged,strict=T)
-    ranged[[silly.name]] <- paste(1:nrow(ranged))
+    if(typ=="GRanges") {
+      mcols(ranged)[[silly.name]] <- paste(1:nrow(ranged))
+    } else {
+      ranged[[silly.name]] <- paste(1:nrow(ranged))
+    }
     #prv(ranged)
     mychr2 <- mychr <- paste(chr2(ranged))
     #all.nams <- chrNames2(ranged)
@@ -1014,28 +1055,46 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
     #mychr2 <- all.nums.t[,2][match(mychr,all.nums.t[,1])]
     for (cc in 1:length(all.nams)) { mychr2[which(mychr==all.nams[cc])] <- all.nums[cc] }
     #print(tail(mychr2)); print((all.nums))
-    if(is(ranged)[1]=="GRanges") {
+    if(typ=="GRanges") {
       all.chr <- chr2(ranged)
-      out <- GRanges(ranges=IRanges(start=start(ranged),end=end(ranged)),seqnames=mychr2,silly.name=ranged[[silly.name]])
+      out <- GRanges(ranges=IRanges(start=start(ranged),end=end(ranged)),seqnames=mychr2,silly.name=mcols(ranged)[[silly.name]])
     } else {
       out <- RangedData(ranges=IRanges(start=start(ranged),end=end(ranged)),space=mychr2,silly.name=ranged[[silly.name]])
     }
     out <- toGenomeOrder2(out,strict=T)
-    if(all(!is.na(out[["silly.name"]]))) {
-      rn <- narm(rownames(ranged)[match(out[["silly.name"]],ranged[[silly.name]])])
+    if(typ=="GRanges") {
+      oo <- mcols(out)[["silly.name"]]
+      rr <- mcols(ranged)[[silly.name]]
+    } else {
+      oo <- out[["silly.name"]]
+      rr <- ranged[[silly.name]]
+    }
+    if(all(!is.na(oo))) {
+      if(is.null(rownames(ranged))) { rownames(ranged) <- paste(1:nrow(ranged)) ; rmv.rn <- TRUE } else { rmv.rn <- FALSE }
+      #iioo <- rownames(ranged)[match(oo,rr)]; print(iioo); print(is(iioo))
+      rn <- narm(rownames(ranged)[match(oo,rr)])
       if(nrow(out)==length(rn) ) { rownames(out) <- rn } else { warning("rownames did not match number of rows") }
+      if(rmv.rn) { rownames(out) <- NULL }
     } else {
       warning("index column was corrupted")
     }
     # prv(out)
-    ncr <- ncol(ranged); if(is.null(ncr)) { ncr <- 0 }
+    ncr <- switch(typ,RangedData=ncol(ranged),GRanges=ncol(mcols(ranged)))
+    if(is.null(ncr)) { ncr <- 0 }
     if(ncr>0 & keep) {
-      cn <- colnames(ranged)
-      for(cc in 1:ncol(ranged)) {
-        out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
+      cn <- switch(typ,RangedData=colnames(ranged),GRanges=colnames(mcols(ranged)))
+      for(cc in 1:ncr) {
+        if(typ=="GRanges") {
+          mcols(out)[[paste(cn[cc])]] <- mcols(ranged)[[paste(cn[cc])]]
+        } else {
+          out[[paste(cn[cc])]] <- ranged[[paste(cn[cc])]]
+        }
       }
     }
-    if(any(colnames(out) %in% "silly.name")) { out <- out[,-which(colnames(out) %in% "silly.name")] }
+    cno <- switch(typ,RangedData=colnames(out),GRanges=colnames(mcols(out)))
+    if(any(cno %in% "silly.name")) { out <- out[,-which(cno %in% "silly.name")] }
+    cno <- switch(typ,RangedData=colnames(out),GRanges=colnames(mcols(out)))
+    if(any(cno %in% silly.name)) { out <- out[,-which(cno %in% silly.name)] }
     if(table.out) {
       return(list(ranged=out,table.out=all.nums.t))
     } else {
@@ -1043,7 +1102,8 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
     }
   } else {
     #cat("no change\n")
-    if(any(colnames(ranged) %in% "silly.name")) { ranged <- ranged[,-which(colnames(ranged) %in% "silly.name")] }
+    cnr <- switch(typ,RangedData=colnames(ranged),GRanges=colnames(mcols(ranged)))
+    if(any(cnr %in% "silly.name")) { ranged <- ranged[,-which(cnr %in% "silly.name")] }
     return(ranged)      # change not needed
   }
 }
@@ -1056,15 +1116,15 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
 find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.out=F, vals.out=F, vec.out=F, delim=",",
                           ref=NULL, none.val=0, fill.blanks=T, DEL=T, DUP=T, min.sites=0, len.lo=NA, len.hi=NA,
                           autosomes.only=T, alt.name=NULL, testy=F,
-                          db=c("gene","exon","dgv"), txid=F, ucsc="hg18", n.cores=1, dir="", quiet=F) {
+                          db=c("gene","exon","dgv"), txid=F, build="hg18", n.cores=1, dir="", quiet=F) {
   if(is(cnv.ranges)[1]!="RangedData") {
     warning("'cnv.ranges' must be 'RangedData' type; returning null")
     return(NULL)
   } else {
     if(nrow(cnv.ranges)<1) { warning("cnv.ranges contains zero rows, returning NULL"); return(NULL) }
   }
-  ucsc <- ucsc.sanitizer(ucsc)
-  uv <- tolower(universe(cnv.ranges)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
+  build <- ucsc.sanitizer(build)
+  uv <- tolower(universe(cnv.ranges)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
   dir <- validate.dir.for(dir,"ano")
   if(ranges.out) { fill.blanks <- T; none.val <- 0 }
   ## filter the cnv dataset for only DELs or only DUPs if either set false
@@ -1113,8 +1173,8 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
     if(length(grep("exon",db))>0) { ano <- "exon" }
     if(length(grep("dgv",db))>0) { ano <- "dgv" }
     if(!quiet) { cat(" loading",ano,"annotation...\n") }
-    ref <- switch(ano,exon=get.exon.annot(dir=dir,ucsc=ucsc),gene=get.gene.annot(dir=dir,ucsc=ucsc),
-                  dgv=get.dgv.ranges(dir=dir,ucsc=ucsc,compact=T)) # choose which reference to use
+    ref <- switch(ano,exon=get.exon.annot(dir=dir,build=build),gene=get.gene.annot(dir=dir,build=build,GRanges=FALSE),
+                  dgv=get.dgv.ranges(dir=dir,build=build,compact=T)) # choose which reference to use
     
   } else {
     # ref is already a ranges object for comparison passed in by parameter
@@ -1397,10 +1457,10 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
 }
 
 ## get the locations of the immunoglobin regions
-get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
+get.immunog.locs <- function(build=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
   nchr <- 22
-  ucsc <- ucsc.sanitizer(ucsc[1])
-  if(ucsc[1]=="hg19") {
+  build <- ucsc.sanitizer(build[1])
+  if(build[1]=="hg19") {
     #hg19
     chr <- c(22,14,2,14)
     stz <- c(22385572,105994256,89156874,22090057)
@@ -1416,7 +1476,7 @@ get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
   if(bioC | text) {
     must.use.package(c("genoset","IRanges"),bioC=T)
     outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=chr,
-                          reg=reg.dat,universe=ucsc[1])
+                          reg=reg.dat,universe=build[1])
     outData <- toGenomeOrder2(outData,strict=T)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
@@ -1431,12 +1491,12 @@ get.immunog.locs <- function(ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
 }
 
 ## get the locations of the centromeres
-get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE)
+get.centromere.locs <- function(dir="",build=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE)
 {
   dir <- validate.dir.for(dir,c("ano"),warn=FALSE); success <- TRUE
-  ucsc <- ucsc.sanitizer(ucsc)
+  build <- ucsc.sanitizer(build)
   local.file <- cat.path(dir$ano,"cyto")
-  tt <- get.cyto(ucsc=ucsc,bioC=FALSE,dir=dir)
+  tt <- get.cyto(build=build,bioC=FALSE,dir=dir)
   chrn <- paste(1:22)
   if(!autosomes) { 
     chrn <- c(chrn,c("X","Y"))
@@ -1456,7 +1516,7 @@ get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=TRUE,text=FALS
   if(bioC | text) {
     must.use.package(c("genoset","IRanges"),bioC=TRUE)
     outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=gsub("chr","",chrn),
-                          reg=reg.dat,universe=ucsc[1])
+                          reg=reg.dat,universe=build[1])
     outData <- toGenomeOrder2(outData,strict=TRUE)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
@@ -1468,16 +1528,16 @@ get.centromere.locs <- function(dir="",ucsc=c("hg18","hg19"),bioC=TRUE,text=FALS
 
 ## get the locations of each cytoband (karotype)
 # if dir left blank won't leave a trace
-get.cyto <- function(ucsc="hg18",dir=NULL,bioC=TRUE) {
-  ucsc <- ucsc.sanitizer(ucsc)
+get.cyto <- function(build="hg18",dir=NULL,bioC=TRUE,refresh=FALSE) {
+  build <- ucsc.sanitizer(build)
   local.file="cyto"
   if(is.null(dir)) {
-    local.file <- cat.path("",local.file,suf=ucsc,ext="tar.gz")
+    local.file <- cat.path("",local.file,suf=build,ext="tar.gz")
   } else { 
-    local.file <- cat.path(dir,local.file,suf=ucsc,ext="tar.gz")
+    local.file <- cat.path(dir,local.file,suf=build,ext="tar.gz")
   }
-  if(!file.exists(local.file)) {
-    golden.path <- paste("http://hgdownload.cse.ucsc.edu/goldenPath/",ucsc,"/database/cytoBand.txt.gz",sep="")
+  if(!file.exists(local.file) | refresh) {
+    golden.path <- paste("http://hgdownload.cse.ucsc.edu/goldenPath/",build,"/database/cytoBand.txt.gz",sep="")
     success <- tryCatch( download.file(url=golden.path,local.file,quiet=T),error=function(e) { F } )
     if(is.logical(success)) {
       if(!success) { warning("couldn't reach ucsc website! try sourcing cytoband data elsewhere"); return(NULL) } }
@@ -1495,7 +1555,7 @@ get.cyto <- function(ucsc="hg18",dir=NULL,bioC=TRUE) {
     en <- as.numeric(tt$end)
     must.use.package(c("genoset","IRanges"),bioC=T)
     outData <- RangedData(ranges=IRanges(start=st,end=en,names=fullbands),space=mychr,
-                          negpos=tt$negpos,universe=ucsc[1])
+                          negpos=tt$negpos,universe=build[1])
     outData <- toGenomeOrder2(outData,strict=T)
     #if(text) { outData <- Ranges.to.txt(outData) }
   } else {
@@ -1511,8 +1571,8 @@ get.cyto <- function(ucsc="hg18",dir=NULL,bioC=TRUE) {
 
 
 ## get list of all exons, names, starts, ends
-get.exon.annot <- function(dir=NULL,ucsc="hg18",bioC=T,list.out=F) {
-  ucsc <- ucsc.sanitizer(ucsc)
+get.exon.annot <- function(dir=NULL,build="hg18",bioC=T,list.out=F) {
+  build <- ucsc.sanitizer(build)
   ## load exon annotation (store locally if not there already)
   from.scr <- T
   if(!is.null(dir)) {
@@ -1526,12 +1586,12 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",bioC=T,list.out=F) {
   must.use.package("GenomicFeatures",T)
   if(from.scr) {
     must.use.package("gage",T)
-    # get transcripts from UCSC table 'knownGene'
-    success <- tryCatch(txdb <- makeTranscriptDbFromUCSC(genome=ucsc,
+    # get transcripts from build table 'knownGene'
+    success <- tryCatch(txdb <- makeTranscriptDbFromUCSC(genome=build,
                                                          tablename="knownGene")  ,error=function(e) { F } )
     if(is.logical(success)) { 
       if(!success) {
-        warning("Couldn't reach ucsc website! try again later or, \n",
+        warning("Couldn't reach build website! try again later or, \n",
                 "if in europe/uk, there may still be a bug in rtracklayer; \n",
                 "Installing the latest version of R and bioconductor\n",
                 "and running biocLite('rtracklayer'), should fix this")
@@ -1550,7 +1610,7 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",bioC=T,list.out=F) {
       if(all(colnames(ts)==c("element","seqnames","start","end","width","strand","tx_id","tx_name"))) {
         colnames(ts) <- c("gene","chr","start","end","width","strand","txid","txname")
       } else {
-        cat(" unexpected colnames found using makeTranscriptDbFromUCSC()\n")
+        cat(" unexpected colnames found using makeTranscriptDbFrombuild()\n")
         if(bioC) { cat(" therefore returning data.frame instead of RangedData object\n") ;
                         bioC <- F }
       }
@@ -1559,7 +1619,7 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",bioC=T,list.out=F) {
     if(bioC) {
       ts <- RangedData(ranges=IRanges(start=ts$start,end=ts$end),
                        space=ts$chr,gene=ts$gene, strand=ts$strand,
-                       txid=ts$txid, txname=ts$txname,universe=ucsc)
+                       txid=ts$txid, txname=ts$txname,universe=build)
       ts <- toGenomeOrder2(ts,strict=T)
     }
   } else {
@@ -1568,21 +1628,59 @@ get.exon.annot <- function(dir=NULL,ucsc="hg18",bioC=T,list.out=F) {
   return(ts)
 }
 
+# internal, tidy chromosome names using extra chromosomal annotation into rough chromosomes
+tidy.extra.chr <- function(chr,select=FALSE) {
+  # most relevant to hg18
+  SEL_c6 <- grep("c6",chr,ignore.case=T)
+  SEL_c5 <- grep("c5",chr,ignore.case=T)
+  SEL_NT <- grep("NT",chr,ignore.case=T)
+  # most relevant to hg19
+  SEL_LRG <- grep("LRG",chr,ignore.case=T)
+  SEL_HG <- grep("HG",chr,ignore.case=T)
+  SEL_GL <- grep("GL",chr,ignore.case=T)
+  SEL_HS <- grep("HSCHR",chr,ignore.case=T)
+  if(select) {
+    # create TRUE/FALSE as to whether list elements have weird chromosome codes
+    all <- unique(c(SEL_c6,SEL_c5,SEL_NT,SEL_LRG,SEL_HG,SEL_GL,SEL_HS))
+    return(!1:length(chr) %in% all)
+  } else {
+    # transform weird chromosomes into more palatable codes
+    chr[SEL_c6] <- 6  # prevent issues with c6_COX, c6_QBL  
+    chr[SEL_c5] <- 5  # prevent issues with c5_H2  
+    chr[SEL_NT] <- "Z_NT"  # merge all NT regions to one label
+    chr[SEL_LRG] <- "Z_LRG"  # merge all NT regions to one label
+    chr[SEL_HG] <- "Z_HG"  # merge all NT regions to one label
+    chr[SEL_GL] <- "Z_GL"  # merge all NT regions to one label
+    X <- names(table(chr))
+    X <- X[grep("HSCHR",X)]
+    if(length(X)>0) {
+      HSC <- gsub("_","",substr(gsub("HSCHR","",X),1,2))
+      for(cc in 1:length(X)) {
+        #cat("replacing ",X[cc]," with ",HSC[cc],"\n",sep="")
+        chr[chr==X[cc]] <- HSC[cc]
+      }
+    }
+    return(chr)
+  }  
+}
+
 ## get list of all genes, names, starts, ends, optionally bands
 #' @param ens.id logical, whether to include the ensembl id in the dataframe
-get.gene.annot <- function(dir=NULL,ucsc="hg18",bioC=TRUE,duplicate.report=FALSE,unique=FALSE,map.cox.to.6=TRUE,ens.id=FALSE,refresh=FALSE) {
+get.gene.annot <- function(dir=NULL,build="hg18",bioC=TRUE,duplicate.report=FALSE,
+                  one.to.one=FALSE,remap.extra=FALSE,discard.extra=TRUE,ens.id=FALSE,
+                           refresh=FALSE,GRanges=TRUE) {
   # faster than exon, but only contains whole gene ranges, not transcripts
   # allows report on duplicates as some might be confused as to why some genes
   # have more than one row in the listing (split across ranges usually)
   # run with dir as NULL to refresh changes in COX
   must.use.package(c("biomaRt","genoset","gage"),T)
-  ucsc <- ucsc.sanitizer(ucsc)
+  build <- ucsc.sanitizer(build)
   from.scr <- T
   if(!is.null(dir)) {
     dir <- validate.dir.for(dir,"ano")
-    utxt <- ""; if(unique) { utxt <- "_unq" }
+    utxt <- ""; if(one.to.one) { utxt <- "_unq" }
     if(ens.id) { utxt <- paste(utxt,"ens",sep="_") }
-    gn.fn <- cat.path(dir$ano,"geneAnnot",pref=ucsc,suf=utxt,ext="RData")
+    gn.fn <- cat.path(dir$ano,"geneAnnot",pref=build,suf=utxt,ext="RData")
     if(file.exists(gn.fn) & !refresh) {
       dat <- get(paste(load(gn.fn)))
       from.scr <- F
@@ -1592,7 +1690,7 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",bioC=TRUE,duplicate.report=FALSE
   nm.list <- c("gene","chr","start","end","band")
   if(ens.id & bioC) { warning("ens.id=TRUE only has an effect when bioC=FALSE") }
   if(from.scr) {
-    if(ucsc=="hg18") {
+    if(build=="hg18") {
       ens <- useMart("ENSEMBL_MART_ENSEMBL",
                      dataset="hsapiens_gene_ensembl",
                      host="may2009.archive.ensembl.org",
@@ -1605,24 +1703,35 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",bioC=TRUE,duplicate.report=FALSE
     #data(egSymb)
     attr.list <- c("hgnc_symbol", "chromosome_name",
       "start_position", "end_position", "band")
-    if(ens.id) { attr.list <- c(attr.list,"ensembl_gene_id"); nm.list <- c(nm.list,"ens.id") }
+    if(ens.id) { attr.list <- c(attr.list,"ensembl_gene_id") }
     #dat <- getBM(attributes = attr.list, filters = "hgnc_symbol",
     #             values = egSymb[,2], mart = ens)
     dat <- getBM(attributes = attr.list,  mart = ens)
     if(exists("gn.fn")) { save(dat,file=gn.fn) }
   } 
-  if(map.cox.to.6) {
-    dat$chromosome_name[grep("c6",dat$chromosome_name,ignore.case=T)] <- 6  # prevent issues with c6_COX, c6_QBL  
-    dat$chromosome_name[grep("NT",dat$chromosome_name,ignore.case=T)] <- "Z_NT"  # merge all NT regions to one label
+  if(ens.id) { nm.list <- c(nm.list,"ens.id") }
+  if(remap.extra) {
+    dat$chromosome_name <- tidy.extra.chr(dat$chromosome_name)
+    #dat$chromosome_name[grep("c6",dat$chromosome_name,ignore.case=T)] <- 6  # prevent issues with c6_COX, c6_QBL  
+    #dat$chromosome_name[grep("c5",dat$chromosome_name,ignore.case=T)] <- 5  # prevent issues with c5_H2  
+    #dat$chromosome_name[grep("NT",dat$chromosome_name,ignore.case=T)] <- "Z_NT"  # merge all NT regions to one label
+  }
+  if(discard.extra) {
+    ## http://www.lrg-sequence.org/ ##
+    # note that if remapping is already done, then these won't be discarded unless remapping failed
+    tt <- tidy.extra.chr(dat$chromosome_name,select=TRUE)
+    badz <- which(!tt)
+    if(length(badz)>0) { dat <- dat[-badz,] } # remove LRG, GS, HG, NT, COX, etc annotation from set
   }
   if(bioC) {
     outData <- RangedData(ranges=IRanges(start=dat$start_position,end=dat$end_position),
-                          space=dat$chromosome_name,gene=dat$hgnc_symbol, band=dat$band, universe=ucsc)
+                          space=dat$chromosome_name,gene=dat$hgnc_symbol, band=dat$band, universe=build)
     outData <- toGenomeOrder2(outData,strict=T)
     if(duplicate.report) {
       dup.genes <- gene.duplicate.report(outData)
       # but haven't done anything about them or removed them! 
     }
+    if(GRanges) { outData <- as(outData, "GRanges") }
   } else {
     outData <- dat; colnames(outData) <- nm.list
   }
@@ -1632,21 +1741,21 @@ get.gene.annot <- function(dir=NULL,ucsc="hg18",bioC=TRUE,duplicate.report=FALSE
 
 
 ## create telomere locations - artibrary number of kb at start and end of each CHR
-get.telomere.locs <- function(dir="",kb=10,ucsc=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE,mito.zeros=FALSE)
+get.telomere.locs <- function(dir="",kb=10,build=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE,mito.zeros=FALSE)
 {
   # the actual telomeres are typically about 10kb, but
   # for cnv-QC purposes want to exclude a larger region like 500kb
   # Mt have no telomeres, are circular, but for some purposes might want zero values in there
-  ucsc <- ucsc.sanitizer(ucsc)
-  chr.lens <- get.chr.lens(dir=dir,ucsc=ucsc[1],autosomes=FALSE,mito=mito.zeros)
+  build <- ucsc.sanitizer(build)
+  chr.lens <- get.chr.lens(dir=dir,build=build[1],autosomes=FALSE,mito=mito.zeros)
   n <- 1:22; if(!autosomes) { n <- c(n,"X","Y") } # Mt have no telomeres, are circular
   nchr <- length(n) #default
   if(mito.zeros) { n <- c(n,"M") }
   my.chr.range <- vector("list",length(n))
   names(my.chr.range) <- paste("chr",n,sep="")
   for (cc in 1:nchr) {
-    one <- force.chr.pos(Pos=c(1,kb*1000),Chr=cc,ucsc=ucsc) # f..c..pos() makes sure is a valid range
-    two <- force.chr.pos(Pos=chr.lens[cc]+c(-kb*1000,0),Chr=cc,ucsc=ucsc)
+    one <- force.chr.pos(Pos=c(1,kb*1000),Chr=cc,build=build) # f..c..pos() makes sure is a valid range
+    two <- force.chr.pos(Pos=chr.lens[cc]+c(-kb*1000,0),Chr=cc,build=build)
     my.chr.range[[cc]] <- list(start=c(one[1],two[1]),end=c(one[2],two[2]))
   }
   if(mito.zeros) {
@@ -1662,7 +1771,7 @@ get.telomere.locs <- function(dir="",kb=10,ucsc=c("hg18","hg19"),bioC=TRUE,text=
   if(bioC | text) {
     must.use.package(c("genoset","IRanges"),bioC=T)
     outData <- RangedData(ranges=IRanges(start=stz,end=enz,names=nmz),space=chrz,
-                          reg=reg.dat,universe=ucsc[1])
+                          reg=reg.dat,universe=build[1])
     outData <- toGenomeOrder2(outData,strict=T)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
@@ -1673,17 +1782,17 @@ get.telomere.locs <- function(dir="",kb=10,ucsc=c("hg18","hg19"),bioC=TRUE,text=
 
 
 
-#' Get chromosome lengths from UCSC database
+#' Get chromosome lengths from build database
 #' 
 #' Quick and easy way to retrieve human chromosome lengths. Can select from hg18/hg19 (ie, 
-#'  build 36/37), or any future builds (hg20, etc) stored in the same location on the UCSC website.
+#'  build 36/37), or any future builds (hg20, etc) stored in the same location on the build website.
 #'  Default is to return lengths for 22 autosomes, but can also retrieve X,Y 
 #'  and Mitochondrial DNA lengths by 'autosomes=FALSE' or n=1:25. Even if not connected to 
 #'  the internet can retrieve hard coded lengths for hg18/hg19.
 #'  @param dir directory to retrieve/download the annotation from/to (defaults to current getwd())
 #'  if dir is NULL then will automatically delete the annotation text file from the local directory
 #'   after downloading
-#'  @param ucsc string, currently 'hg17','hg18' or 'hg19' to specify which annotation version to use. 
+#'  @param build string, currently 'hg17','hg18' or 'hg19' to specify which annotation version to use. 
 #'  Default is build-36/hg-18. Will also accept integers 17,18,19,35,36,37 as alternative arguments.
 #'  @param autosomes logical, if TRUE, only load the lengths for the 22 autosomes, else load X,Y,[MT] as well
 #'  @param len.fn optional file name to keep the lengths in
@@ -1692,16 +1801,16 @@ get.telomere.locs <- function(dir="",kb=10,ucsc=c("hg18","hg19"),bioC=TRUE,text=
 #'  If FALSE, then the file will be kept, meaning future lookups will be faster, and available offline.
 #'  @examples
 #'  get.chr.lens(delete.after=TRUE) # delete.after simply deletes the downloaded txt file after reading
-#'  get.chr.lens(ucsc=35,autosomes=TRUE,delete.after=TRUE) # only for autosomes
-#'  get.chr.lens(ucsc="hg19",mito=TRUE,delete.after=TRUE) # include mitochondrial DNA length
-get.chr.lens <- function(dir="",ucsc=c("hg18","hg19")[1],autosomes=FALSE,len.fn="humanChrLens.txt",
+#'  get.chr.lens(build=35,autosomes=TRUE,delete.after=TRUE) # only for autosomes
+#'  get.chr.lens(build="hg19",mito=TRUE,delete.after=TRUE) # include mitochondrial DNA length
+get.chr.lens <- function(dir="",build=c("hg18","hg19")[1],autosomes=FALSE,len.fn="humanChrLens.txt",
                          mito=FALSE,delete.after=FALSE, verbose=FALSE)
 {
-  # retrieve chromosome lengths from local annotation file, else download from UCSC
+  # retrieve chromosome lengths from local annotation file, else download from build
   if(is.null(dir)) { dir <- getwd() ; delete.after <- TRUE }
   dir <- validate.dir.for(dir,c("ano"),warn=F)
   chrlens.f <- cat.path(dir$ano,len.fn) # existing or future lengths file
-  ucsc <- ucsc.sanitizer(ucsc)
+  build <- ucsc.sanitizer(build)
   n <- 1:22; if(!autosomes) { n <- c(n,"X","Y","M") }
   hg18.backup <- c(247249719,242951149,199501827,191273063,180857866,170899992,158821424,
                       146274826,140273252,135374737,134452384,132349534,114142980,106368585,
@@ -1713,7 +1822,7 @@ get.chr.lens <- function(dir="",ucsc=c("hg18","hg19")[1],autosomes=FALSE,len.fn=
                       51304566,155270560,59373566,16571)
   
   # backups for offline use
-  if(ucsc=="hg18") { offline.backup <- hg18.backup  } else { offline.backup <- hg19.backup }
+  if(build=="hg18") { offline.backup <- hg18.backup  } else { offline.backup <- hg19.backup }
   if(file.exists(chrlens.f))
   {
     # file seems to be in annotation directory already
@@ -1725,14 +1834,14 @@ get.chr.lens <- function(dir="",ucsc=c("hg18","hg19")[1],autosomes=FALSE,len.fn=
     } else {
       notGot <- F
       # we have the right length, but do we have the right version?
-      if(ucsc=="hg18" & length(which(chrLens %in% hg19.backup))>2) { notGot <- T }
-      if(ucsc=="hg19" & length(which(chrLens %in% hg18.backup))>2) { notGot <- T }
+      if(build=="hg18" & length(which(chrLens %in% hg19.backup))>2) { notGot <- T }
+      if(build=="hg19" & length(which(chrLens %in% hg18.backup))>2) { notGot <- T }
     }
   } else { notGot <- T }
-  if (notGot | (!ucsc %in% c("hg18","hg19"))) {
-    #download from UCSC
-    if(verbose) { cat("attempting to download chromosome lengths from UCSC ... ") }
-    urL <- switch(ucsc,
+  if (notGot | (!build %in% c("hg18","hg19"))) {
+    #download from build
+    if(verbose) { cat("attempting to download chromosome lengths from genome build ... ") }
+    urL <- switch(build,
                   hg17="http://hgdownload.cse.ucsc.edu/goldenPath/hg17/database/chromInfo.txt.gz",
                   hg18="http://hgdownload.cse.ucsc.edu/goldenPath/hg18/database/chromInfo.txt.gz",
                   hg19="http://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/chromInfo.txt.gz",
@@ -1751,8 +1860,8 @@ get.chr.lens <- function(dir="",ucsc=c("hg18","hg19")[1],autosomes=FALSE,len.fn=
       chrLens <- lnz[want.chr.names]
       names(chrLens) <- want.chr.names
     } else {
-      warning("couldn't reach ucsc website, so have used offline versions of chr lengths")
-      if(!ucsc %in% c("hg18","hg19")) { warning("no offline version for ucsc version:",ucsc) }
+      warning("couldn't reach build website, so have used offline versions of chr lengths")
+      if(!build %in% c("hg18","hg19")) { warning("no offline version for build version:",build) }
       chrLens <- paste(offline.backup)[1:length(n)]; names(chrLens) <- n
       delete.after <- F
     }
@@ -1856,14 +1965,14 @@ import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames
 
 # calculate relative chip coverage vs gwas
 chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
-                          full.chr.lens=T,verbose=T,dir="",ucsc="hg18",ranges=F) {
+                          full.chr.lens=T,verbose=T,dir="",build="hg18",ranges=F) {
   # calculate % of chromosomes/genome covered by a set of microarray markers in terms of
   # possible CNVs detectable
   # targ.int #100000  ## size of windows to find
   # min.snps ## minimum number of snps per window
   # can return the gaps - they'll be unmerged...
   must.use.package(c("genoset","IRanges"),T)
-  ucsc <- ucsc.sanitizer(ucsc)
+  build <- ucsc.sanitizer(build)
   if(!is(snp.info)[1]=="RangedData") { warning("snp.info wasn't RangedData") ; return(NULL) }
   snp.info <- select.autosomes(snp.info)
   snp.info <- toGenomeOrder2(snp.info,strict=T)
@@ -1873,7 +1982,7 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
   rd <- reduce(rd) # combine adjacent ranges
   # calculate total length as total length of all chromosomes
   if(is.null(dir)) { dir <- "" }
-  chr.lens.full <- (get.chr.lens(dir,ucsc=ucsc)[chr.set])-(targ.int)
+  chr.lens.full <- (get.chr.lens(dir,build=build)[chr.set])-(targ.int)
   # calculate total  length using the first and last pos on each chromosome [allows calc for subranges]
   chr.lens.range <- as.numeric(sapply(snp.info,function(x) { diff(range(start(x))) })) #- (targ.int)
   if (full.chr.lens) { 
@@ -1949,11 +2058,11 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
 }
 
 # import the DGV into a rangedData object
-get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=TRUE,text=FALSE,shortenID=TRUE, compact=FALSE, alt.url=NULL)
+get.dgv.ranges <- function(dir=NULL,build="hg18",bioC=TRUE,text=FALSE,shortenID=TRUE, compact=FALSE, alt.url=NULL)
 {
   ## download or use local version of DGV (database for Genomic Variants)
   from.scr <- TRUE
-  ucsc <- ucsc.sanitizer(ucsc)
+  build <- ucsc.sanitizer(build)
   dir <- validate.dir.for(dir,c("ano"),warn=FALSE)
   old.colnm.core <- c("VariationID","Start","End","Chr","Gain","Loss") # order: ids,st,en,chr,...
   colnm.core <- c("variantaccession","start","end","chr","observedgains","observedlosses") # order: ids,st,en,chr,...
@@ -1965,8 +2074,8 @@ get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=TRUE,text=FALSE,shortenID=T
     }
   }
   if(from.scr) {
-    #dgv.path <- paste("http://projects.tcag.ca/variation/downloads/variation.",ucsc[1],".v10.nov.2010.txt",sep="")
-    dgv.path <- switch(ucsc,hg19="http://dgv.tcag.ca/dgv/docs/GRCh37_hg19_variants_2013-05-31.txt",
+    #dgv.path <- paste("http://projects.tcag.ca/variation/downloads/variation.",build[1],".v10.nov.2010.txt",sep="")
+    dgv.path <- switch(build,hg19="http://dgv.tcag.ca/dgv/docs/GRCh37_hg19_variants_2013-05-31.txt",
                        hg17="http://dgv.tcag.ca/dgv/docs/NCBI35_hg17_variants_2013-05-31.txt",
                        hg18="http://dgv.tcag.ca/dgv/docs/NCBI36_hg18_variants_2013-05-31.txt")
     if(!is.null(alt.url)) { dgv.path <- alt.url }
@@ -1995,7 +2104,7 @@ get.dgv.ranges <- function(dir=NULL,ucsc="hg18",bioC=TRUE,text=FALSE,shortenID=T
     must.use.package(c("genoset","IRanges"),bioC=T)
     if(compact) { to.cut <- colnames(tt)[!colnames(tt) %in% colnm.core] } else { to.cut <- NULL }
     outData <- data.frame.to.ranged(tt,ids=colnm.core[1],start=colnm.core[2],end=colnm.core[3],
-                                    width=NULL,chr=colnm.core[4],ucsc=ucsc, exclude=to.cut)
+                                    width=NULL,chr=colnm.core[4],build=build, exclude=to.cut)
     if(text) { outData <- Ranges.to.txt(outData) }
   } else {
     outData <- tt 
@@ -2168,14 +2277,14 @@ Ranges.to.cnvgsa <- function(dat) {
 
 
 ## use cnvGSA function 'getCnvGenes' to add gene annotation to a cnv slot object for cnvGSA
-add.genes.to.GSA <- function(cnv.frame, delim=";", ucsc="hg18", genemap=NULL) {
+add.genes.to.GSA <- function(cnv.frame, delim=";", build="hg18", genemap=NULL) {
   gsa.cols <- c("SampleID","Chr","Coord_i","Coord_f","Type","Genes","CnvID")
-  ucsc <- ucsc.sanitizer(ucsc)
+  build <- ucsc.sanitizer(build)
   if(!all(colnames(cnv.frame)==gsa.cols))
   { cat(" invalid frame, genes not added\n") ; return(cnv.frame) }
   must.use.package("cnvGSA",T)
   if(is.null(genemap)) {
-    genemap <- get.gene.annot(ucsc=ucsc,bioC=F)
+    genemap <- get.gene.annot(build=build,bioC=F,GRanges=FALSE)
     gga.cn <- c("gene","chr","start","end","band")
     if(all(colnames(genemap)==gga.cn)) {
       genemap <- genemap[,c(2,3,4,1)]
@@ -2210,11 +2319,11 @@ get.geneData.obj <- function() {
 full.cnvGSA <- function(do.assoc=F, cnv.frame=NULL, gmt.file=NULL, grandtotals.mode=c("all","cnv","cnvGen"),
                         sample.classes=c("case","ctrl"),fdr.iter=2,ext.report=200,boxplots=F,
                         limit.type=c("DEL","DUP"),limits.size=NULL,rem.genes=NULL,
-                        delim=";", ucsc="hg18", genemap=NULL) {
+                        delim=";", build="hg18", genemap=NULL) {
   must.use.package("cnvGSA",T)
-  ucsc <- ucsc.sanitizer(ucsc)
+  build <- ucsc.sanitizer(build)
   if(is(cnv.frame)[1]=="RangedData") { 
-    uv <- tolower(universe(cnv.frane)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { ucsc <- uv } }
+    uv <- tolower(universe(cnv.frane)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
     cnv.frame <- Ranges.to.cnvgsa(cnv.frame) 
   } else {
     if(is.data.frame(cnv.frame)) {
@@ -2225,7 +2334,7 @@ full.cnvGSA <- function(do.assoc=F, cnv.frame=NULL, gmt.file=NULL, grandtotals.m
     }
   }
   ## cnv data.frame
-  cnv.frame <- add.genes.to.GSA(cnv.frame, delim=";", ucsc=ucsc, genemap=NULL)
+  cnv.frame <- add.genes.to.GSA(cnv.frame, delim=";", build=build, genemap=NULL)
   ## gene data
   geneData <- get.geneData.obj()
   ## gmt file
@@ -2652,7 +2761,7 @@ tdt.snp2 <- function (ped, id, father, mother, affected, data = sys.parent(),
   fpos <- match(f.unique, s.unique)
   m.unique <- paste(ped, mother, sep = ":")
   mpos <- match(m.unique, s.unique)
-  prv(have.snps,affected,fpos,mpos)
+  #prv(have.snps,affected,fpos,mpos)
   
   trio <- have.snps & affected & (!is.na(fpos)) & (have.snps[fpos]) & 
     (!is.na(mpos)) & (have.snps[mpos])

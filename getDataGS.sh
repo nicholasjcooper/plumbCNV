@@ -4,7 +4,7 @@
 ## Bash Script for Extracting LRR/BAF data from Genome Studio Files  ##
 #######################################################################
 
-# By: Nicholas Cooper, JDRF/WT DIL, CIMR Cambridge, Nov 2013 #
+# By: Nicholas Cooper, JDRF/WT DIL, CIMR Cambridge, July 2014 #
 
 ### INSTRUCTIONS ###
 # Firstly, in the directory this script is run from, make sure there is 
@@ -465,16 +465,18 @@ then
        echo "extracting id and allele data from columns $SampCol,$SnpCol,$A1,$A2 of $loco/$file"
        if [ "$nexttype" = "gzip" ]
        then
-        zcat $loco/$file | sed -e '1,/\[Data\]/d' | sed 1d | cut -f "$SampCol,$SnpCol,$A1,$A2" > $file.lgen
+        zcat $loco/$file | sed -e '1,/\[Data\]/d' | sed 1d | awk -v C1="$SampCol" -v C2="$SnpCol" -v C3="$A1" -v C4="$A2" '{print $C1,$C2,$C3,$C4}' > $file.lgen
        else
-        sed -e '1,/\[Data\]/d' $loco/$file | sed 1d | cut -f "$SampCol,$SnpCol,$A1,$A2" > $file.lgen
+        sed -e '1,/\[Data\]/d' $loco/$file | sed 1d | awk -v C1="$SampCol" -v C2="$SnpCol" -v C3="$A1" -v C4="$A2" '{print $C1,$C2,$C3,$C4}' > $file.lgen
+        #  CHANGED cut -f "$SampCol,$SnpCol,$A1,$A2" ==> AWK #old way doesn't allow numbers not in sequential order
        fi
   done
 
-  #### UP  TO  HERE ####
   wc -l *.lgen > filelensNEGL.txt
   ## combine into a single file
   cat *.lgen > combined.lgen
+  # take first tab and first space to ensure we catch only the first col, regardless of delim in use #
+  cut -f 1 combined.lgen | cut -f 1 -d ' ' > fams.txt
   ## generate fake family file, which just codes for the different files 1,2,..,n
   if [ "$fakefam" = "yes" ] 
   then
@@ -483,7 +485,14 @@ then
      #printf '0\n%.0s' {$(seq 1 $lll)} > 0s.txt
      awk '{print $1, $1, 0, 0, 1, 1}' "$outdir"/ANNOTATION/subIdsALL.txt > snpdata.fam
      #paste subIdsALL.txt subIdsALL.txt 0s.txt 0s.txt 1s.txt 1s.txt  > snpdata.fam
-     cut -f 1 combined.lgen > fams.txt
+  else
+     if [ -e snpdata.fam ]
+     then
+      echo "Found existing snpdata.fam file, running plink from current directory"
+     else
+      echo "Warning! - did not find existing snpdata.fam file, attempting to create a fake one now"
+      awk '{print $1, $1, 0, 0, 1, 1}' "$outdir"/ANNOTATION/subIdsALL.txt > snpdata.fam
+     fi
   fi
   ## write in proper lgen format
   paste fams.txt combined.lgen > snpdata.temp
@@ -491,7 +500,6 @@ then
   mv snpdata.temp snpdata.lgen 
   rm fams.txt 
   # rm 0s.txt 1s.txt
-
 fi
 
 
@@ -573,6 +581,8 @@ then
     else
      echo "current file is not a bim file so using default column numbers for map3 format"
     fi
+    # preview the file to make sure
+    head -5 $mfnm
     # same code as just above
     echo "applying any custom custom column settings -abcd if they exist"
     if [[ $customSamp != 0 ]] ; then mSampCol=$customSamp ; fi
@@ -587,7 +597,8 @@ then
   fi
   paste snpdata1.temp snpdata2.temp snpdata3.temp > snpdata.map
   echo snpdata.map file created successfully, preview:
-  head snpdata.map
+  echo chr     snp-id           pos
+  head -5 snpdata.map
   cp snpdata.map $outdir/ANNOTATION/snpdata.map
   rm snpdata*temp
   if [ "$plinkQC" = "no" ]  
@@ -627,6 +638,7 @@ then
   fi
   # create blank file for samples to remove (in case none are)
   touch snpdata.irem
+  echo "running commmand" plink --lfile snpdata  --map3 --missing --hardy --missing-genotype '-' --out snpdataout --noweb --geno "$snpcr" --hwe "$hwe" --mind "$sampcr"
   plink --lfile snpdata  --map3 --missing --hardy --missing-genotype '-' --out snpdataout --noweb --geno "$snpcr" --hwe "$hwe" --mind "$sampcr"
 
   mv snpdataout.hwe snpdataout.hwe.messy

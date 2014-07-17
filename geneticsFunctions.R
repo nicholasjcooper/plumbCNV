@@ -1570,6 +1570,81 @@ get.cyto <- function(build="hg18",dir=NULL,bioC=TRUE,refresh=FALSE) {
 }
 
 
+
+#' Get HapMap recombination rates for hg18 (build 36)
+#' 
+#' Recombination rate files can be used to calculate recombination distances
+#' for genome locations, in centimorgans. This function downloads these reference
+#' files from the hapmap NCBI website. At the time of writing they were only 
+#' availble for build 36. If using a more recent build I suggest using the
+#' conversion function conv.37.36(), then recwindow(), then conv.36.37() to 
+#' get recombination distances for other builds. If getOption("save.annot.in.current")
+#' is <=0 then no files will be kept. Otherwise an object containing this mapping data
+#' will be saved in the local directory if dir=NULL, or else in the directory specified.
+#' Allowing this reference to be saved will greatly increase the speed of this function
+#' for subsequent lookups
+#' @param dir character, location to store binary file with the recombination maps for
+#' chromosomes 1-22. If NULL then getOption("save.annot.in.current")>=1 will result in
+#' this file being stored in the current directory, or if <=0, then this file will not
+#' be stored.
+#' @param verbose logical, if the binary file is not already downloaded, when verbose
+#' is TRUE, there will be some output to the console indicating the progress of the
+#' download. If FALSE, all output is suppressed.
+#' @param refresh logical, if you already have the binary file in the current directory,
+#' this argument will let you re-download and re-generate this file, e.g, if the file
+#' is modified or corrupted this will make a new one without having to manually delete it
+#' @export
+#' @return Returns a list object of length 22, containing the recombination map files
+#' as 22 separate data.frame's.
+#' @example
+#' ## not run as it takes roughly 2 minutes to download and read-in ##
+#' ## uncomment the following 3 lines to run:
+#' ## rec.map <- get.recombination.map(getwd())
+#' ## file.on.disk <- "rrates_genetic_map_chr_1_22_b36.RData"
+#' ## if(file.exists(file.on.disk)) { unlink(file.on.disk) } # remove the downloaded file
+get.recombination.map <- function(dir=NULL,verbose=TRUE,refresh=FALSE) {
+  n.chr <- 22
+  hap.dir <- "http://hapmap.ncbi.nlm.nih.gov/downloads/recombination/latest/rates/"
+  temp.dir <- "recombinationratesGF13fDR1er119"
+  local.file <- "rrates_genetic_map_chr_1_22_b36.RData"
+  if(!file.exists(temp.dir)) { dir.create(temp.dir) } 
+  local.files=paste0(temp.dir,"/genetic_map_chr",1:n.chr,"_b36.txt")
+  if(is.null(dir)) { if(any(getOption("save.annot.in.current")<1)) { dir <- NULL } else { dir <- getwd() } }
+  if(!is.null(dir)) {
+    local.files <- cat.path(dir,local.files,ext="txt")
+    local.file <- cat.path(dir,local.file,ext="RData")
+  }
+  if(!file.exists(local.file) | refresh) {
+    if(verbose) { cat("Downloading recombination data from: ",hap.dir,"\n") }
+    hapmap.urls <- cat.path(dir=hap.dir,fn=basename(local.files))
+    success <- TRUE
+    for (cc in 1:n.chr) {
+      #print(hapmap.urls[cc])
+      success <- tryCatch( download.file(url=hapmap.urls[cc],local.files[cc],quiet=T),error=function(e) { F } )
+      if(verbose) { loop.tracker(cc,n.chr*2) }
+    }
+    if(is.logical(success)) {
+      if(!success) { warning("couldn't download at least one of the files from: ",hap.dir); return(NULL) } }
+    map.files.list <- vector("list",n.chr)
+    for (cc in 1:n.chr) {
+      map.files.list[[cc]] <- read.table(local.files[cc],header=TRUE)
+      if(is.data.frame(map.files.list[[cc]])) { 
+        unlink(local.files[cc]) 
+      } else { warning("downloaded map file was corrupt for chr",cc) }
+      if(verbose) { loop.tracker(n.chr+cc,n.chr*2) }
+    }
+    if(file.exists(temp.dir)) { file.remove(temp.dir) }   # delete the temporary directory
+  } else {
+    map.files.list <- reader(local.file)
+  }
+  if(!is.null(dir)) { save(map.files.list,file=local.file) }
+  if(length(map.files.list)!=n.chr) { stop("Unfortunately the object derived seems corrupted") }
+  names(map.files.list) <- paste0("chr",1:n.chr)
+  return(map.files.list)
+}
+
+
+  
 ## get list of all exons, names, starts, ends
 get.exon.annot <- function(dir=NULL,build="hg18",bioC=T,list.out=F) {
   build <- ucsc.sanitizer(build)

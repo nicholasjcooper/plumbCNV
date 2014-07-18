@@ -1353,10 +1353,6 @@ chr.ab.report <- function(chr.stat,chrWarns,dir,writeExclList=F,makeGraphs=F,pre
 }
 
 
-chrNames2 <- function(X) {
-  XX <- chrIndices2(X)
-  return(rownames(XX))
-}
 
 get.chr.stats <- function(bigMat,snp.info,dir="",allow.subset=F)
 {

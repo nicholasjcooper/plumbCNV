@@ -50,6 +50,24 @@
 # }
 
 
+# internal function
+validate.dir.for <- function(dir,elements,warn=F) {
+  # in case the 'dir' input list object is not the standardised list form, convert
+  # allows flexible use of list or regular directory specifications in plumbCNV functions
+  if(is.null(dir)) { cat("directory empty\n"); return(NULL) }
+  if(!is.list(dir)) {
+    if(warn) { cat(elements[cc],"'dir' object wasn't a list\n")}
+    dir <- as.list(dir); names(dir)[1:length(dir)] <- elements[1:length(dir)] 
+  }
+  for (cc in 1:length(elements)) {
+    if(!elements[cc] %in% names(dir)) { 
+      dir[[paste(elements[cc])]] <- "" ;
+      if(warn) { stop(paste("dir$",elements[cc]," was empty.. set to current\n",sep="")) } 
+    }
+  }
+  return(dir)
+}
+
 
 # internal function
 # normal sort function excludes NAs without asking, this keeps them in
@@ -57,6 +75,7 @@ sortna <- function(...) {
   sort(..., na.last=TRUE)
 }
 
+# iFunctions
 # allows an sapply style function to only work on valid values
 clean.fn <- function(x,fail=NA,fn=function(x) { x }) {
   if(!is.null(x)) { 
@@ -65,6 +84,7 @@ clean.fn <- function(x,fail=NA,fn=function(x) { x }) {
 }
 
 # convert text locations like chr5:12344-5253553 into a matrix with cols: chr, start, end
+# iFunctions
 convert.textpos.to.data <- function(text) {
   do.one <- function(X) {
     chr.pos <- strsplit(X,":",fixed=T)[[1]]  
@@ -164,7 +184,7 @@ table2d <- function(...,col,row,rn=NULL,cn=NULL,remove.na=TRUE) {
 }
 
 
-
+# iFunctions
 ## takes a RangedData object from some annotation lookup functions and converts to standard text positions
 Ranges.to.txt <- function(chr.list) {
   if(!is(chr.list)[1] %in% c("RangedData","GRanges")) { stop("Not a GRanges or RangedData object") }
@@ -173,7 +193,7 @@ Ranges.to.txt <- function(chr.list) {
   return(text.out)
 }
 
-
+# iFunctions
 # select autosomes only in RangedData object
 select.autosomes <- function(snp.info,deselect=FALSE) {
   #must.use.package("genoset",bioC=T)
@@ -253,6 +273,7 @@ remove.duplicated.id.ranges <- function(X,column="id") {
 }
 
 
+# iFunctions
 # note that this will preserve only chr,start,end, nothing else including rownames
 ranged.to.data.frame <- function(ranged,include.cols=FALSE,use.names=TRUE) {
   if(!include.cols) {
@@ -280,6 +301,14 @@ ranged.to.data.frame <- function(ranged,include.cols=FALSE,use.names=TRUE) {
   }
 }
 
+
+# internal# iFunctions
+chrNames2 <- function(X) {
+  XX <- chrIndices2(X)
+  return(rownames(XX))
+}
+
+# internal # iFunctions
 # version of toGenomeOrder() that is guaranteed to work for IRanges or GRanges
 toGenomeOrder2 <- function(X,...) {
   if(has.method("toGenomeOrder",X)) {
@@ -295,6 +324,7 @@ toGenomeOrder2 <- function(X,...) {
   }
 }
 
+#internal # iFunctions
 # version of chrInfo() that is guaranteed to work for IRanges or GRanges
 chrInfo2 <- function(X) {
   if(has.method("chrInfo",X)) {
@@ -305,6 +335,7 @@ chrInfo2 <- function(X) {
   }
 }
 
+#internal # iFunctions
 # version of chrIndices() that is guaranteed to work for IRanges or GRanges
 chrIndices2 <- function(X,...) {
   if(has.method("chrIndices",X)) {
@@ -315,6 +346,7 @@ chrIndices2 <- function(X,...) {
   }
 }
 
+#internal # iFunctions
 # version of chr() that is guaranteed to work for IRanges or GRanges
 chr2 <- function(X) {
   if(has.method("chr",X)) {
@@ -329,6 +361,7 @@ chr2 <- function(X) {
   }
 }
 
+#internal # iFunctions
 # enter a function as a character or function
 # if class is a string, will look for that name, else if an object, will search the class() of that object
 has.method <- function(FUN,CLASS) {
@@ -342,11 +375,13 @@ has.method <- function(FUN,CLASS) {
 }
 
 
+# iFunctions internal?
 # convenience function to use GRanges
 data.frame.to.granges <- function(dat,...) {
   return(data.frame.to.ranged(dat=dat,...,GRanges=TRUE))
 }
-  
+ 
+# iFunctions
 ## convert any data frame with chr,start,end, or pos data into a RangedData object
 # not case sensitive
 data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL,
@@ -429,7 +464,7 @@ data.frame.to.ranged <- function(dat,ids=NULL,start="start",end="end",width=NULL
   }
 }
 
-
+# iFunctions
 # convert snpStats:SnpMatrix object nicely to a dataframe where coding becomes 0,1,2,NA
 SnpMatrix.to.data.frame <- function(X) {
   if(!any(c("SnpMatrix","snp.matrix") %in% is(X))) { 
@@ -445,6 +480,7 @@ SnpMatrix.to.data.frame <- function(X) {
   return(cov.data)
 }
 
+# iFunctions
 # convert from a dataframe to a SnpMatrix
 data.frame.to.SnpMatrix <- function(X){
   must.use.package("snpStats",T)
@@ -473,6 +509,7 @@ data.frame.to.SnpMatrix <- function(X){
 }
 
 
+# specific to me
 # reads snp matrices from RData binary file. if it finds multiple, will attempt to join them together
 # can also handle an XSnpMatrix
 get.SnpMatrix.in.file <- function(file){
@@ -498,7 +535,7 @@ get.SnpMatrix.in.file <- function(file){
   return(ret.out)
 }
 
-#internal
+#internal # iFunctions?
 chr.sel <- function(X,chr) {
   # One of the main differences between RangedData and GRanges is the way
   # of selecting the subset for a chromosome. RangedData just uses [n] where
@@ -527,7 +564,7 @@ chr.sel <- function(X,chr) {
 
 ### MORE GENERAL ###
 
-
+# iFunctions
 #' @param table.out logical, whether to return a lookup table of how names matched to integers
 #' @param table.in data.frame/matrix, col 1 is the raw text names, col 2 is the integer that should be assigned,
 #'  col 3 is the cleaned text (of col 1) with 'chr' removed. the required form is outputted by this function if
@@ -579,17 +616,19 @@ chrNums <- function(ranged,warn=F,table.out=F,table.in=NULL) {
 }
 
 
-
+# iFunctions
 # for given genome ranges will try to find the closest snps to the end of the ranges
 end.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,nearest=T) {
   return(start.snp(snp.info=snp.info,chr=chr,pos=pos,ranged=ranged,start=F,end=T,nearest=nearest))
 }
 
+# iFunctions
 # for given genome ranges will try to find the closest snps to the start and end of the ranges
 range.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,nearest=T) {
   return(start.snp(snp.info=snp.info,chr=chr,pos=pos,ranged=ranged,start=T,end=T,nearest=nearest))
 }
 
+# iFunctions - already in?
 # get nearby number of snps?? also defined again below????
 get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
   snp.info <- toGenomeOrder2(snp.info,strict=TRUE); rw.cnt <- 1
@@ -616,6 +655,7 @@ get.adj.nsnp <- function(snp.info,ranged,nsnp=10) {
 }
 
 
+# iFunctions - already in? internal?
 # for given genome ranges will try to find the closest snps to the start of the ranges
 start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,nearest=T) {
   # will preferably find an exact match but if nearest=T, will fall-back on nearest match
@@ -682,6 +722,7 @@ start.snp <- function(snp.info,ranged=NULL,chr=NULL,pos=NULL,start=T,end=F,neare
 }
 
 
+# iFunctions? internal ?
 # force a valid pair of positions, given the inputted chromosome
 force.chr.pos <- function(Pos,Chr,snp.info=NULL,build="hg18",dir=NULL) {
   build <- ucsc.sanitizer(build)
@@ -710,7 +751,7 @@ force.chr.pos <- function(Pos,Chr,snp.info=NULL,build="hg18",dir=NULL) {
 
 
 
-
+# iFunctions
 # retreive GO terms from biomart for a given gene list
 # can retrieve biological function, cellular component, or molecular description
 get.GO.for.genes <- function(gene.list,bio=T,cel=F,mol=F) {
@@ -735,6 +776,7 @@ get.GO.for.genes <- function(gene.list,bio=T,cel=F,mol=F) {
 }
 
 
+# specific
 # basically same format as the fishers test but uses logistic regression (more power)
 logiti <- function(case,ctrl,case.d=NA,cont.d=NA,inclusive=T,...,stat=c("p.value","conf.int","estimate","all")) { 
   stat <- tolower(paste(stat[1]))
@@ -772,6 +814,7 @@ logiti <- function(case,ctrl,case.d=NA,cont.d=NA,inclusive=T,...,stat=c("p.value
   return(Out)
 }
 
+# specific
 # fishers exact test given case and control obs counts, then total group counts from info object or manual counts.
 FET <- function(case,ctrl,dir=NULL,sample.info=NULL,case.d=NA,cont.d=NA,stat=c("p.value","conf.int","estimate","all"),inclusive=T) {
   skip.c <- F
@@ -817,6 +860,7 @@ FET <- function(case,ctrl,dir=NULL,sample.info=NULL,case.d=NA,cont.d=NA,stat=c("
 }
 
 
+# iFunctions
 # select everything in a ranges format that is in a window of a chromosome; 
 unique.in.range <- function(ranged,chr,pos,full.overlap=F, unit=c("b","kb","mb","gb"), rmv.dup=T) {
   if(length(pos)>2 | !is.numeric(pos)) { warning("pos should be a start and end numeric range"); return(NULL) }
@@ -841,6 +885,7 @@ unique.in.range <- function(ranged,chr,pos,full.overlap=F, unit=c("b","kb","mb",
 }
 
 
+# iFunctions?
 # add gene annotation to existing plot with y range 'ylim',
 #  in range 'sect' using 'parse.annot.file' formmated
 #  annotation data read in from dataframe 'DF'. step is a scaling
@@ -899,6 +944,7 @@ plot.gene.annot <- function(gs=NULL, chr=1, pos=NA, x.scl=10^6, y.ofs=0, width=1
 }
 
 
+# iFunctions?
 # should enter a ranged object with data for only 1 chromosome
 # yadj controls offset from the default y-axis location of the plotted ranges (default is integers)
 # adjust scl if the plot is in Mb units or Kb units (ranged object should always be in base-pairs)
@@ -964,6 +1010,7 @@ plot.ranges <- function(rangedat,labels=NULL,do.labs=T,skip.plot.new=F,lty="soli
 
 
 
+# iFunctions - internal?
 #' @param keep whether to keep as object or just return the chr
 set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
   #must.use.package("genoset",bioC=T)
@@ -1033,6 +1080,8 @@ set.chr.to.char <- function(ranged,do.x.y=T,keep=T) {
   }
 }
 
+
+# iFunctions - internal?
 #' @param table.in, table.out extra parameters for chrNums (e.g, how to convert weird regions)
 set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
   typ <- is(ranged)[1]
@@ -1109,6 +1158,7 @@ set.chr.to.numeric <- function(ranged,keep=T,table.in=NULL,table.out=FALSE) {
 }
 
 
+# specific to plumb cnv
 # like 'findOverlaps' but according to a specific percentage
 # specify own reference comparison or use standard 'gene', 'exon' or 'dgv'
 # can filter on several criteria prior to matching (length/snps/dels/dups), or after matching (overlap %)
@@ -1225,6 +1275,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   return(out)
 }
 
+# internal specific to plumb
 ## mainly to tidy up the function below - does the processing for 1 chromosome
 get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.query=T, txid=F, prog=F, alt.name=NULL) {
   #prv(next.chr, x, y, xx, yy)
@@ -1292,6 +1343,7 @@ get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.q
 }
 
 
+# internal plumb
 # flattens list - old version
 reduce.list.to.scalars.old <- function(ll) {
   if(is.list(ll)) {
@@ -1456,6 +1508,7 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   return(by.chr.list)
 }
 
+# iFunctions
 ## get the locations of the immunoglobin regions
 get.immunog.locs <- function(build=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
   nchr <- 22
@@ -1490,6 +1543,7 @@ get.immunog.locs <- function(build=c("hg18","hg19"),bioC=TRUE,text=FALSE) {
   return(outData)
 }
 
+# iFunctions
 ## get the locations of the centromeres
 get.centromere.locs <- function(dir="",build=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE)
 {
@@ -1526,6 +1580,7 @@ get.centromere.locs <- function(dir="",build=c("hg18","hg19"),bioC=TRUE,text=FAL
 }
 
 
+# iFunctions
 ## get the locations of each cytoband (karotype)
 # if dir left blank won't leave a trace
 get.cyto <- function(build="hg18",dir=NULL,bioC=TRUE,refresh=FALSE) {
@@ -1570,7 +1625,7 @@ get.cyto <- function(build="hg18",dir=NULL,bioC=TRUE,refresh=FALSE) {
 }
 
 
-
+# iFunctions
 #' Get HapMap recombination rates for hg18 (build 36)
 #' 
 #' Recombination rate files can be used to calculate recombination distances
@@ -1593,6 +1648,8 @@ get.cyto <- function(build="hg18",dir=NULL,bioC=TRUE,refresh=FALSE) {
 #' @param refresh logical, if you already have the binary file in the current directory,
 #' this argument will let you re-download and re-generate this file, e.g, if the file
 #' is modified or corrupted this will make a new one without having to manually delete it
+#' @param compress logical, this argument is passed to 'save' and will result in a larger
+#' binary file size, but quicker loading times, so 'FALSE' is recommended for faster retrieval.
 #' @export
 #' @return Returns a list object of length 22, containing the recombination map files
 #' as 22 separate data.frame's.
@@ -1602,7 +1659,7 @@ get.cyto <- function(build="hg18",dir=NULL,bioC=TRUE,refresh=FALSE) {
 #' ## rec.map <- get.recombination.map(getwd())
 #' ## file.on.disk <- "rrates_genetic_map_chr_1_22_b36.RData"
 #' ## if(file.exists(file.on.disk)) { unlink(file.on.disk) } # remove the downloaded file
-get.recombination.map <- function(dir=NULL,verbose=TRUE,refresh=FALSE) {
+get.recombination.map <- function(dir=NULL,verbose=TRUE,refresh=FALSE, compress=FALSE) {
   n.chr <- 22
   hap.dir <- "http://hapmap.ncbi.nlm.nih.gov/downloads/recombination/latest/rates/"
   temp.dir <- "recombinationratesGF13fDR1er119"
@@ -1637,14 +1694,14 @@ get.recombination.map <- function(dir=NULL,verbose=TRUE,refresh=FALSE) {
   } else {
     map.files.list <- reader(local.file)
   }
-  if(!is.null(dir)) { save(map.files.list,file=local.file) }
+  if(!is.null(dir)) { save(map.files.list,file=local.file,compress=compress) }
   if(length(map.files.list)!=n.chr) { stop("Unfortunately the object derived seems corrupted") }
   names(map.files.list) <- paste0("chr",1:n.chr)
   return(map.files.list)
 }
 
 
-  
+# iFunctions
 ## get list of all exons, names, starts, ends
 get.exon.annot <- function(dir=NULL,build="hg18",bioC=T,list.out=F) {
   build <- ucsc.sanitizer(build)
@@ -1703,6 +1760,7 @@ get.exon.annot <- function(dir=NULL,build="hg18",bioC=T,list.out=F) {
   return(ts)
 }
 
+# iFunctions
 # internal, tidy chromosome names using extra chromosomal annotation into rough chromosomes
 tidy.extra.chr <- function(chr,select=FALSE) {
   # most relevant to hg18
@@ -1739,6 +1797,7 @@ tidy.extra.chr <- function(chr,select=FALSE) {
   }  
 }
 
+# iFunctions
 ## get list of all genes, names, starts, ends, optionally bands
 #' @param ens.id logical, whether to include the ensembl id in the dataframe
 get.gene.annot <- function(dir=NULL,build="hg18",bioC=TRUE,duplicate.report=FALSE,
@@ -1814,7 +1873,7 @@ get.gene.annot <- function(dir=NULL,build="hg18",bioC=TRUE,duplicate.report=FALS
 }
 
 
-
+# iFunctions
 ## create telomere locations - artibrary number of kb at start and end of each CHR
 get.telomere.locs <- function(dir="",kb=10,build=c("hg18","hg19"),bioC=TRUE,text=FALSE,autosomes=FALSE,mito.zeros=FALSE)
 {
@@ -1856,7 +1915,7 @@ get.telomere.locs <- function(dir="",kb=10,build=c("hg18","hg19"),bioC=TRUE,text
 }
 
 
-
+# iFunctions
 #' Get chromosome lengths from build database
 #' 
 #' Quick and easy way to retrieve human chromosome lengths. Can select from hg18/hg19 (ie, 
@@ -1951,6 +2010,7 @@ get.chr.lens <- function(dir="",build=c("hg18","hg19")[1],autosomes=FALSE,len.fn
 }
 
 
+# iFunctions?
 #create a snp.info object
 # calculate chromosome-wise position and ID for each SNP in list()
 # dir should be contain the annotation directory assumed to contain the snp list (dir.ano)

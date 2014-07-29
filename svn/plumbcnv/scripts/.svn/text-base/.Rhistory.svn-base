@@ -1,0 +1,512 @@
+source("FunctionsCNVAnalysis.R")
+plate.lookup(get.plate.info(dir.ano,1,4,5))
+plate.lookup <- get.plate.info(dir.ano,1,4,5))
+plate.lookup <- get.plate.info(dir.ano,1,4,5)
+head(plate.lookup)
+source("FunctionsCNVAnalysis.R")
+source("FunctionsCNVAnalysis.R")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5)
+head(plate.lookup)
+keep.duplicates(plate.lookup)
+keepduplicates(plate.lookup)
+??keepduplicates
+anyDuplicated(plate.lookup[,1])
+duplicated(plate.lookup[,1])
+plate.lookup[,1][duplicated(plate.lookup[,1])]
+plate.lookup[[duplicated(plate.lookup[,1])],]
+plate.lookup[duplicated(plate.lookup[,1])],]
+plate.lookup[duplicated(plate.lookup[,1]),]
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5)
+duplicated(plate.lookup[,1])
+anyDuplicated(plate.lookup[,1])
+plate.lookup[plate.lookup[,1]==duplicated(plate.lookup[,1]),]
+plate.lookup[plate.lookup[,1]==plate.lookup[,1]duplicated(plate.lookup[,1]]),]
+plate.lookup[plate.lookup[,1]==plate.lookup[,1]duplicated(plate.lookup[,1]),]
+plate.lookup[,1]==plate.lookup[duplicated(plate.lookup[,1])
+plate.lookup[duplicated(plate.lookup[,1]),]
+plate.lookup[(plate.lookup[,1]==plate.lookup[duplicated(plate.lookup[,1]),1]),]
+plate.lookup[(plate.lookup[,1]==plate.lookup[duplicated(plate.lookup[,1])]),]
+plate.lookup[(plate.lookup[,1] %in% plate.lookup[duplicated(plate.lookup[,1]),1]),]
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5)
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dupz=T)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dupz=T)
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+get.plate.info
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5),fn="poo",print.dup=F)
+plate.lookup <- get.plate.info(dir.ano,1,4,5,fn="poo",print.dup=F)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,fn="poo",print.dup=F)
+source("FunctionsCNVAnalysis.R")
+do.venn.QC(rez,dir.qc.lrr) # DRAW VENN DIAGRAM
+source("FunctionsCNVAnalysis.R")
+do.venn.QC(rez,dir.qc.lrr) # DRAW VENN DIAGRAM
+source("FunctionsCNVAnalysis.R")
+do.venn.QC(rez,dir.qc.lrr) # DRAW VENN DIAGRAM
+source("FunctionsCNVAnalysis.R")
+do.venn.QC(rez,dir.qc.lrr) # DRAW VENN DIAGRAM
+LRR.boxplot(stat.table,paste(dir.qc.lrr,pref,"LRRDistributionsBoxPlot.pdf",sep=""))
+head(plate.lookup)
+levels(as.factor(plate.lookup$plate))
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,fn="poo",print.dup=F)
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+as.integer(counters[match(plate.lookup$plate,counters)])
+counters <- table(plate.lookup$plate)
+as.integer(counters[match(plate.lookup$plate,counters)])
+head(counters)
+as.integer(head(counters))
+source("FunctionsCNVAnalysis.R")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+plate.lookup[["count"]] <- as.integer(counters[match(plate.lookup$plate,names(counters))])
+head(plate.lookup)
+table(plate.lookup$count)
+source("FunctionsCNVAnalysis.R")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,print.dup=T)
+head(plate.lookup)(
+)
+head(plate.lookup)
+tail(plate.lookup)
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5),dup.action="return")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup[[2]]
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup[[3]]
+plate.lookup[[2]]
+head(plate.lookup[[1]])
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+head(plate.lookup[[1]])
+which(plate.lookup[[1]][,1]=="51834211" & plate.lookup[[1]][,2]=="R58001527")
+plate.lookup[[1]][4723,]
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+dim(plate.lookup[[1]])
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+dim(plate.lookup[[1]])
+16845-16806
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+plate.lookup[[2]]
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+plate.lookup[[2]]
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+plate.lookup[[2]]
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+source("FunctionsCNVAnalysis.R")
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+plate.names <- sort(names(plate.lookup[[3]]))
+update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+new.fr<-update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+source("FunctionsCNVAnalysis.R")
+new.fr<-update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+max(NULL)
+source("FunctionsCNVAnalysis.R")
+new.fr<-update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+options(warn)
+getOption(warn)
+getOption("warn")
+options(warn=4)
+new.fr<-update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+traceback()
+source("FunctionsCNVAnalysis.R")
+new.fr<-update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+source("FunctionsCNVAnalysis.R")
+new.fr<-update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+options(warn=0)
+head(new.fr)
+source("FunctionsCNVAnalysis.R")
+new.fr<-update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+source("FunctionsCNVAnalysis.R")
+new.fr<-update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names)
+new.fr
+## up to here!!
+## note that we get some error messages, will need to thoroughly debug
+new.fr <- update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names,filt.list=colnames(bigMat2))
+new.fr
+## up to here!!
+## note that we get some error messages, will need to thoroughly debug
+new.fr <- update.plate.bad.count.table(dir.ano,plate.lookup[[1]],plate.list=plate.names,filt.list=colnames(bigMat2))
+this.fr <- new.fr[!is.na(new.fr$SIZE),]
+this.fr
+q()
+ls(0
+)
+ls()
+head(this.fr)
+head(rez)
+head(stat.table)
+head(new.fr)
+head)plate.lookup[[1]])
+head(plate.lookup[[1]])
+head(plate.lookup[[3]])
+plt <- (plate.lookup[[1]])
+mean.res.list <- sd.res.list <- list()
+for(j in 1:ncol(stat.table))
+{
+  mean.res.list[[j]] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),mean,na.rm=T)
+  sd.res.list[[j]] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),sd,na.rm=T)
+}
+head(plt$id)
+plt <- plt[plt$id %in% colnames(bigMat2)]
+library(limma)
+library(xtable)
+library(bigmemory)
+library(biganalytics)
+source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/DefineDirectoriesLocations.R")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+bigMat2 <- getBigMat(des.fn,dir.big)
+plt <- (plate.lookup[[1]])]
+plt <- plt[plt$id %in% colnames(bigMat2)]
+mean.res.list <- sd.res.list <- list()
+for(j in 1:ncol(stat.table))
+{
+  mean.res.list[[j]] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),mean,na.rm=T)
+  sd.res.list[[j]] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),sd,na.rm=T)
+}
+head(plt)
+nrow(plt_)
+nrow(plt)
+plt <- plt[plt$id %in% colnames(bigMat2)]
+plt <- plt[plt$id %in% colnames(bigMat2),]
+mean.res.list <- sd.res.list <- list()
+for(j in 1:ncol(stat.table))
+{
+  mean.res.list[[j]] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),mean,na.rm=T)
+  sd.res.list[[j]] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),sd,na.rm=T)
+}
+head(mean.res.list[[1]])
+head(mean.res.list[[2]])
+head(sd.res.list[[2]])
+(sd.res.list[[2]])
+TableColLabs <- paste(rep(colnames(stat.table),each=2),rep(c("(Av)","SD"),2))
+TableColLabs
+TableColLabs <- paste(rep(colnames(stat.table),each=2),rep(c("(Av)","(SD)"),2))
+TableColLabs
+plt <- (plate.lookup[[1]])]
+plt <- plt[plt$id %in% colnames(bigMat2),]
+plate.lrr.stats <- data.frame()
+colnames(plate.lrr.stats) <- paste(rep(colnames(stat.table),each=2),rep(c("(Av)","(SD)"),2))
+for(j in 1:ncol(stat.table))
+{
+  plate.lrr.stats[,1+((j-1)*2)] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),mean,na.rm=T)
+  plate.lrr.stats[,(j*2)] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),sd,na.rm=T)
+}
+plate.lrr.stats <- data.frame(ncol=ncol(stats.table)*2)
+colnames(plate.lrr.stats) <- paste(rep(colnames(stat.table),each=2),rep(c("(Av)","(SD)"),2))
+plate.lrr.stats <- as.data.frame(matrix(ncol=ncol(stats.table)*2))
+plate.lrr.stats <- as.data.frame(matrix(ncol=ncol(stat.table)*2))
+plate.lrr.stats <- as.data.frame(matrix(ncol=ncol(stats.table)*2))
+colnames(plate.lrr.stats) <- paste(rep(colnames(stat.table),each=2),rep(c("(Av)","(SD)"),2))
+plate.lrr.stats)
+plate.lrr.stats
+for(j in 1:ncol(stat.table))
+{
+  plate.lrr.stats[,1+((j-1)*2)] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),mean,na.rm=T)
+  plate.lrr.stats[,(j*2)] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),sd,na.rm=T)
+}
+plt <- (plate.lookup[[1]])]
+plt <- plt[plt$id %in% colnames(bigMat2),]
+plate.lrr.stats <- as.data.frame(matrix(ncol=ncol(stat.table)*2,nrow=length(unique(plt$plate))))
+colnames(plate.lrr.stats) <- paste(rep(colnames(stat.table),each=2),rep(c("(Av)","(SD)"),2))
+for(j in 1:ncol(stat.table))
+{
+  plate.lrr.stats[,1+((j-1)*2)] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),mean,na.rm=T)
+  plate.lrr.stats[,(j*2)] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),sd,na.rm=T)
+}
+head(plate.lrr.stats)
+plt <- (plate.lookup[[1]])]
+plt <- plt[plt$id %in% colnames(bigMat2),]
+plate.lrr.stats <- as.data.frame(matrix(ncol=ncol(stat.table)*2,nrow=length(unique(plt$plate))))
+colnames(plate.lrr.stats) <- paste(rep(colnames(stat.table),each=2),rep(c("(Av)","(SD)"),2))
+rownames(plate.lrr.stats) <- levels(plt$plate)
+  
+for(j in 1:ncol(stat.table))
+{
+  plate.lrr.stats[,1+((j-1)*2)] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),mean,na.rm=T)
+  plate.lrr.stats[,(j*2)] <- tapply(stat.table[plt$id,j],as.factor(plt$plate),sd,na.rm=T)
+}
+head(plate.lrr.stats)
+levels(plt$plate)
+levels(plt$plate)
+rownames(plate.lrr.stats) <- levels(as.factor(plt$plate))
+head(plate.lrr.stats)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+plate.lrr.stats <- get.plate.lrr.stats(plate.lookup[[1]],stat.table,colnames(bigMat))
+print(plate.lrr.stats)
+plate.lrr.stats <- get.plate.lrr.stats(plate.lookup[[1]],stat.table,colnames(bigMat2))
+print(plate.lrr.stats)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+lrr.boundary.scatter(stat.table,s.tab,dir.qc.lrr,fn.pre="",fn.suf="",ylim=c(0,1),col="darkblue")
+head(stat.table)
+head(stat.table$Mean)
+head(stat.table$DLRS)
+is(stat.table)
+stat.table <- as.data.frame(cbind(stat.mat[c.nms,c("Mean","DLRS")],gc.wave[c.nms,wav.filt.mode]))
+colnames(stat.table)[ncol(stat.table)] <- "GCWave"
+lrr.boundary.scatter(stat.table,s.tab,dir.qc.lrr,fn.pre="",fn.suf="",ylim=c(0,1),col="darkblue")
+lrr.boundary.scatter(stat.table,s.tab,dir.qc.lrr,fn.pre="",fn.suf="",col="darkblue")
+reg.dat <- plt[plt$id %in% samps,"plate"]  # SUBINFO[match(rownames(stat.table),SUBINFO[,1]),5]
+batch.effects.density.plot(stat.table, grp.dat=reg.dat, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+head(reg.dat)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=reg.dat, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+grp <- plt[plt$id %in% samps,"plate"]
+grp <- plt[plt$id %in% colnames(bigMat2),"plate"]  # SUBINFO[match(rownames(stat.table),SUBINFO[,1]),5]
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+head(grp)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+grp <- plt[plt$id %in% colnames(bigMat2),"plate"]  # SUBINFO[match(rownames(stat.table),SUBINFO[,1]),5]
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+grp <- plt[plt$id %in% colnames(bigMat2),"plate"]  # SUBINFO[match(rownames(stat.table),SUBINFO[,1]),5]
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+grp <- plt[plt$id %in% colnames(bigMat2),"plate"]  # SUBINFO[match(rownames(stat.table),SUBINFO[,1]),5]
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+grp <- plt[plt$id %in% colnames(bigMat2),"plate"]  # SUBINFO[match(rownames(stat.table),SUBINFO[,1]),5]
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+head(stat.table)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+warnings()
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+warnings()
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+warnings()
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+warnings()
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+warnings()
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+warnings()
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+batch.effects.density.plot(stat.table, grp.dat=grp, grp.lab="Plate", npg=8, 
+                           ylz=c(25,25), xllz=c(-.2,.0), xlhz=c(.1,.5),dir=dir.qc.pl,extrapref="")
+venn.lists <- get.fail.type.list(rez,stat.table[,"Mean"]) 
+venn.lists
+length(venn.lists)
+venn.lists[[9]] <- NULL
+venn.lists
+venn.lists <- get.fail.type.list(rez,stat.table[,"Mean"]) 
+ex.id <- get.extreme.examples(stat.table,rez,venn.lists)
+ex.id
+cat("Plotting extreme samples for combinations of: Mean vs GC vs DLRS\n")
+plot.extreme.samples(ex.id, bigMat2, dir.big, dir.ind, CHR.INFO)  #,ap="_A_")
+print.chr.obj(CHR.INFO)
+plot.extreme.samples(ex.id, bigMat2, dir.big, dir.ind, CHR.INFO)  #,ap="_A_")
+traceback()
+warnings()
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+plot.extreme.samples(ex.id, bigMat2, dir.big, dir.ind, CHR.INFO)  #,ap="_A_")
+plot.extreme.samples(ex.id, bigMat2, CHR.INFO, dir.big, dir.ind )  #,ap="_A_")
+dev.off()
+dev.off()
+dev.off()
+dev.off()
+dev.off()
+dev.off()
+dev.off()
+plot.extreme.samples(ex.id, bigMat2, CHR.INFO, dir.big, dir.ind )  #,ap="_A_")
+writeLines(poo,con="test.txt")
+writeLines(c("fgasdf","sdf"),con="test.txt")
+plot.extreme.samples(ex.id, bigMat2, CHR.INFO, dir.big, dir.ind )  #,ap="_A_")
+traceback()
+source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/DefineDirectoriesLocations.R")
+plot.extreme.samples(ex.id, bigMat2, CHR.INFO, dir.big, dir.ind )  #,ap="_A_")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+plot.extreme.samples(ex.id, bigMat2, CHR.INFO, dir.big, dir.ind )  #,ap="_A_")
+summary.list <- make.QC.summary.table(bigMat2,dir.ano)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+summary.list <- make.QC.summary.table(bigMat2,dir.ano)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+summary.list <- make.QC.summary.table(bigMat2,dir.ano)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+summary.list <- make.QC.summary.table(bigMat2,dir.ano)
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+plot.extreme.samples(rez, stat.table, bigMat2, CHR.INFO, dir.big, dir.ind)
+print(plate.lrr.stats).
+print(plate.lrr.stats)
+this.fr
+write.table(plate.lrr.stats,sep="\t",col.names=T,row.names=T,quote=F,file="StatsPerPlate.tab")
+write.table(stat.table,sep="\t",col.names=T,row.names=T,quote=F,file=paste(dir.qc.lrr,"StatsPerSample.tab",sep=""))
+source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/DefineDirectoriesLocations.R")
+write.table(stat.table,sep="\t",col.names=T,row.names=T,quote=F,file=paste(dir.qc.lrr,"StatsPerSample.tab",sep=""))
+write.table(this.fr,sep="\t",col.names=T,row.names=F,quote=F,file=paste(dir.qc.pl,"CountsPerPlate.tab",sep=""))
+write.table(plate.lrr.stats,sep="\t",col.names=T,row.names=T,quote=F,file=paste(dir.qc.pl,"StatsPerPlate.tab",sep=""))
+plate.lrr.stats <- round(get.plate.lrr.stats(plate.lookup[[1]],stat.table,colnames(bigMat2)),3)
+write.table(plate.lrr.stats,sep="\t",col.names=T,row.names=T,quote=F,file=paste(dir.qc.pl,"StatsPerPlate.tab",sep=""))
+write.table(round(stat.table,5),sep="\t",col.names=T,row.names=T,quote=F,file=paste(dir.qc.lrr,"StatsPerSample.tab",sep=""))
+DUP","TABLE","WRITE","SFILE","QCFILE","DMFILE","PFILE"),
+                       def=c(paste(as.integer(c(plateEX
+)
+)
+)
+}
+q()
+## plotting / tabulating stats on the LRR means, medians, SDs 
+# across samples
+print("This program reads in a table of LRR stats, calculates basic LRR stats for samples")
+print("then outputs these tables to latex, and plots graphs")
+library(limma)
+library(xtable)
+library(bigmemory)
+library(biganalytics)
+source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/DefineDirectoriesLocations.R")
+source(paste(dir.scr,"FunctionsCNVAnalysis.R",sep=""))
+# setting mainMode gives best settings for plots of:  
+#   1) Passed call rate 95% samples 
+#   2) A txt file (subList) specified subset of sample (1); e.g, LRR pass QC samples 
+#   3) LRR pass QC samples plus PC-corrected
+if (exists("mM")) { mainMode <- mM } else { mainMode <- 1 }
+## DEFAULT SETTINGS ##
+doPlots <- F  # set to F to skip generating many plots
+writeExclFiles <- F  # write exclusions to files or just generate the lists.
+wav.filt.mode <- 2  # whether to use: 1: R_GC ; 2:S_WF [wave from all sources]  3:S_GCWF [wave from GC sources]
+scl <- 1000000 # graph scale factor (bases)
+# dataset to use [nb: pc plate plots will want this as 3 different opts hence 'exists' condition]
+if(!exists("big.descr")) {
+  big.descr <- "LRRFiltSortdescrFile"   }  # bigData used for plotting extreme samps + chrinfo
+## When mainMode=1
+# for Mean, StDev, DLRS, GCWave, cutoffs to use for exclusions [will write all to /SAMPLES_EXCLUDE/ but only 4 go to 'rez']
+med.chunk.fn <- paste(dir.qc.gc,pref,"chunkMedianInd.RData",sep="")
+snp.info.fn <- paste(dir.ano,"rawdata.map",sep="")
+pref <- "LRR1"
+des.fn <- "LRR1SortdescrFile.RData"  
+dlrs.pref <- "DLRSq"
+#qc.fn <- paste(dir.qc.lrr,"QCstats",pref,".txt",sep="")
+hib <- 2.5 #2.575 #3.29 # define stringent z score boundary 
+lob <- 2 #1.96 #2.575 # define lenient z score boundary
+input.dir <- dir.col #"/chiswick/data/ncooper/ImmunochipReplication/LRRDATA/ColumnData/"
+input.suf <- "LRR.dat"
+sample.fn <- "subIds.txt"
+snp.fn <- "snpNames.txt"
+#### COMMAND ARGS ####
+# process command line options (if present)
+if (!exists("skipCmdArgs")) {
+arg.list <- parse.args(commandArgs(),coms=c("M","GCF","PLOTS","WRITE","COLS","BFILE"),
+         def=c(paste(as.integer(c(mainMode,wav.filt.mode,doPlots,writeExclFiles,doPlateCols))),
+                        big.descr))
+if (!is.null(arg.list)) {
+  if (arg.list["M",1] %in% paste(c(1,2,3))) { mainMode <- as.integer(paste(arg.list["M",][1])) }
+  if (arg.list["GCF",1] %in% paste(c(1,2))) { wav.filt.mode <- as.integer(paste(arg.list["GCF",][1])) }
+  if (arg.list["PLOTS",]=="1") { doPlots <- T } else { doPlots <- F }
+  if (arg.list["WRITE",]=="1") { writeExclFiles <- T } else { writeExclFiles <- F }
+  if (arg.list["COLS",]=="1") { doPlateCols <- T } else { doPlateCols <- F }
+  if (nchar(arg.list["BFILE",])>1) { big.descr <- (paste(arg.list["BFILE",][1])) }
+}
+}
+######################
+# delete any existing sample exclusion files
+initialise.excl.files(dir.ano)
+## gather sample information (firstly loading from LoadInSNPs.R result)
+sample.snp <- get(load(file=paste(dir.ano,"samplensnp.RData",sep="")))
+## make sure sample info is nice:
+sample.info <- validate.samp.info(sample.snp$sample.info,dir.col,dir.ano)
+# load plate info
+plate.lookup <- get.plate.info(dir.ano,1,4,5,dup.action="return")
+plate.lookup <- trim.plate.duplicates(plate.lookup,by="counts")
+# add plate annotation to sample.info
+sample.info <- add.plates.to.sample.info(sample.info,plate.lookup,dir.ano)
+###########################################
+## PART ONE - PROCESS DATA / ANNOTATION  ##
+###########################################
+grp.fnz <- get.file.specs(dir.col)[,1]
+lrr.fnz <- paste(grp.fnz,".",input.suf,sep="")
+id.fnz <- paste(grp.fnz,".ids",sep="")
+grp <- 1
+pref <- paste("LRR",grp,sep="")
+  input.fn <- lrr.fnz[grp]
+  sample.fn <- id.fnz[grp]
+  ## LOAD RAW DATA FROM SOURCE##
+  bigMat <- plain.vec.to.big.matrix(dir.big,snps.are.rows=T,
+            input.is.vec=T,dir.col,input.fn,dir.ano,sample.fn,snp.fn,delete.existing=T)
+ls()
+?rm
+pref <- paste("LRR",grp,sep="")
+  input.fn <- lrr.fnz[grp]
+  sample.fn <- id.fnz[grp]
+  ## LOAD RAW DATA FROM SOURCE##
+  bigMat <- plain.vec.to.big.matrix(dir.big,snps.are.rows=T,
+            input.is.vec=T,dir.col,input.fn,dir.ano,sample.fn,snp.fn,delete.existing=T)
+rm(list=ls())
+ls()
+q()

@@ -1,16 +1,16 @@
 
-suffix <- 998
+suffix <- 228
 metabo <- F
 plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 6
+my.st <- 5
 my.end <- 6
 do.cnv <- T
 comp <- F
 samp.set <- "light"
-pca.set <- 24
+pca.set <- 9
 restore <- F
 sex.correct <- F
 q.cores <- 100 #NA
@@ -62,7 +62,7 @@ base.settings <- list(dt.name="datatracker",
                       manual.col.nums=NULL,plink.imp=F,fet.analysis.p=0.05,HD.mode=F,
                       n.cores=22,low.ram=F,
                       hide.penn.plink=T,penn.path="/usr/local/bin/penncnv64/",
-                      ucsc="hg18",erase.previous=F,verbose=F)
+                      build="hg18",erase.previous=F,verbose=F)
 
 
 penn.settings <- list(hmm=hmm.file,relative=F,run.manual=F,print.cmds=F,q.cores=q.cores,
@@ -74,7 +74,7 @@ if(comp) {
   snp.settings <- list(callrate.samp.thr=.94,callrate.snp.thr=.985,hwe.thr=0.0001,
                        snp.grp.miss=T,grp.hwe.z.thr=4,grp.cr.thr=.001,het.lo=.17,het.hi=.25)
 } else {
-  snp.settings <- list(callrate.samp.thr=.94,callrate.snp.thr=.97,hwe.thr=0.00001,
+  snp.settings <- list(callrate.samp.thr=.94,callrate.snp.thr=.95,hwe.thr=0.000000001,
                        snp.grp.miss=F,grp.hwe.z.thr=400,grp.cr.thr=10^-20,het.lo=.1,het.hi=.40)
 }
 
@@ -108,9 +108,9 @@ if(pca.set==0) {
                        add.int=F,preserve.median=F,
                        comparison=F,comp.gc=F,comps="plate",exclude.bad.reg=F)
 } else {
-  if(pca.set==6) {
+  if(pca.set==9) {
     
-    pca.settings <- list(num.pcs=6,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=sex.correct,
+    pca.settings <- list(num.pcs=12,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=sex.correct,
                          add.int=F,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   } else {
@@ -132,7 +132,7 @@ if(!do.cnv) {
   #normal
   cnv.settings <- list(out.format="Ranges",results="everything",print.summary.overlaps=T,
                        cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.01,del.rate=0.4,dup.rate=0.2,thr.sd=3,plate.thr=3,
-                       rmv.low.plates=F,min.sites=6,rare.olp=0.5,rare.pc=0.03,rmv.bad.reg=T)
+                       rmv.low.plates=F,min.sites=6,rare.olp=0.5,rare.pc=0.05,rmv.bad.reg=T)
 }
 
 settings <- c(chip.settings,base.settings,snp.settings,samp.settings,pca.settings,penn.settings,cnv.settings)

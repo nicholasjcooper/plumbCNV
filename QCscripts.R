@@ -302,7 +302,9 @@ convert.smp.to.chr22 <- function(snpMatLst,snp.info,dir="",n.cores=1)
   }
   must.use.package("snpStats",bioC=T)
   list.spec <- get.snpMat.spec(snpMatLst,dir=dir)
-  rownames(list.spec) <- c("Samples","SNPs"); colnames(list.spec) <- basename(colnames(list.spec))
+  #prv(list.spec)
+  rownames(list.spec) <- c("Samples","SNPs"); 
+  if(!is.null(colnames(list.spec))) { colnames(list.spec) <- basename(colnames(list.spec)) }
   cat("\n"); print(list.spec); cat("\n")
   #e.g, sanger    t1d    uva
   #[1,]   4537   6808   5461   --> samples

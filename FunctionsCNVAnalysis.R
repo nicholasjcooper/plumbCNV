@@ -1,12 +1,12 @@
 #options(stringsAsFactors=FALSE)
 
-if(file.exists("~/github/plumbCNV/geneticsFunctions.R")) {
-  source("~/github/plumbCNV/geneticsFunctions.R")
-  source("~/github/plumbCNV/SimulationFunctions.R")
-  source("~/github/plumbCNV/validation.functions.R")
-  source("~/github/plumbCNV/QCscripts.R")
-  source("~/github/plumbCNV/tdtFunctions.R")
-  source("~/github/iChip/iFunctions.R")
+if(file.exists("geneticsFunctions.R")) {
+  source("geneticsFunctions.R")
+  source("SimulationFunctions.R")
+  source("validation.functions.R")
+  source("QCscripts.R")
+  source("tdtFunctions.R")
+  source("iFunctions.R")
   library(bigpca) # will also load reader and NCmisc
 } else {
   warning("Didn't find external script files, or was run not from ~/github/plumbCNV")
@@ -242,7 +242,7 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
     cat("snp.info: "); snp.info <- read.snp.info(dir,nprev=3) 
     if(!is.data.frame(sample.info)) { stop("couldn't find snp.info object in dir$ano") }
   }
-  uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
+  #uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
   # create subset datafile
   if(num.pcs<1) {
     corrected.ref <- big.lrr.fn
@@ -265,7 +265,7 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
     corrected.ref <- PC.correct(pca.result,big.lrr.fn,dir=dir,num.pcs=num.pcs,n.cores=n.cores,
                                                 pref=cor.pref,big.cor.fn=big.cor.fn,write=T,
                                                 sample.info=sample.info,correct.sex=correct.sex, 
-                                                add.int=add.int, preserve.median=preserve.median)
+                                                add.int=add.int) # not submitted to CRAN yet, preserve.median=preserve.median)
   }
   corrected.bigMat <- get.big.matrix(corrected.ref,dir) #; rm(corrected.ref) #(in case it was a bigmat)
   # optionally make comparison of pre and post-pc distributions
@@ -281,6 +281,7 @@ run.PCA.correct <- function(DT=NULL,dir=NULL,pc.to.keep=.13,assoc=F,num.pcs=9,n.
   #else {
     #return(describe(corrected.bigMat))
   #}
+  if(!exists("settings")) { settings <- NULL } # if plumbcnv() is used there will be a settings object, otherwise not
   if(is.data.tracker(DT)) {
     DT <- setSlot(DT,pca=corrected.ref,median=med.fn,eigen=pcs.fn,
                               stat=stat.fn,n.pcs=num.pcs,proc.done=4,warns=F,settings=settings)
@@ -381,8 +382,7 @@ lrr.sample.dists <- function(bigMat,snp.info,dir,gc=F,dlrs=T,pref="",med.chunk.f
   #debug(calculate.gc.for.samples)
   if(gc) {
     cat("\nAdding GC wave to LRR stats, be aware this can be slow\n")
-    gc.wave <- calculate.gc.for.samples(bigMat,snp.info=snp.info,dir=dir,med.chunk.fn=med.chunk.fn,
-          restore.mode=restore.mode,build=build,n.cores=n.cores)
+    gc.wave <- calculate.gc.for.samples(bigMat,snp.info=snp.info,dir=dir,med.chunk.fn=med.chunk.fn,restore.mode=restore.mode,build=build,n.cores=n.cores)
     ## combine GC and main, then report
     c.nms <- rownames(stat.mat)[rownames(stat.mat) %in% row.names(gc.wave)]
     if(!dlrs) { stat.set <- c("Mean","StDev") } else { stat.set <- c("Mean","DLRS") }
@@ -2168,7 +2168,7 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
      if(!verbose) { cat(" importing long format snp data for file",tt,"...") }
      snpMat <- read.snps.long(files = data[tt], sample.id = subs.list[[tt]],    
                               snp.id = snp.list, diploid = NULL, 
-                              fields = field.list[[tt]], 
+                              field.list = field.list[[tt]], 
                               codes = "nucleotide", sep = "\t", comment = "#", 
                               skip = header.lens[tt], simplify = c(FALSE,FALSE),
                               verbose = verbose, in.order = TRUE, every = num.markers)
@@ -2797,17 +2797,24 @@ get.chr.ab.fail.subset <- function(chrWarns, dir, failerMode="NOTLRR", max.bad.t
  # decode for each sample which chromosomes are bad and create labels for graphs
  chrLab <- character(length(badcheckz))
  chrN <- list()
- for (mm in 1:length(badcheckz)){
-   failstr <- names(unlist(chrWarns))[which(unlist(chrWarns) %in% badcheckz[mm])]
-   extr.str <- sapply(strsplit(failstr,"_",fixed=T),"[",1)
-   chrN[[mm]] <- gsub("chr","",extr.str)
-   if(length(failstr)==1)
-   { chrLab[mm] <- paste("Chromosome",chrN[[mm]]) } else {
-     chrLab[mm] <- paste("Chromosomes",paste(chrN[[mm]],collapse=","))
+ n.bad <- length(badcheckz)
+ if(n.bad>0) {
+   for (mm in 1:n.bad){
+     failstr <- names(unlist(chrWarns))[which(unlist(chrWarns) %in% badcheckz[mm])]
+	 print(failstr)
+	 if(length(failstr)>0) {
+       extr.str <- sapply(strsplit(failstr,"_",fixed=T),"[",1)
+       chrN[[mm]] <- gsub("chr","",extr.str)
+       if(length(failstr)==1)
+       { chrLab[mm] <- paste("Chromosome",chrN[[mm]]) } else {
+         chrLab[mm] <- paste("Chromosomes",paste(chrN[[mm]],collapse=","))
+       }
+	 }
    }
  }
  names(chrN) <- badcheckz
  out.list <- list(badcheckz,chrN,chrLab)
+ prv(out.list) ### hERE
  names(out.list) <- c("badcheckz","chrN","chrLab")
  return(out.list)
 }
@@ -3385,10 +3392,12 @@ sync.snpmat.with.info <- function(snpMatLst,snp.info=NULL,sample.info=NULL,dir=N
  reorder.fn <- function(snpMatPart,info,snp=T) {
   if(snp) { nms <- colnames; txt <- "columns" } else { nms <- rownames; txt <- "rows" }
   to.keep <- match(rownames(info),nms(snpMatPart)) ; ll1 <- length(to.keep)
+  #prv(to.keep)
   to.keep <- to.keep[!is.na(to.keep)] ; ll2 <- length(to.keep)
-  if((1-(ll2/(ll1+ll2)))>.25) {
-    warning(" discarding ",round((1-(ll2/(ll1+ll2)))*100,2),
-            "% of ",txt, "that don't match the annotation file") 
+  #prv(to.keep,snpMatPart,info)
+  if((1-(ll2/(ll1)))>.25) {
+    warning(" discarding ",round((1-(ll2/(ll1)))*100,2),
+            "% of ",txt, " that don't match the annotation file") 
   }
   if(snp) { return(snpMatPart[,to.keep]) } else { return(snpMatPart[to.keep,]) }
  }
@@ -5191,7 +5200,7 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
   
   # View overlap of call rate and HWE exclusion criteria for SNPs
   if(drawVennsOfHWEvsCR) {
-    must.use.package("limma",T)
+    must.use.package("limma",T) ## why did this fail???
     cat(" generating venn diagrams\n")
     conds <- cbind(snp.qc.list$CR.cond,snp.qc.list$HWE.cond)
     conds[is.na(conds)] <- FALSE; vc <- vennCounts(conds) ; vc
@@ -5288,12 +5297,16 @@ do.chromosomal.abberations <- function(dir,bigMat2,snp.info,pref="",
   chr.stat <- get.chr.stats(bigMat2,snp.info,dir)
   chrWarns <- do.chr.ab.contrasts(chr.stat$chr.mean,lob,hib,nC=n.chr)
   outlist <- get.chr.ab.fail.subset(chrWarns, dir=dir, failerMode="NOTLRR") 
-  chr.ab.report(chr.stat, chrWarns=chrWarns, dir=dir, 
+  if(length(outlist[[1]])>0) {
+    chr.ab.report(chr.stat, chrWarns=chrWarns, dir=dir, 
                 makeGraphs=F, writeExclList=T,append=T)
-  if(plot) {
-    plot.chr.ab.samples(dir=dir,bigMat2=bigMat2,chr.stat=chr.stat, chr.ab.samples.obj=outlist,
+    if(plot) {
+      plot.chr.ab.samples(dir=dir,bigMat2=bigMat2,chr.stat=chr.stat, chr.ab.samples.obj=outlist,
                         snp.info=snp.info,colPlot=colPlot,failerMode="NOTLRR",
                         lob=lob,hib=hib,pctile.bound=pctile.bound,pref=pref,...)
+    }  
+  } else {
+    cat(" no chromosomal abberations were detected\n")
   }
   return(outlist)
 }
@@ -5392,7 +5405,6 @@ process.cohort.qc <- function(DT=NULL,grp,of,dir,sample.info,snp.info,restore.mo
   R.descr <- big.exclude.sort(des.fn, dir=dir, pref=pref,verbose=verbose) }
   bigMat2 <- get.big.matrix(R.descr,dir)
   prv.big.matrix(bigMat2,"Snp_QC_Mat")
-  
   datlist <- lrr.sample.dists(bigMat2,snp.info=snp.info,dir=dir,n.cores=n.cores,
                               gc=T,dlrs=dlrs,pref=pref,med.chunk.fn=med.chunk.out,
                               build=build,restore.mode=restore.mode,
@@ -5512,7 +5524,7 @@ run.SAMPLE.qc <- function(DT=NULL,dir=NULL,init=T,big.lrr=NULL,sample.info=NULL,
     cohort.qc <- process.cohort.qc(DT=DT,grp=grp,of=ngrp,dir=dir,sample.info=sample.info,snp.info=snp.info,verbose=verbose,
                                    pref="",des.fn=big.lrr[[grp]],med.chunk.out=med.chunk.out,plate.lookup=plate.lookup,
                                    badPlateThresh=badPlateThresh,skip.chr.ab=skip.chr.ab,lob=lob,hib=hib,pctile.bound=pctile.bound,
-                                   batch=batch,plate.report=plate.report,chr.ab.report=chr.ab.report,lrr.report=lrr.report,
+                                   batch=batch,plate.report=plate.report,chr.ab.report=chr.ab.report,lrr.report=lrr.report,build=build,
                                    dlrs=dlrs, pc.to.keep=pc.to.keep,num.pcs=num.pcs,restore.mode=restore.mode,exclude.bad.reg=exclude.bad.reg,
                                    cohort.pc.correct=cohort.pc.correct,add.int=add.int,nSD=nSD,lo.cut=lo.cut,hi.cut=hi.cut,n.cores=n.cores,...)
     if(is.data.tracker(DT)) {
@@ -6785,7 +6797,7 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
   if(!is.character(grid.id)) { grid.id <- NA }
   if(!check.linux.install("qsub")) { q.cores <- NA }
   if(!is.numeric(q.cores[1]) | (as.numeric(q.cores[1])<1) | is.na(grid.id[1]) ) { q.cores <- NA }
-  if(n.cores>1) { multi <- T } 
+  if(n.cores>1) { multi <- T } else { multi <- F }
   marker.fn <- NULL
   if(!is.na(q.cores)) { qsub <- T ; multi <- F ; relative <- F } else { qsub <- F } # run penn on qsub
   if(is.data.tracker(DT)) {
@@ -6908,13 +6920,14 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
       time.per.it <- (hrs.guess/n.calls)*60; total.time <- 0
       if(length(n.calls)<1) { stop("no penn calls were produced") }
       for (tt in 1:n.calls) {
-        cat(" expect HMM process ",tt,"/",n.calls," to take roughly ",round(time.per.it,2),"minutes\n",sep="")
+        cat(" expect HMM process ",tt,"/",n.calls," to take roughly ",round(time.per.it,2)," minutes\n",sep="")
         kk <- proc.time()
+			  print(penn.calls[tt])
         killme <- system(penn.calls[tt],intern=hide.penn.out, ignore.stderr=hide.penn.out)
         jj <- proc.time()
         time.per.it <- round((jj[3]-kk[3])/60)
         total.time <- total.time+time.per.it
-        cat(" PennCNV processing for the first ",tt," calls has taken",time.per.it,"minutes so far\n",sep="")
+        cat(" PennCNV processing for the first ",tt," calls has taken ",time.per.it," minutes so far\n",sep="")
       }
       options(warn = 0)
     }
@@ -8099,9 +8112,10 @@ calculate.gc.for.samples <- function(bigMat,snp.info,dir,med.chunk.fn="",restore
   # get genome wide human GC data at megabase resolution 
   # load average data for 10^6 windows prepared using 'extractGCwindows.R'
   gc.sav <- cat.path(dir$gc,"GCAv6.RData")
-  uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
+  #uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
   if(!file.exists(gc.sav))
   {
+    #print(paste("buildhere",build))
     gc.dat <- get.gc.human(10^6,build=build,n.cores=n.cores)
     save(gc.dat,file=gc.sav)
   } else {
@@ -8635,7 +8649,7 @@ print.biggest.cnvs <- function(cnvResult=NULL,DEL=NULL,DUP=NULL,above=3000000,be
 }
 
 
-LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.cores=1)
+LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.cores=1,build="hg18")
 {
   ## using GC%, run correction for GC-wave on a dataset
   load.all.libs()
@@ -8647,7 +8661,7 @@ LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.c
   rN <- rownames(origMat); cN <- colnames(origMat)
   # run pca.correction using ectors (PCs) and alues from LRR.PCA
   if(is(snp.info)[1]=="RangedData") {
-    gc.dat <- get.gc.markers(dir=dir, snp.info=snp.info, n.cores=n.cores)
+    gc.dat <- get.gc.markers(dir=dir, snp.info=snp.info, n.cores=n.cores, build=build)
     mySnpsGC <- gc.dat$gc[match(rownames(snp.info),rownames(gc.dat))]
     gc <- mySnpsGC[match(rN,rownames(snp.info))]
     cat(length(which(is.na(gc))),"/",length(rN)," markers missing GC data replaced with mean\n",sep="")
@@ -8735,12 +8749,12 @@ get.gc.markers <- function(dir, snp.info=NULL, snp.fn="snpdata.map", anot="map3"
     cat(" made new snp.info object\n")
   }
   if(is(snp.info)[1]=="RangedData") {
-    uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
+    #uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
     snp.info <- select.autosomes(snp.info)
     chr.set <- chrNums(snp.info)
-    cat(" using build build",build,"and chromosomes",paste(chr.set,collapse=","),"\n")
+    cat(" using build",build,"and chromosomes",paste(chr.set,collapse=","),"\n")
   } else { stop("Error: GC calculation failed due to invalid snp.info object") }
-  hgFn <- paste("BSgenome.Hsapiens.build.",build,sep="")
+  hgFn <- paste("BSgenome.Hsapiens.UCSC.",build,sep="")
   suppressWarnings(suppressMessages(must.use.package(c(hgFn),bioC=T)))
   # recalculate: chrLens,chrStarts for bioconductor annotation (could be different to other annotation)
   # these are just the lengths and genome starting positions for each autosome
@@ -8782,7 +8796,8 @@ get.gc.markers <- function(dir, snp.info=NULL, snp.fn="snpdata.map", anot="map3"
 get.gc.human <- function(windowsize=10^6,build="hg18",ret=c("bio","gc")[1], n.cores=1) {
   # get the mean GC% for every 1MB window of the human genome
   # can set build build ('build') to hg18 or hg19
-  hgFn <- paste("BSgenome.Hsapiens.build.",build,sep="")
+  #print(paste("buildThere",build))
+  hgFn <- paste("BSgenome.Hsapiens.UCSC.",build,sep="")
   suppressWarnings(suppressMessages(must.use.package(c("genoset","BiocGenerics",hgFn),bioC=T)))
   # get chromosome lengths from annotation (possibly slightly different to other sources)
   chrLens <- as.numeric(seqlengths(Hsapiens)[1:22])
@@ -8808,7 +8823,9 @@ get.gc.human <- function(windowsize=10^6,build="hg18",ret=c("bio","gc")[1], n.co
   cat("took",round((proc.time()[3]-st.time)/60,1),"minutes\n")
   #cat("NB: please ignore warnings about previous imports and 'number of items to replace' - this is normal\n")
   det.nm <- paste("package:",hgFn,sep="")
-  detach(det.nm,character.only = TRUE) # un-load large annotation package.
+  if(det.nm %in% search()) { 
+    detach(det.nm,character.only = TRUE) # un-load large annotation package.
+  }
   return(switch(ret,bio=gc.dat,gc=gc.dat$gc))
 }
 
@@ -9505,7 +9522,7 @@ col.plot.lrr <- function (ID, bigMat, snp.info=NULL, centre.chr=1:22, rng.mb=NA,
     if(any(!rownames(bigMat)%in% rownames(snp.info))) { warning("some SNP names in bigMat were not in snp.info"); return(NULL) }
     snp.info <- snp.info[(rownames(snp.info) %in% rownames(bigMat)),]
     if(!isGenomeOrder(snp.info)) { warning("bigMat rows (snps) are not in genome order"); return(NULL) }
-    uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
+    #uv <- tolower(universe(snp.info)); if(length(uv)>0) { if(uv %in% paste("hg",16:20,sep="")) { build <- uv } }
   #  if(force.autosomes) { snp.info <- select.autosomes(snp.info) }
     chr.set <- chrNums(snp.info); nC <- length(chr.set)
   } else { warning("snp.info invalid, plot skipped"); return(NULL) }

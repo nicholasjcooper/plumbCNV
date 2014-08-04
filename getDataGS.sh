@@ -1,3 +1,4 @@
+
 #!/bin/bash
   
 #######################################################################
@@ -141,7 +142,7 @@ Usage: getDataGS [-h] [-B] [-T] [-N] [-S] [-L] [-F] [-l] [-C] [-D] [-M] [-m] [-R
     -F      Location (directory) where the raw genome studio datafiles are
     -t      Alongside -F and -O can use to create a template for the essential 'file.spec.txt'
     -N      Maximum number of threads/cores to use
-    -S      Generate list of SNPs and SAMPLES
+    -S      Extract list of SNPs and SAMPLES from the raw data file
     -L      Generate plink lgen file(s)
     -f      Generate a fake family file for plink (as opposed to having a real one prepared)
     -l      Make file with file lengths of input data
@@ -541,32 +542,36 @@ then
   mfnm=$(echo "$mfnm" | sed 's/ *$//g') # in case of trailing space(s)
   if [ "$gs" = "yes" ]
   then
-  echo "Extracting SNP info from genome studio type file"
+  echo "Extracting SNP info from genome studio type file:  $mfnm"
     # determine whether text or zip format
-    if [[ $mfnm = *.tar.gz ]]
-     then
-       mnexttype = "gzip"
-     else
-       mnexttype = "txt"
-    fi
+    case "$mfnm" in
+    *.gz | *.tgz ) 
+            mnexttype="gzip"
+            ;;
+    *)
+            mnexttype="txt"
+            ;;
+    esac
     mchrCol=$mchrColG
     mposCol=$mposColG
     # same code as just below
     echo "applying any custom custom column settings -abcd if they exist"
-    if [[ $customSamp != 0 ]] ; then mSampCol=$customSamp ; fi
-    if [[ $customSnp != 0 ]]  ; then mSnpCol=$customSnp   ; fi
-    if [[ $customChr != 0 ]]  ; then mchrCol=$customChr   ; fi
-    if [[ $customPos != 0 ]]  ; then mposCol=$customPos   ; fi
+    if [ $customSamp != 0 ] ; then mSampCol=$customSamp ; fi
+    if [ $customSnp != 0 ]  ; then mSnpCol=$customSnp   ; fi
+    if [ $customChr != 0 ]  ; then mchrCol=$customChr   ; fi
+    if [ $customPos != 0 ]  ; then mposCol=$customPos   ; fi
     echo "parsing $mnexttype file."
     echo "[assuming sample-id in $mSampCol, chr in col $mchrCol, pos in col $mposCol, snp-label in col $mSnpCol]"
     echo "if any of these column numbers are wrong please modify mSampCol, mchrCol, mposCol, mSnpCol in this script"
   if [ "$mnexttype" = "gzip" ];
     then 
+        echo "extracting from zip file (*.gz)"
         SUBID1=$(zcat $mfnm | head -50 | tail -1 | cut -f $mSampCol)
         zcat $mfnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $mchrCol  > snpdata1.temp 
         zcat $mfnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $mSnpCol  > snpdata2.temp 
         zcat $mfnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $mposCol  > snpdata3.temp 
     else
+        echo "extracting from uncompressed text file (*.txt)"
         SUBID1=$(head -50 $mfnm  | tail -1 | cut -f $mSampCol)  
         head -"$MaxSnp" $mfnm  | grep $SUBID1 | cut -f $mchrCol  > snpdata1.temp 
         head -"$MaxSnp" $mfnm  | grep $SUBID1 | cut -f $mSnpCol  > snpdata2.temp 
@@ -574,21 +579,23 @@ then
     fi
   else
     echo "Extracting SNP support from support file, e.g, bim, vcf, map, etc."
-    if [[ $mfnm = *.bim ]]
-    then
-     echo $(basename $mfnm) seems to be a bim file so changing pos column from $mposCol to $mposColB 
-     mposCol=$mposColB
-    else
-     echo "current file is not a bim file so using default column numbers for map3 format"
-    fi
+    case "$mfnm" in
+    *.bim ) 
+            echo $(basename $mfnm) seems to be a bim file so changing pos column from $mposCol to $mposColB 
+            mposCol=$mposColB
+            ;;
+    *)
+            echo "current file is not a bim file so using default column numbers for map3 format"
+            ;;
+    esac
     # preview the file to make sure
     head -5 $mfnm
     # same code as just above
     echo "applying any custom custom column settings -abcd if they exist"
-    if [[ $customSamp != 0 ]] ; then mSampCol=$customSamp ; fi
-    if [[ $customSnp != 0 ]]  ; then mSnpCol=$customSnp   ; fi
-    if [[ $customChr != 0 ]]  ; then mchrCol=$customChr   ; fi
-    if [[ $customPos != 0 ]]  ; then mposCol=$customPos   ; fi
+    if [ $customSamp != 0 ] ; then mSampCol=$customSamp ; fi
+    if [ $customSnp != 0 ]  ; then mSnpCol=$customSnp   ; fi
+    if [ $customChr != 0 ]  ; then mchrCol=$customChr   ; fi
+    if [ $customPos != 0 ]  ; then mposCol=$customPos   ; fi
     echo "[assuming chr in col $mchrCol, pos in col $mposCol, snp-label in col $mSnpCol]"
     echo "if any of these column numbers are wrong please modify mchrCol, mposCol, mSnpCol in this script"
     cut -f $mchrCol $mfnm > snpdata1.temp

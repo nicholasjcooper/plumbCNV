@@ -1,12 +1,14 @@
 #options(stringsAsFactors=FALSE)
 
-if(file.exists("geneticsFunctions.R")) {
-  source("geneticsFunctions.R")
-  source("SimulationFunctions.R")
-  source("validation.functions.R")
-  source("QCscripts.R")
-  source("tdtFunctions.R")
-  source("iFunctions.R")
+scr.dir <- "~/github/plumbCNV/"
+
+if(file.exists(cat.path(scr.dir,"geneticsFunctions.R"))) {
+  source(cat.path(scr.dir,"geneticsFunctions.R"))
+  source(cat.path(scr.dir,"SimulationFunctions.R"))
+  source(cat.path(scr.dir,"validation.functions.R"))
+  source(cat.path(scr.dir,"QCscripts.R"))
+  source(cat.path(scr.dir,"tdtFunctions.R"))
+  source(cat.path("~/github/iChip","iFunctions.R"))
   library(bigpca) # will also load reader and NCmisc
 } else {
   warning("Didn't find external script files, or was run not from ~/github/plumbCNV")
@@ -4140,8 +4142,8 @@ filter.hifreq.cnv.samples <- function(plink.file, nsamps, rem.file=plink.file, r
   if(!is.null(ndups)) { dup.rate <- ndups/nsamps } else { ndups <- round(nsamps*dup.rate) }
   if(rare %in% c("DEL","DUP")) { suf.for.rmv <- paste("_",rare,"rcnt",sep="") } else { suf.for.rmv <- "_CNVcnt" }
   # establish cutoffs for rare deletions/duplications using rates in all samples *2
-  dup.cutoff <- which(round(ppois(c(1:10),dup.rate,lower.tail=F)*ndups,4)<pval)[1]-1
-  del.cutoff <- which(round(ppois(c(1:10),del.rate,lower.tail=F)*ndels,4)<pval)[1]-1
+  dup.cutoff <- which(round(ppois(c(1:1000),dup.rate,lower.tail=F)*ndups,4)<pval)[1]-1
+  del.cutoff <- which(round(ppois(c(1:1000),del.rate,lower.tail=F)*ndels,4)<pval)[1]-1
 
   dat <- read.table(cat.path(dir$cnv.qc,plink.file,ext="cnv"),header=T,stringsAsFactors=FALSE)  #; colnames(dat) <- 
   tt <- as.numeric(table(dat$IID))[order(as.numeric(table(dat$IID)))]
@@ -4858,6 +4860,7 @@ initialise.excl.files <- function(dir,reset.files=c("ChrAb.txt","DLRS.txt","GCWa
 
 gs.bash.http <- function(repos="plumbCNV",script="getDataGS.sh") {
   # load package
+  must.use.package("RCurl")
   if(packages.loaded("RCurl")) {
     txt <- getURL(paste("https://raw.github.com/nicholasjcooper/",repos,"/master/",basename(script),sep=""), followlocation = TRUE, cainfo = system.file("CurlSSL", "cacert.pem", package = "RCurl"))
     return(txt)
@@ -10478,18 +10481,18 @@ init.dirs.fn <- function(dir,overwrite=F,ignore=c("raw","sup"),
       if(file.exists(src)) {
         file.copy(from=src,to=scr.file,recursive=T,overwrite=T)
       } else {
-        gs <- gs.bash.http()
-        if(!is.null(gs)) {
-          # GITHUB WAY:
-          writeLines(gs,file=scr.file)
-          cat(" copied file",basename(scr.file),"\ninto:",dir$scr,"\nfrom github/plumbCNV/ \n")
-        } else {
+       # gs <- gs.bash.http()
+       # if(!is.null(gs)) {
+       #   # GITHUB WAY:
+       #   writeLines(gs,con=scr.file)
+       #   cat(" copied file",basename(scr.file),"\ninto:",dir$scr,"\nfrom github/plumbCNV/ \n")
+       # } else {
           ## RFORGE WAY:
           warning("Could not reach github, reverting to RForge version of the script which might be outdated")
-          rforge.url <- "http://r-forge.r-project.org/scm/viewvc.php/*checkout*/scripts/getDataGS.sh?revision=2&root=plumbcnv"
+          rforge.url <- "http://r-forge.r-project.org/scm/viewvc.php/*checkout*/scripts/getDataGS.sh?revision=3&root=plumbcnv"
           download.file(url=rforge.url,destfile=scr.file)
           cat(" copied file",basename(scr.file),"\ninto:",dir$scr,"\nfrom Rforge/plumbcnv/ \n")
-        }
+       # }
       }
       system(paste("chmod +x",scr.file))
     }

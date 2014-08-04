@@ -5,8 +5,8 @@ plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 6
-my.end <- 6
+my.st <- 0
+my.end <- 3
 do.cnv <- T
 comp <- F
 samp.set <- "light"
@@ -16,9 +16,9 @@ sex.correct <- F
 q.cores <- 100 #NA
 hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hh0+.hmm"
 
+library(reader); library(bigpca); library(NCmisc)
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
 source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
-library(reader); library(bigpca); library(NCmisc)
 load.all.libs()
 #source("~/github/plumbCNV/geneticsFunctions.R")
 
@@ -28,19 +28,14 @@ load.all.libs()
 #         dir.base="/chiswick/data/ncooper/ImmunochipReplication/",
 
 
-auxdirI <- "/home/ncooper/Documents/necessaryfilesICHIP"
-auxdirM <- "/home/ncooper/Documents/necessaryfilesMCHIP"
+auxdirI <- "/home/ncooper/Documents/necessaryfilesVASC"
 
-dir_rawM <- "/chiswick/data/store/metabochip/FinalReports/"
-dir_rawI <- "/ipswich/data/Immunochip/FinalReports/"
+dir_rawI <- "/sopworth/data/illumina/hui/vasculitis/"
 
-dir_baseM <- "/chiswick/data/ncooper/metabochipRunTest/"
-dir_baseI <- "/chiswick/data/ncooper/immunochipRunTwo/"
+dir_baseI <- "/chiswick/data/ncooper/vasculitis"
 
-s.supM <- "/chiswick/data/store/metabochip/PLINK/Metabo_20100426_58C.bim" # support file name (eg, bim)
-s.supI <- "/ipswich/data/Immunochip/FinalReports/sanger-controls.txt"
+s.supI <- "/sopworth/data/illumina/hui/vasculitis/vasculitis_FinalReport.txt.gz"
 
-gsfM <- F
 gsfI <- T
 
 

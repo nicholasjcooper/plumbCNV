@@ -450,12 +450,12 @@ plot.lrr.CNVR <- function(thisCNVR,dir,genes=T,BAF=F,type="l",DEL=T,cex=1) {
 
 #re-does analysis using data passing quality score thresholds
 #a bit messy but may be important to add this?
-process.quality.scores <- function(DT,suffix,dir,restore=T) {
+process.quality.scores <- function(DT,suffix,dir,n.pcs=NA,restore=T) {
   # dodgy hack of dodgy code to extract quality scores.. quite some unecessary stuff here
   # works its way up to doing the case-control fischer analysis after extracting Quality scores,
   # and does it for several thresholds.
   thr <- 0 # set this to 0, leave filters for a later stage
-  res.fn <- getSlot(DT,"cnvresult")
+  res.fn <- getSlot(DT,"cnvresult",n.pcs=n.pcs)
   cnvResults <- x.result <- get(paste(load(cat.path(dir$res,res.fn))))  #cnvResultsPCAAssoc9.RData"))))
   exp.names <-  c("allCNV","allDel","allDup","rareDEL","rareDUP")
   if(length(cnvResults)==5) { if(!all(names(cnvResults) %in% exp.names)) { names(cnvResults) <- exp.names } }
@@ -1348,7 +1348,7 @@ if(F) {
 
 if(F) {
   #cbind(oo[[1]],oo[[2]],substr(oo[[3]],1,10))[order(oo[[1]]/oo[[2]]),]
-  
+  n.pcs.used <- NA
   oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=T)
   oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=T)
   pdf(cat.path(dir$res,"qqDEL.pdf")); qqplot(x=runif(nrow(oo1)),y=oo1$sig,type="l",ylab="p.value",xlab="uniform distribution 0,1"); abline(a=0,b=1,lty="dotted") ;dev.off()
@@ -1477,7 +1477,7 @@ if(F) {
   qs.fn1 <- "/chiswick/data/ncooper/immunochipRunTwo/RESULTS/Runz/RUN19/qs.del.resultsRUN19.txt"
   qs.fn2 <- "/chiswick/data/ncooper/immunochipRunTwo/RESULTS/Runz/RUN19/qs.dup.resultsRUN19.txt"
   qs1 <- reader(qs.fn1); qs2 <- reader(qs.fn2)
-  print(load(getSlot(read.data.tracker(dir),"cnvresults")))
+  print(load(getSlot(read.data.tracker(dir),"cnvresults",n.pcs=n.pcs.used)))
   cnvResults[[4]][["score"]] <- qs1[,1]
   cnvResults[[5]][["score"]] <- qs2[,1]
   cnvs1 <- add.scores.to.cnvrs(cnvs1,cnvResults[[4]])

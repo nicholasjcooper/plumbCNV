@@ -2,11 +2,11 @@
 
 scr.dir <- "~/github/plumbCNV/"
 
-if(file.exists(cat.path(scr.dir,"geneticsFunctions.R"))) {
-  source(cat.path(scr.dir,"geneticsFunctions.R"))
-  source(cat.path(scr.dir,"SimulationFunctions.R"))
-  source(cat.path(scr.dir,"validation.functions.R"))
-  source(cat.path(scr.dir,"QCscripts.R"))
+if(file.exists(cat.path(scr.dir,"generalCNVFunctions.R"))) {
+  source(cat.path(scr.dir,"generalCNVFunctions.R"))
+  source(cat.path(scr.dir,"simulationFunctions.R"))
+  source(cat.path(scr.dir,"validationFunctions.R"))
+  source(cat.path(scr.dir,"qcScripts.R"))
   source(cat.path(scr.dir,"tdtFunctions.R"))
   source(cat.path("~/github/iChip","iFunctions.R"))
   library(bigpca) # will also load reader and NCmisc
@@ -9651,6 +9651,7 @@ dlrs <- function(X,na.rm=T)
   return(out/sqrt(2))
 }
 
+# internal in iFunctions?
 gene.duplicate.report <- function(ga,full.listing=F,colname="gene") {
   # for a RangedData object, report on any multiple listings for the same gene
   if(is(ga)[1]!="RangedData") { warning("not a RangedData object") ; return(NULL) }
@@ -9819,7 +9820,7 @@ count.cnvs <- function(cnv.hit.list,cnv.sample.map=NULL,by.phenotype=F,tot.cnvs=
   ## do overall calculations
   overall.result <- basic.cnv.counts(cnv.hit.list, tot.cnvs=tot.cnvs, content.txt=content.txt)
   ## do phenotype calculations (essentially call function again filtering for subset)
-  pheno.result <- NULL
+  pheno.result <- NULL; n.phenos <- 1 # default
   if(ph.mode) {
     phenos <- sort(unique(ph.dat))
     n.phenos <- length(phenos); pheno.result <- vector("list",n.phenos)
@@ -11031,7 +11032,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
 #  grpz[grpz==-1] <- 0
 #  print(unique(grpz))
 #  cnvResults[[4]]$phenotype <- grpz
-  
+  n.phenos <- 1 #default in case we don't make it into the next section  
   ##
   if(print.summary.overlaps | !(tolower(results) %in% c("dt","ranges"))) {
     print.biggest.cnvs(cnvResults,above=3000000)      

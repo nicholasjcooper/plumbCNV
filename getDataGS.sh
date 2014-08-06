@@ -555,7 +555,7 @@ then
     mchrCol=$mchrColG
     mposCol=$mposColG
     # same code as just below
-    echo "applying any custom custom column settings -abcd if they exist"
+    echo "applying any custom column settings -abcd if they exist"
     if [ $customSamp != 0 ] ; then mSampCol=$customSamp ; fi
     if [ $customSnp != 0 ]  ; then mSnpCol=$customSnp   ; fi
     if [ $customChr != 0 ]  ; then mchrCol=$customChr   ; fi

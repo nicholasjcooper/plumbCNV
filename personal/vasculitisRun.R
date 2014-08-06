@@ -1,11 +1,11 @@
 
-suffix <- 228
+suffix <- 1
 metabo <- F
 plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 0
+my.st <- 3
 my.end <- 3
 do.cnv <- T
 comp <- F

@@ -1,24 +1,25 @@
 
-suffix <- 228
+suffix <- 229
 metabo <- F
 plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 6
-my.end <- 6
+my.st <- 5
+my.end <- 5
 do.cnv <- T
 comp <- F
 samp.set <- "light"
-pca.set <- 12
+pca.set <- 6
 restore <- F
 sex.correct <- F
 q.cores <- 100 #NA
-hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hh0+.hmm"
+hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hh550.hmm"
 
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
+library(reader)
 source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
-library(reader); library(bigpca); library(NCmisc)
+ library(bigpca); library(NCmisc)
 load.all.libs()
 #source("~/github/plumbCNV/geneticsFunctions.R")
 
@@ -108,7 +109,7 @@ if(pca.set==0) {
                        add.int=F,preserve.median=F,
                        comparison=F,comp.gc=F,comps="plate",exclude.bad.reg=F)
 } else {
-  if(pca.set==12) {
+  if(pca.set<24) {
     
     pca.settings <- list(num.pcs=12,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=sex.correct,
                          add.int=F,preserve.median=F,

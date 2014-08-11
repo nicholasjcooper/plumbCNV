@@ -294,9 +294,7 @@ cnv.qc.settings <- list(rare.pc=0.05, exclude.bad.reg=FALSE, min.sites=10, rare.
 ALL.SETTINGS <- c(main.settings,penn.settings,pca.settings,cnv.qc.settings)
 
 
-
-And then run them nice and tidily:
-
+#And then use the simplified input:
 
 cnv.result <- plumbcnv(settings=ALL.SETTINGS)
 

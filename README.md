@@ -33,33 +33,25 @@ BLAS - you may have BLAS already as part of R or linux, if not: http://www.openb
 
 R packages required:
 --------------------
-# NB: need at least R v3.0, but this code should install everything you need
+NB: need at least R v3.0, but this code should install everything you need
 
 #reader and NCmisc
 install.packages(reader,dependencies=TRUE)
 install.packages(bigpca,dependencies=TRUE)
 require(reader)
 
-# quite a few others
-further.packages <- c("bigmemory","biganalytics","multicore","lattice","compiler","NCmisc",
-"IRanges","BiocGenerics","Biobase","GenomicRanges","genoset")
+#Other packages
+further.packages <- c("bigmemory","biganalytics","multicore","lattice","compiler","NCmisc")
+bioC.packages <- c("IRanges","BiocGenerics","Biobase","GenomicRanges","genoset","bigalgebra")
 
-must.use.package(further.packages) # this NCmisc function should install all these packages with this command
-
-# bigalgebra
-# once bigpca is installed, you can run the following to install bigalgebra
-require(bigpca)
-big.algebra.install.help()
-
-# NB bigalgebra is due for release to CRAN soon, but at the moment it requires this manual install process.
+#these NCmisc functions should install all these packages with this command
+must.use.package(further.packages) 
+must.use.package(bioC.packages,TRUE)
 
 
 
-You will also need various annotation files for your dataset:
-
-
-FILES REQUIRED - note whether each has a header line (or not)
-==============
+INPUT FILES REQUIRED - note whether each has a header line (or not)
+====================
 
 MAIN DATA FILES
 ---------------
@@ -119,6 +111,9 @@ SYSTEM LIMITATIONS AND REQUIREMENTS
 
 SUPPORT AND ANNOTATION FILES
 ----------------------------
+
+NB: Please view this section especially as plain text, using a fixed-width font, as otherwise it will not give a correct impression of the correct input file formats!
+
 SNP support data (namely: snp-id,chr,pos) e.g, bim,vcf,map,map3, etc. does not matter what it is called but you eventually need to enter the file location into the plumbcnv() function as a parameter.
 
 ==> snpdata.map <==

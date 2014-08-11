@@ -10499,7 +10499,7 @@ init.dirs.fn <- function(dir,overwrite=F,ignore=c("raw","sup"),
        # } else {
           ## RFORGE WAY:
           warning("Could not reach github, reverting to RForge version of the script which might be outdated")
-          rforge.url <- "http://r-forge.r-project.org/scm/viewvc.php/*checkout*/scripts/getDataGS.sh?revision=3&root=plumbcnv"
+          rforge.url <- "http://r-forge.r-project.org/scm/viewvc.php/*checkout*/scripts/getDataGS.sh?revision=4&root=plumbcnv"
           download.file(url=rforge.url,destfile=scr.file)
           cat(" copied file",basename(scr.file),"\ninto:",dir$scr,"\nfrom Rforge/plumbcnv/ \n")
        # }

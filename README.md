@@ -77,7 +77,7 @@ PERFORMANCE AND TIMINGS
 -----------------------
 
 This pipeline is build to handle very large microarray datasets. Initial testing has been done on 16,000 samples for a 200K SNP array. There is no reason foreseeable why 200,000 samples for a million SNPs would not work using the same code, as everything is scalable and NOT linearly dependent on RAM (it is linearly dependent in hard-disk space). 
-4GB of RAM is a minimum requirement and things will run more quickly the more memory you have. 20GB or more is recommended for the best performance. Terabytes of Hard Disk space may be required for large datasets. The code is strongly parallel, and running with multicores is ideal. Most of the multicore operation assumes that the cores are immediately accessible (for instance via the R-package 'multicore'). Use of GRIDs/Clusters is supported for limited operations within the pipeline, mainly to run PennCNV. To utilize this functionality you may need to follow the instructions for CLUSTERS/GRIDs just below. Most of my running of the pipeline at the DIL lab has used specs like:
+4GB of RAM is a minimum requirement (use low.ram=TRUE) and things will run more quickly the more memory you have. 20GB or more is recommended for the best performance. Terabytes of Hard Disk space may be required for large datasets. The code is strongly parallel, and running with multicores is ideal. Most of the multicore operation assumes that the cores are immediately accessible (for instance via the R-package 'multicore'). Use of GRIDs/Clusters is supported for limited operations within the pipeline, mainly to run PennCNV. To utilize this functionality you may need to follow the instructions for CLUSTERS/GRIDs just below. Most of my running of the pipeline at the DIL lab has used specs like:
 
 Linux 64bit server
 * Largest dataset: 16,000 samples x 200K SNPs
@@ -225,6 +225,12 @@ snp.support="/data/store/metabochip/PLINK/MetaboChip.map" # snp support file nam
 gsf=TRUE  # TRUE/FALSE, whether you have prepared a specific snp annotation file (use FALSE), or whether the 
 program should try to generate this file using a genome studio file contain SNP id, Chr, and Pos information (use TRUE)
 
+run.mode="scratch" # can be "scratch","normal" or "big", depending on whether you are reading from: i) raw files; 2) processed, long format files or LRR/BAF matrices; or (iii) LRR/BAF big.matrix objects
+
+snp.run.mode="normal" # can be "normal", "skip", or "plink"; depending on whether you are happy to run the QC in snpStats (maximum 1 billion genotypes), or whether you want to use plink SNP-QC, or none. If using PLINK, also make sure that 'plink.imp=TRUE'.
+
+ped.file="ped.fam" # a plink ped file (family file) giving the family structure if trios are being used, must also use 'trio=TRUE' to use proper trio-calling, or also add 'joint=TRUE' to use 'joint' calling right from the beginning (this option is extremely slow and may take weeks for very large datsets).
+
 start.at=0  # where to start the pipeline, there are 7 steps, 0:6, and you can start from any step you have reached previously
 
 pause.after=6 # where to pause the pipeline (default is step 6, to run through to the end, but you can also opt to pause and review progress, appropriateness of thresholds and results at an earlier step)
@@ -249,6 +255,10 @@ rare.qc=TRUE # one of the steps recommended is to discard samples and places wit
 
 restore=FALSE # this option will reuse any available pre-calculated data which can speed up subsequent runs of the same pipeline step(s). Note that you should set this to FALSE if you have made a substantial change to the settings since the last run, as the old settings may be inadvertantly used instead.
 
+n.cores=22 # the number of parallel cores to use (these must be accessible by the r-package 'multicore')
+
+q.cores=100 # number of cluster cores to use (allows running of the penn-cnv HMM command in massive parallel), this also requires that the function name passed to 'cluster.fn' passes a call to your cluster with the right syntax, e.g, see the default cluster function 'q.cmd' for example.
+
 hmm="/usr/local/bin/penncnv/lib/hh550.hmm" # PennCNV comes with some built-in hidden markov model files, like hh550.hmm and hhall.hmm; there doesn't seem to be much difference in performance, the main parameter differences are for the LOH state. I also recommend testing the sensitivity of using different parameters, particularly as the PC-correction reduces the variance somewhat, which i think allows increase of sensitivity without increasing false positives - I have had good results moving the parameter means for DELs and DUPs closer to zero than the default HMM file. You can test this iteratively by setting start.at=5, pause.after=6, restore=TRUE, and varying this parameter file.
 
 
@@ -265,10 +275,23 @@ An example call to the main function for a common CNP pipeline
 
 cnv.result <-
 plumbCNV(dir.raw="/store/ccge_vol1/icogs/cnvdata/",allele.codes=c("A","B"),
-dir.base=base.dir,snp.support="/store/ccge_vol2/research/icogs/cnv/plumb_CNV/icogs_map_file_b37.map",
-gsf=FALSE,aux.files.dir="/store/ccge_vol2/research/icogs/cnv/plumb_CNV/aux1/",start.at=0,pause.after=6,
-penn.path="/usr/local/exports/bin/penncnv/",hwe.thr=10^-100,hmm="/usr/local/bin/penncnv/lib/hh550.hmm",
-build="hg19",rare.pc=0.95,num.pcs=4,pc.to.keep=.10,exclude.bad.reg=T,min.sites=8,rare.qc=FALSE,restore=FALSE)
+dir.base=base.dir, snp.support="/store/ccge_vol2/research/icogs/cnv/plumb_CNV/icogs_map_file_b37.map",
+gsf=FALSE, aux.files.dir="/store/ccge_vol2/research/icogs/cnv/plumb_CNV/aux1/", start.at=0, pause.after=6,
+penn.path="/usr/local/exports/bin/penncnv/", hwe.thr=10^-100, hmm="/usr/local/bin/penncnv/lib/hh550.hmm",
+build="hg19",rare.pc=0.95, num.pcs=4, pc.to.keep=.10, exclude.bad.reg=T, min.sites=8, rare.qc=FALSE, restore=FALSE)
+
+
+Note that another option is to use the alternative command 'plumbcnv()' lower case, which is the same as plumbCNV(), except that it allows the use of an input object called 'settings' which is simply a list containing your settings, this can be tidier. So you can nicely organise your settings in lists:
+
+main.settings <- list(dir.raw="/store/ccge_vol1/icogs/cnvdata/", allele.codes=c("A","B"),dir.base= ... , etc)
+
+penn.settings <- list(penn.path="/usr/local/exports/bin/penncnv/", hmm="/usr/local/bin/penncnv/lib/hh550.hmm",q.cores=0)
+pca.settings <- list(num.pcs=12, pc.to.keep=.15)
+cnv.qc.settings <- list(rare.pc=0.05, exclude.bad.reg=FALSE, min.sites=10, rare.qc=TRUE)
+ALL.SETTINGS <- c(main.settings,penn.settings,pca.settings,cnv.qc.settings)
+
+
+cnv.result <- plumbcnv(settings=ALL.SETTINGS)
 
 
 Trouble-shooting: Problems encountered by others
@@ -298,7 +321,7 @@ As far the output that you should expect, there is quite a lot. So while running
 
 * 4) principle components correction
 
-* 5) running of plumb cnv
+* 5) running of PennCNV
 
 * 6) CNV-qc, summaries, overlaps, results
 

@@ -288,19 +288,19 @@ Description and Examples of output
 
 As far the output that you should expect, there is quite a lot. So while running, it is quite verbose letting you know what is going on, there are 7 main steps:
 
-*0 - raw LRR, BAF data conversion to long file or matrix format
+0) raw LRR, BAF data conversion to long file or matrix format
 
-*1 - import of matrix or long file LRR, BAF, data
+1) import of matrix or long file LRR, BAF, data
 
-*2 - import of genotype data and analysis of SNP-QC
+2) import of genotype data and analysis of SNP-QC
 
-*3 - sample QC analyses
+3) sample QC analyses
 
-*4 - principle components correction
+4) principle components correction
 
-*5 - running of plumb cnv
+5) running of plumb cnv
 
-*6 - CNV-qc, summaries, overlaps, results
+6) CNV-qc, summaries, overlaps, results
 
 
 When you run the plumbCNV function you can select the start and end step, so you can do the analysis a step at a time to monitor progress, sometimes repeating a step adjusting thresholds, etc.

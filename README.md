@@ -282,7 +282,7 @@ build="hg19",rare.pc=0.95, num.pcs=4, pc.to.keep=.10, exclude.bad.reg=T, min.sit
 
 
 Note that another option is to use the alternative command 'plumbcnv()' lower case, which is the same as plumbCNV(), except that it allows the use of an input object called 'settings' which is simply a list containing your settings, this can be tidier. So you can nicely organise your settings in lists:
-
+{
 main.settings <- list(dir.raw="/store/ccge_vol1/icogs/cnvdata/", allele.codes=c("A","B"),dir.base= ... , etc)
 
 penn.settings <- list(penn.path="/usr/local/exports/bin/penncnv/", hmm="/usr/local/bin/penncnv/lib/hh550.hmm",q.cores=0)
@@ -292,12 +292,12 @@ pca.settings <- list(num.pcs=12, pc.to.keep=.15)
 cnv.qc.settings <- list(rare.pc=0.05, exclude.bad.reg=FALSE, min.sites=10, rare.qc=TRUE)
 
 ALL.SETTINGS <- c(main.settings,penn.settings,pca.settings,cnv.qc.settings)
-
+}
 
 #And then use the simplified input:
-
+{
 cnv.result <- plumbcnv(settings=ALL.SETTINGS)
-
+}
 
 Trouble-shooting: Problems encountered by others
 ------------------------------------------------

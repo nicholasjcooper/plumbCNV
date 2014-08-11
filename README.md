@@ -80,10 +80,10 @@ This pipeline is build to handle very large microarray datasets. Initial testing
 4GB of RAM is a minimum requirement and things will run more quickly the more memory you have. 20GB or more is recommended for the best performance. Terabytes of Hard Disk space may be required for large datasets. The code is strongly parallel, and running with multicores is ideal. Most of the multicore operation assumes that the cores are immediately accessible (for instance via the R-package 'multicore'). Use of GRIDs/Clusters is supported for limited operations within the pipeline, mainly to run PennCNV. To utilize this functionality you may need to follow the instructions for CLUSTERS/GRIDs just below. Most of my running of the pipeline at the DIL lab has used specs like:
 
 Linux 64bit server
-Largest dataset: 16,000 samples x 200K SNPs
-80GB RAM [typically ~20gb will be used by the program]
-32 local cores (multicore) [I set n.cores=22]
-150 cluster cores [I set q.cores=100]
+* Largest dataset: 16,000 samples x 200K SNPs
+* 80GB RAM [typically ~20gb will be used by the program]
+* 32 local cores (multicore) [I set n.cores=22]
+* 150 cluster cores [I set q.cores=100]
 
 Using this setup, the data import usually takes a few hours, and then steps 3-6 a few hours, in total, typically 5-8 hours for a full run through. The first time you run is slower because various types of annotation need to downloaded and calculated. If settings remain the same, you can also run with option 'restore=TRUE' will always attempt to use existing datafiles and calculations rather than regenerate new ones, often saving much time. Efficiencies are mostly designed for large datasets, so this pipeline may seem unusually slow if only run for several hundred samples or less.
 
@@ -94,8 +94,10 @@ Regarding use with a cluster or GRID, one of the arguments for plumbCNV() is 'cl
 'source()' a function something like the one below, then you can just set cluster.fn="my.slurm".
 
 my.slurm <- function(file.name,output.dir="",id="") {
+
     return(paste("sbatch -C nickC --wrap -o ",output.dir,"
 ",file.name,sep=""))
+
 }
 
 You just need to make sure that the function has the same arguments as the original function 'q.cmd' and that the output makes a call to the cluster that results in the output file being written to 'output.dir'.
@@ -106,11 +108,11 @@ Alternatively you can set q.cores=0 to avoid using the cluster, and PennCNV will
 SYSTEM LIMITATIONS AND REQUIREMENTS
 -----------------------------------
 
-# this pipeline will not work in MS Windows (except perhaps via putty to a linux server), it requires multiple linux commands installed. It WILL work on MAC OS X and Linux.
+* this pipeline will not work in MS Windows (except perhaps via putty to a linux server), it requires multiple linux commands installed. It WILL work on MAC OS X and Linux.
 
-# make sure PennCNV is installed for 64bit if your machine is 64-bit (default download is currently 32-bit)
+* make sure PennCNV is installed for 64bit if your machine is 64-bit (default download is currently 32-bit)
 
-# if any single raw data files contain more than roughly 1,000,000,000 samples x snps, you may need to use the option to run SNP-QC in plink, as the SnpMatrix object is limited by the maximum permitted size of R-objects. Alternatively you can split the raw input files into as many subsets as you like and still analyse them as if they are one file, see instructions above
+* if any single raw data files contain more than roughly 1,000,000,000 samples x snps, you may need to use the option to run SNP-QC in plink, as the SnpMatrix object is limited by the maximum permitted size of R-objects. Alternatively you can split the raw input files into as many subsets as you like and still analyse them as if they are one file, see instructions above
 
 
 
@@ -118,7 +120,7 @@ SYSTEM LIMITATIONS AND REQUIREMENTS
 SUPPORT AND ANNOTATION FILES
 ----------------------------
 
-NB: Please view this section especially as plain text, using a fixed-width font, as otherwise it will not give a correct impression of the correct input file formats!
+# NB: Please view this section especially as plain text, using a fixed-width font, as otherwise it will not give a correct impression of the correct input file formats!
 
 Note also whether each has a header line (or not)
 
@@ -207,8 +209,10 @@ WTCCCT542927
 
 
 
-##### Some important input parameters for the plumbCNV() function ######
 
+
+Some important input parameters for the plumbCNV() function
+-----------------------------------------------------------
 
 dir.base="/data/ncooper/ImmunochipRunTest/" # base plumbCNV directory where all the subdirectories of results will be written
 
@@ -267,15 +271,16 @@ penn.path="/usr/local/exports/bin/penncnv/",hwe.thr=10^-100,hmm="/usr/local/bin/
 build="hg19",rare.pc=0.95,num.pcs=4,pc.to.keep=.10,exclude.bad.reg=T,min.sites=8,rare.qc=FALSE,restore=FALSE)
 
 
-##### Trouble-shooting: Problems encountered by others ######
+Trouble-shooting: Problems encountered by others
+------------------------------------------------
 
-# make sure you enter the correct value for build 36/37  (hg18/hg19) into the main function
+* make sure you enter the correct value for build 36/37  (hg18/hg19) into the main function
 
-# make sure file.spec.txt is in tab separated format with no extra spaces
+* make sure file.spec.txt is in tab separated format with no extra spaces
 
-# if your alleles are not coded in the genome studio file as A,C,G,T, make sure you enter a value for allele.codes=c() in the main function
+* if your alleles are not coded in the genome studio file as A,C,G,T, make sure you enter a value for allele.codes=c() in the main function
 
-# plumbCNV is designed for reasonably large datasets, if you are using less than 100 samples or less than 10,000 SNPs you may encounter unexpected behaviour, as there has been little testing of these sorts of datasets.
+* plumbCNV is designed for reasonably large datasets, if you are using less than 100 samples or less than 10,000 SNPs you may encounter unexpected behaviour, as there has been little testing of these sorts of datasets.
 
 
 Description and Examples of output
@@ -283,13 +288,13 @@ Description and Examples of output
 
 As far the output that you should expect, there is quite a lot. So while running, it is quite verbose letting you know what is going on, there are 7 main steps:
 
-0 - raw LRR, BAF data conversion to long file or matrix format
-1 - import of matrix or long file LRR, BAF, data
-2 - import of genotype data and analysis of SNP-QC
-3 - sample QC analyses
-4 - principle components correction
-5 - running of plumb cnv
-6 - CNV-qc, summaries, overlaps, results
+*0 - raw LRR, BAF data conversion to long file or matrix format
+*1 - import of matrix or long file LRR, BAF, data
+*2 - import of genotype data and analysis of SNP-QC
+*3 - sample QC analyses
+*4 - principle components correction
+*5 - running of plumb cnv
+*6 - CNV-qc, summaries, overlaps, results
 
 When you run the plumbCNV function you can select the start and end step, so you can do the analysis a step at a time to monitor progress, sometimes repeating a step adjusting thresholds, etc.
 

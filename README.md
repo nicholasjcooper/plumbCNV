@@ -27,7 +27,9 @@ Public software required to be installed on your system:
 --------------------------------------------------------
 
 PennCNV - http://www.openbioinformatics.org/penncnv/penncnv_download.html
+
 Plink - http://pngu.mgh.harvard.edu/~purcell/plink/
+
 BLAS - you may have BLAS already as part of R or linux, if not: http://www.openblas.net/
 
 
@@ -54,7 +56,7 @@ must.use.package(bioC.packages,TRUE)
 
 
 
-INPUT FILES REQUIRED - note whether each has a header line (or not)
+INPUT FILES REQUIRED
 ====================
 
 MAIN DATA FILES
@@ -117,6 +119,8 @@ SUPPORT AND ANNOTATION FILES
 ----------------------------
 
 NB: Please view this section especially as plain text, using a fixed-width font, as otherwise it will not give a correct impression of the correct input file formats!
+
+Note also whether each has a header line (or not)
 
 SNP support data (namely: snp-id,chr,pos) e.g, bim,vcf,map,map3, etc. does not matter what it is called but you eventually need to enter the file location into the plumbcnv() function as a parameter.
 

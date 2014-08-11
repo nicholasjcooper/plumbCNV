@@ -37,15 +37,19 @@ NB: need at least R v3.0, but this code should install everything you need
 
 #reader and NCmisc
 install.packages(reader,dependencies=TRUE)
+
 install.packages(bigpca,dependencies=TRUE)
+
 require(reader)
 
 #Other packages
 further.packages <- c("bigmemory","biganalytics","multicore","lattice","compiler","NCmisc")
+
 bioC.packages <- c("IRanges","BiocGenerics","Biobase","GenomicRanges","genoset","bigalgebra")
 
 #these NCmisc functions should install all these packages with this command
 must.use.package(further.packages) 
+
 must.use.package(bioC.packages,TRUE)
 
 

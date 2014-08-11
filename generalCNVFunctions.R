@@ -388,8 +388,8 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
     if(length(grep("exon",db))>0) { ano <- "exon" }
     if(length(grep("dgv",db))>0) { ano <- "dgv" }
     if(!quiet) { cat(" loading",ano,"annotation...\n") }
-    ref <- switch(ano,exon=get.exon.annot(dir=dir,build=build),gene=get.gene.annot(dir=dir,build=build,GRanges=FALSE),
-                  dgv=get.dgv.ranges(dir=dir,build=build,compact=T)) # choose which reference to use
+    ref <- switch(ano,exon=get.exon.annot(dir=dir,build=build,GRanges=FALSE),gene=get.gene.annot(dir=dir,build=build,GRanges=FALSE),
+                  dgv=get.dgv.ranges(dir=dir,build=build,compact=T,GRanges=FALSE)) # choose which reference to use
     
   } else {
     # ref is already a ranges object for comparison passed in by parameter
@@ -422,7 +422,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   if(geq) { op <- ">=" } else { op <- "<=" }
   if(thresh>0) {
     if(thresh>0) { fun <- op } else { fun <- NULL }
-    pass.thresh <- jlapply(list1=mm[[3]],list2=thresh,pc=pc,op=fun) # get list of passing threshold
+    pass.thresh <- jlapply(list1=mm[[3]],list2=thresh,pc=pc,FUN=fun) # get list of passing threshold
     out <- jlapply(list1=mm[[1]],list2=pass.thresh,select=T)
   } else {
     out <- mm[[1]]
@@ -857,7 +857,7 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
 }
 
 # import the DGV into a rangedData object
-get.dgv.ranges <- function(dir=NULL,build="hg18",bioC=TRUE,text=FALSE,shortenID=TRUE, compact=FALSE, alt.url=NULL)
+get.dgv.ranges <- function(dir=NULL,build="hg18",bioC=TRUE,text=FALSE,shortenID=TRUE, compact=FALSE, alt.url=NULL, GRanges=TRUE)
 {
   ## download or use local version of DGV (database for Genomic Variants)
   from.scr <- TRUE
@@ -917,6 +917,9 @@ get.dgv.ranges <- function(dir=NULL,build="hg18",bioC=TRUE,text=FALSE,shortenID=
     ff[ff>1] <- NA
     outData[["frequency"]] <- ff
   }
+  if(bioC & GRanges) {
+    outData <- as(outData,"GRanges")
+  }
   return(outData)
 }
 
@@ -929,7 +932,7 @@ draw.cnv.bounds <- function(cnv,chr.offset=NA,pos=NA,cnv.lty="dashed",cnv.col="o
   if(is(cnv)[1]=="RangedData") {
     # highlight CNVs in rangedData object
     if(all(is.na(chr)) & all(is.na(pos))) {
-      cnv <- unique.in.range(cnv,chr,pos,full.overlap=F, rmv.dup=T)
+      cnv <- in.window(cnv,chr,pos,full.overlap=F, rmv.dup=T)
     }
     if(nrow(cnv)<1) { warning("no CNVs in range"); return(NULL) }
     if("cn" %in% colnames(cnv)) {

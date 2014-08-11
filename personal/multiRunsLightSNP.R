@@ -5,16 +5,17 @@ plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 5
-my.end <- 5
+my.st <- 4
+my.end <- 6
 do.cnv <- T
 comp <- F
 samp.set <- "light"
-pca.set <- 6
+pca.set <- 24
 restore <- F
 sex.correct <- F
 q.cores <- 100 #NA
-hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hh550.hmm"
+hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hh0+.hmm"
+#hmm.file <- "hh550.hmm"
 
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
 library(reader)
@@ -111,7 +112,7 @@ if(pca.set==0) {
 } else {
   if(pca.set<24) {
     
-    pca.settings <- list(num.pcs=12,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=sex.correct,
+    pca.settings <- list(num.pcs=pca.set,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=sex.correct,
                          add.int=F,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   } else {
@@ -166,8 +167,7 @@ final.tables <- compile.qs.results.to.cc.toptable(qs.results,dir,suffix,cnvResul
 LL <- c(0,10000,50000,100000,200000,300000,400000,500000,1000000,2000000,3000000,4000000)
 # test case:controls for different length and QS thresholds
 
-LL <- c(0,1000*c(200,2000))
-LLB <- c(LL[-1],250000000)
+LL <- c(0,1000*c(200,2000)) ; LLB <- c(LL[-1],250000000)
  
 length.analysis.suf(LL,dir,cnvResult,suffix,thr.col="score",cnts=c(9238,6524),upper.thr=LLB)
 

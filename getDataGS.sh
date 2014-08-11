@@ -355,11 +355,11 @@ then
     then 
       SUBID1=$(zcat $loco/$fnm | head -50 | tail -1 | cut -f $SampCol)
       SNPID1=$(zcat $loco/$fnm | head -50 | tail -1 | cut -f $SnpCol)
-      zcat $loco/$fnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $SnpCol  > snplist.txt ;
+      zcat $loco/$fnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $SnpCol | awk '!a[$0]++'  > snplist.txt ;
     else
       SUBID1=$(head -50 $loco/$fnm  | tail -1 | cut -f $SampCol)  
       SNPID1=$(head -50 $loco/$fnm  | tail -1 | cut -f $SnpCol)
-      head -"$MaxSnp" $loco/$fnm  | grep $SUBID1 | cut -f $SnpCol  > snplist.txt ;
+      head -"$MaxSnp" $loco/$fnm  | grep $SUBID1 | cut -f $SnpCol | awk '!a[$0]++'  > snplist.txt ;
     fi
     
     #GET LIST OF IDS (in order)#

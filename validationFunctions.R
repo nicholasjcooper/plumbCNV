@@ -456,7 +456,11 @@ process.quality.scores <- function(DT,suffix,dir,n.pcs=NA,restore=T) {
   # and does it for several thresholds.
   thr <- 0 # set this to 0, leave filters for a later stage
   res.fn <- getSlot(DT,"cnvresult",n.pcs=n.pcs)
-  cnvResults <- x.result <- get(paste(load(cat.path(dir$res,res.fn))))  #cnvResultsPCAAssoc9.RData"))))
+  the.fn <- cat.path(dir$res,res.fn)
+  if(!file.exists(the.fn)) { 
+    stop("quality scores could not be calculated as the expected file",
+            " (based on 'suffix' and 'dir'",the.fn,"did not exist") }
+  cnvResults <- x.result <- get(paste(load(the.fn)))  #cnvResultsPCAAssoc9.RData"))))
   exp.names <-  c("allCNV","allDel","allDup","rareDEL","rareDUP")
   if(length(cnvResults)==5) { if(!all(names(cnvResults) %in% exp.names)) { names(cnvResults) <- exp.names } }
   #x.result$rareDEL <- x.result$rareDEL[!x.result$rareDEL$roh,]

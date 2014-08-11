@@ -1,6 +1,9 @@
 #options(stringsAsFactors=FALSE)
 
 scr.dir <- "~/github/plumbCNV/"
+ifun.dir <- "~/github/iChip"
+
+library(reader)
 
 if(file.exists(cat.path(scr.dir,"generalCNVFunctions.R"))) {
   source(cat.path(scr.dir,"generalCNVFunctions.R"))
@@ -8,10 +11,10 @@ if(file.exists(cat.path(scr.dir,"generalCNVFunctions.R"))) {
   source(cat.path(scr.dir,"validationFunctions.R"))
   source(cat.path(scr.dir,"qcScripts.R"))
   source(cat.path(scr.dir,"tdtFunctions.R"))
-  source(cat.path("~/github/iChip","iFunctions.R"))
+  source(cat.path(ifun.dir,"iFunctions.R"))
   library(bigpca) # will also load reader and NCmisc
 } else {
-  warning("Didn't find external script files, or was run not from ~/github/plumbCNV")
+  warning("Didn't find external script files, or was run not from ",scr.dir)
 }
 
 ########### DEFINE INTERNAL FUNCTIONS ############
@@ -370,7 +373,7 @@ lrr.sample.dists <- function(bigMat,snp.info,dir,gc=F,dlrs=T,pref="",med.chunk.f
   # passes arguments to calc.chr.info via get.chr.info.filt and calculate.gc.for.sample
   # better off passing a complete snp.info object, as will filter out any not in the data automatically
   # lo.cut=c("LB",NA,"LB"),hi.cut=c("UB","UB","UB") are which cutoff to use for the columns of stat.table
-  # which are generally Mean, DLRS and GCWave respectively, although if DLRS or GCwave turned off, then this
+  # which are generally Mean, DLRS and GCWave respectively, although if DLRS or GCwave are turned off, then this
   # can change
   load.all.libs() # load all main plumbcnv libraries
   dir <- validate.dir.for(dir,c("qc.lrr","big","ano"))
@@ -2078,7 +2081,7 @@ get.snp.read.fn <- function()
 }
 
 
-import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
+import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,allele.codes="nucleotide",
                                    snp.fields=NULL,HD=F,multi=F,n.cores=1,verbose=T)                       
 {
  # Reads in the SNP data for the whole dataset, with a separate snpMatrix entry per cohort
@@ -2086,6 +2089,7 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
  # option multi allows use of parallel processing, but the main limited is hard disk
  # speed, so for now this is likely to decrease performance if anything.
  num.markers <- length(snp.list)
+ data.fn <- data
  # generate locations of the data files:
  dir <- validate.dir.for(dir,c("raw","col","cr","lrr.dat","ano"),warn=T)
  must.use.package("snpStats",bioC=T)
@@ -2093,29 +2097,29 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
  #if(!redirect.fn[[1]]) { read.snps.long <- redirect.fn[[2]] }
  # dir$raw should be the location of the raw data files specified by
  ### locations of files specifying raw data (separate file for zipped/unzipped data)
- if(is.null(data)) {
+ if(is.null(data.fn)) {
    #DEP ?
    if(auto.mode()) {
      file.info <- get.file.specs(dir)
      fns <- file.info[,1]
      cat("",length(fns),"data files found\n")
-     data <- cat.path(dir$raw,fns,must.exist=T)
+     data.fn <- cat.path(dir$raw,fns,must.exist=T)
    }
-   if(is.null(data)) { stop("Error: could not find a file for parameter 'data'") }
+   if(is.null(data.fn)) { stop("Error: could not find a file for parameter 'data'") }
  } else {
-   data <- find.file(data,dir$raw,dir) # assume genotype data would be here, else abs. loc needed
+   data.fn <- find.file(data.fn,dir$raw,dir) # assume genotype data would be here, else abs. loc needed
  }
  if(is.null(samples)) 
  { 
    if(auto.mode()) { subs.list <- get.subIDs(dir,"list") } else { stop("Error: parameter 'samples' was blank") }
  } else {
-   if(length(samples)>10) {
+   if(length(grep(".",samples,fixed=TRUE,invert=T)>10)) {
      subs.list <- samples
    } else {
      subs.list <- sapply(cat.path(dir$ano,samples,must.exist=T),readLines)
    }
  } 
- num.filz <- length(data)
+ num.filz <- length(data.fn)
  # define names and column locations of fields in the data file
  field.list <- list() 
  if(is.null(snp.fields)) {
@@ -2148,16 +2152,19 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
  print(time.est.snps(len.tab),quote=F)
  file.lens.nh <- (len.tab[,1])  #lengths only 
  # get header lengths (may not be uniform)
- header.lens <- get.hdr.lens(data)
+ header.lens <- get.hdr.lens(data.fn)
  file.lens.sub <- (file.lens.nh)/num.markers
+ #prv(num.markers,file.lens.sub,file.lens.nh,header.lens)
  if(any(!check.data.size(num.markers,file.lens.sub))) { stop("Proposed file too large") }
  cat("Files contain:",paste(file.lens.sub,collapse=","),"samples, respectively\n")
  # go to /CALLRATE directory
  old.dir <- getwd(); setwd(dir$cr)
  ######
  #############id.file.names <- paste(data,".ids",sep="")
- if(!is.list(subs.list)) { subs.list <- list(subs.list) } # force list
- if(length(subs.list)!=length(data)) { stop("Must be same number of datafiles as lists of IDs") }
+ if(!is.list(subs.list)) { subs.list <- as.list(subs.list) } # force list
+ # subs.list <- as.list(unlist(subs.list))  # safer saner??
+ prv(subs.list,data.fn)
+ if(length(subs.list)!=length(data.fn)) { stop("Must be same number of datafiles as lists of IDs") }
  # Read each set of SNPs into a SnpMatrix object stored in a list element
  snpMatLst <- list()
  #if HD=T only store list of locations of saved objects (in case of memory limitation)i
@@ -2168,10 +2175,10 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
    for (tt in 1:num.filz) {
      kk <- proc.time()
      if(!verbose) { cat(" importing long format snp data for file",tt,"...") }
-     snpMat <- read.snps.long(files = data[tt], sample.id = subs.list[[tt]],    
+     snpMat <- read.snps.long(files = data.fn[tt], sample.id = subs.list[[tt]],    
                               snp.id = snp.list, diploid = NULL, 
                               field.list = field.list[[tt]], 
-                              codes = "nucleotide", sep = "\t", comment = "#", 
+                              codes = allele.codes, sep = "\t", comment = "#", 
                               skip = header.lens[tt], simplify = c(FALSE,FALSE),
                               verbose = verbose, in.order = TRUE, every = num.markers)
      ## used to save only in HD-mode but now saving either way ##
@@ -2191,22 +2198,22 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,
    n.cores <- min(num.filz,n.cores); rdz <- vector("list",n.cores)
    must.use.package("parallel"); c.u <- 0; snpMatLst <- vector("list",num.filz)
    cat(" reading",num.filz,"long format SNP files using",n.cores,"cores in parallel...\n")
-   n.grpz <- length(data) 
+   n.grpz <- length(data.fn) 
    #sss <- list() ; for (jj in 1:n.grpz) { sss[[jj]] <- c(FALSE,FALSE) } # mapply needs this vector repeated n times
   # dipl <- rep(list(NULL), <- )
-   snpMatLst <- parallel::mcmapply(read.snps.long,files = data, sample.id = subs.list,    
+   snpMatLst <- parallel::mcmapply(read.snps.long,files = data.fn, sample.id = subs.list,    
                                                    snp.id = list(snp.list),  
                                                    field.list = field.list, 
-                                                   codes = "nucleotide", sep = "\t", comment = "#", 
+                                                   codes = allele.codes, sep = "\t", comment = "#", 
                                                    skip = header.lens, 
                                                    verbose = verbose, in.order = TRUE, 
                                                    every = num.markers, SIMPLIFY=FALSE,mc.cores=n.cores)
 #   for (tt in 1:num.filz) {
 #     c.u <- c.u + 1
-#     rdz[[tt]] <- parallel::mcparallel(read.snps.long(files = data[tt], sample.id = subs.list[[tt]],    
+#     rdz[[tt]] <- parallel::mcparallel(read.snps.long(files = data.fn[tt], sample.id = subs.list[[tt]],    
 #                                                snp.id = snp.list, diploid = NULL, 
 #                                                fields = field.list[[tt]], 
-#                                                codes = "nucleotide", sep = "\t", comment = "#", 
+#                                                codes = allele.codes, sep = "\t", comment = "#", 
 #                                                skip = header.lens[tt], simplify = c(FALSE,FALSE),
 #                                                verbose = F, in.order = TRUE, every = num.markers))
 #     if(c.u>=length(rdz)) { 
@@ -2512,8 +2519,8 @@ get.hdr.lens <- function(fnz,max.feas.hdr=500,firstrowhdr=T,sep.chr="\t")
  # looks for when the number first changes. if it doesn't assumes 1st row only is header
  # if firstrowhdr = T, else assume no headers at all
  header.lens <- 1
- num.tabs <- function(str,ch="\t") {  return(-1+sapply(strsplit(str,ch,fixed=T),length)) }
-
+ num.tabs <- function(str,ch=sep.chr) {  return(-1+sapply(strsplit(str,ch,fixed=T),length)) }
+ prv(fnz)
  for (cc in 1:length(fnz))
  {
    tabs.per.line <- num.tabs(readLines(fnz[cc],n=max.feas.hdr),ch=sep.chr)
@@ -4987,8 +4994,8 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
                          group.miss=F, grp.hwe.z.thr=4, grp.cr.thr=.001, min.snps=10,
                          het.lo=.1,het.hi=0.4,
                          tabulateCallRate=T, n.cores=1, low.ram=T, drawVennsOfHWEvsCR=T,
-                         doDensityPlots=T, sample.info=NULL, snp.info=NULL,
-                         sample.fn = NULL, snp.fn="snpNames.txt", snp.fields=NULL, 
+                         doDensityPlots=T, sample.info=NULL, snp.info=NULL, 
+                         sample.fn = NULL, snp.fn="snpNames.txt", snp.fields=NULL, allele.codes="nucleotide",
                          geno.files = NULL,file.loc="snpMatLst",verbose=T,write.files=T,coverage.loss=T,
                          snp.info.fn="snpdata.map",anot="map3",build="hg18",autosomes.only=T,...)
 {
@@ -5054,7 +5061,8 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
     # RESTORE = 0, PLINK = 0 #
     cat("\nImporting SNP data into R using snpStats package\n")
     snpMatLst <- import.snp.matrix.list(snpIDs,dir=dir,data=geno.files,samples=sample.fn,n.cores=n.cores,
-                                        snp.fields=snp.fields,HD=HD.mode,multi=use.multi, verbose=verbose) 
+                                        snp.fields=snp.fields,allele.codes=allele.codes,
+                                        HD=HD.mode,multi=use.multi, verbose=verbose) 
     #print(paste("Length of snpMatLst:",length(snpMatLst))); print("temporary backup files to /backup")
     #system("cp /chiswick/data/ncooper/metabochipRunTest/CALLRATES/snpMat*RData /chiswick/data/ncooper/metabochipRunTest/CALLRATES/backup")
     if(!HD.mode) { 
@@ -8012,7 +8020,7 @@ random.spacing.snp.select <- function(snp.info,pc.to.keep=.05,dir,autosomes.only
   } else {
     mhc <- c(29500000,34000000) # for build 36
   }
-  bad.reg <- rbind(get.telomere.locs(bioC=T,build=build,kb=500),get.centromere.locs(bioC=T,build=build),get.immunog.locs(bioC=T,build=build))
+  bad.reg <- rbind(get.telomere.locs(bioC=T,build=build,kb=500,GRanges=FALSE),get.centromere.locs(bioC=T,build=build,GRanges=FALSE),get.immunog.locs(bioC=T,build=build,GRanges=FALSE))
   #igse <- cbind(start(ig),end(ig))
   #cbind(unlist(sapply(get.immunog.locs(),"[",1)),unlist(sapply(get.immunog.locs(),"[",2)))
   cat("snp.info contains data for chromsomes:",paste(chr.set,collapse=","),"\n")
@@ -8454,7 +8462,8 @@ length.analysis.suf <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75,
 }
 
 
-length.analysis <- function(LL,dir,DEL,DUP,del.thr=.95,dup.thr=.75,thr.col="score",cnts=NULL,upper.thr=3000000) {
+length.analysis <- function(LL,dir,DEL=NULL,DUP=NULL,del.thr=.95,dup.thr=.75,
+                                  thr.col="score",cnts=NULL,upper.thr=3000000) {
   thrsh <- .05/length(LL); blnk <- rep(NA,times=length(LL))
   resultsDEL <- resultsDUP <- data.frame(length=LL,cases=blnk,controls=blnk,ratio=blnk,FET=blnk,pass=blnk)
   if(!is.null(cnts)) {
@@ -8471,7 +8480,7 @@ length.analysis <- function(LL,dir,DEL,DUP,del.thr=.95,dup.thr=.75,thr.col="scor
     if(thr.col %in% colnames(DEL) & nrow(DEL)>0) {
       DEL <- DEL[DEL[[thr.col]]>=del.thr,]
       if(nrow(DEL)<1) { warning("filter 'del.thr' on deletions DEL removed all records!"); return(NULL) }
-    } else { warning(thr.col,"not found in DEL, so thresholds were not applied") }
+    } else { warning(thr.col," not found in DEL, so thresholds were not applied") }
   }
   if(!is.null(DUP)) {
     #print(head(DUP)) 
@@ -8629,7 +8638,7 @@ print.biggest.cnvs <- function(cnvResult=NULL,DEL=NULL,DUP=NULL,above=3000000,be
       cnv1 <- NULL
       cat("no DEL CNVs found longer than",above,bltxt,"base pairs\n")
     }
-  }
+  } else { cnv1 <- NULL }
   if(!is.null(DUP)) {
     rl <- rev(sort(width(DUP)))
     n <- length(rl[rl>above])
@@ -8644,7 +8653,7 @@ print.biggest.cnvs <- function(cnvResult=NULL,DEL=NULL,DUP=NULL,above=3000000,be
       cnv2 <- NULL
       cat("no DUP CNVs found longer than",above,bltxt,"base pairs\n")
     }
-  }
+  } else { cnv2 <- NULL }
   if(!print) { 
     #cnv1 <- as(cnv1,"RangedData"); cnv2 <- as(cnv2,"RangedData")
     return(list(DEL=cnv1,DUP=cnv2)) 
@@ -9304,7 +9313,7 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
       }
       if(auto.lab) { mtext(paste("Chromosome",chrn),side=3,line=0.5,cex=.9) }
       if(geneOverlay) {
-        if(exons) { dat <- get.exon.annot(dir) } else { dat <- get.gene.annot(dir) }
+        if(exons) { dat <- get.exon.annot(dir,GRanges=FALSE) } else { dat <- get.gene.annot(dir, GRanges=FALSE) }
         if(zoom) {
           plot.gene.annot(gs=dat, chr=Chr[1], pos=Pos, x.scl=scl, y.ofs=(as.numeric(medSmooth)*.5)-1, width=.5, txt=T,
                           build=build, box.col=gene.col, txt.col="black", join.col="red", dir=dir)
@@ -10051,7 +10060,7 @@ pheno.ratios.table <- function(dir,sum.table)
 annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, build="hg18", autosomes.only=T, alt.name=NULL, dir=getwd()){
   ## which genes overlap with each CNV - don't forget to account for the empty ones!
   must.use.package("genoset")
-  if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(build=build,dir=dir) }
+  if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(build=build,dir=dir,GRanges=FALSE) }
   if(is(gs)[1]!="RangedData" | is(cnvResults)[1]!="RangedData") {
     warning("'gs' and 'cnvResults' must both be 'RangedData' type; returning null")
     return(NULL)
@@ -10756,7 +10765,7 @@ get.plate.snp.stats.for.big <- function(bigMat, dir, func=mean, n.cores=1,...) {
 ## bigmemoryExtras to use assaydata slot in eSet object
 plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.as.we.go=F,
                      dt.name="datatracker",run.mode="scratch",snp.run.mode="normal",
-                     grps=NA,snp.fields=NULL,geno.file=NULL,big.lrr=NULL,big.baf=NULL,
+                     grps=NA,snp.fields=NULL,allele.codes="nucleotide",geno.file=NULL,big.lrr=NULL,big.baf=NULL,
                      aux.files.dir=NULL,plink.imp=F,manual.col.nums=NULL,fet.analysis.p=0.05,
                      n.cores=1,q.cores=NA,grid.id="all.q",cluster.fn="q.cmd",low.ram=T,
                      start.at=0,pause.after=6,erase.previous=F,verbose=F,hide.penn.plink=T,
@@ -10945,8 +10954,10 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
     Header("2. SNP QUALITY CONTROL","#")
     DT <- run.SNP.qc(DT=DT,import.plink=(snp.run.mode=="plink"),HD.mode=HD.mode,
                      restore.mode=restore.mode,build=build,verbose=verbose,
-                     callrate.samp.thr=callrate.samp.thr,callrate.snp.thr=callrate.snp.thr, min.snps=min.sites,
-                     hwe.thr=hwe.thr,group.miss=snp.grp.miss,grp.hwe.z.thr=grp.hwe.z.thr, grp.cr.thr=grp.cr.thr,
+                     callrate.samp.thr=callrate.samp.thr,callrate.snp.thr=callrate.snp.thr,
+                     min.snps=min.sites,snp.fields=NULL,allele.codes=allele.codes,
+                     hwe.thr=hwe.thr,group.miss=snp.grp.miss,grp.hwe.z.thr=grp.hwe.z.thr,
+                     grp.cr.thr=grp.cr.thr,
                      het.lo=het.lo,het.hi=het.hi,autosomes.only=T,n.cores=n.cores, low.ram=low.ram)
     DT <- setSlot(DT,settings=settings,proc.done=2)
     write.data.tracker(DT,fn=dt.name)
@@ -11108,7 +11119,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   ("Thankyou for using plumbCNV.\n\n"))
 
   if(tolower(results)=="dt") {
-    return(DT)
+    cat("returning Datatracker object only") ; return(DT)
   }
   if(tolower(results)=="overlaps") {
     return(big.summary)

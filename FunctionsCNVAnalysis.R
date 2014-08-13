@@ -2823,7 +2823,7 @@ get.chr.ab.fail.subset <- function(chrWarns, dir, failerMode="NOTLRR", max.bad.t
  }
  names(chrN) <- badcheckz
  out.list <- list(badcheckz,chrN,chrLab)
- prv(out.list) ### hERE
+# prv(out.list) ### hERE
  names(out.list) <- c("badcheckz","chrN","chrLab")
  return(out.list)
 }

@@ -13,6 +13,68 @@ t.o.p <- function(p1,p2,n1,n2) {
 }
 
 
+
+get.t1d.subset <- function(X) {
+  source("~/github/iChip/iFunctions.R")
+  ichip.regions <- reader("/chiswick/data/ncooper/imputation/common/iChipFineMappingRegionsB36.RData")
+  filt.sd <- find.overlaps(X,ref=ichip.regions.36,thresh=0.01,ranges.out=TRUE)
+  return(filt.sd)
+}
+
+get.genic.subset <- function(X,DB="gene") {
+  filt.sd <- find.overlaps(X,db=DB,thresh=0.01,ranges.out=TRUE)
+  return(filt.sd)
+}
+
+# analyse transmission rates for different lengths for the families #
+# e.g, round(length.analysis.fam(suffix=50,DEL=TRUE,dec.thr=0.2),4)[,-c(3:6)]
+# was used in the paper table 6 suppl 
+length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400)),T1D=FALSE,GENE=FALSE) {
+  fn <- cat.path("RESULTS",fn="TDT_results",suf=suffix,ext="RData")
+  if(!file.exists(fn)) { stop("TDT results file ",fn," did not exist") }
+  if(DEL) { sum.del <- reader(fn)$sum.del } else { sum.del <- reader(fn)$sum.dup }
+  fn2 <- cat.path("RESULTS","famstats_trios",suf=suffix,ext="RData")
+  if(!file.exists(fn2)) { stop("TDT results file ",fn2," did not exist") }
+  if(DEL) { dd <- reader(fn2)$tt1 } else { dd <- reader(fn2)$tt2 }
+  dec.thr <- -abs(dec.thr)
+  #prv(fn,fn2)
+  LLB <- c(LL[-1],250000000)
+  ## filter 'declines'
+  sum.del <- sum.del[!is.na(sum.del$decline),]
+  sum.del <- sum.del[sum.del$decline>dec.thr,]
+  if(T1D | GENE) {  sd <- data.frame.to.ranged(sum.del[,1:3]) }
+  if(T1D) { sd <- get.t1d.subset(sd); keep.nms <- rownames(sd) ; sum.del <- sum.del[keep.nms,] }
+  if(GENE) { sd <- get.genic.subset(sd); keep.nms <- rownames(sd) ; sum.del <- sum.del[keep.nms,] }  
+  #prv(dd,keep.nms,filt.sd); print(head(sum.del))
+  X <- matrix(nrow=1+length(LL),ncol=16)
+  X <- as.data.frame(X)
+  colnames(X) <- c("case.tr.rate","control.tr.rate","case.chi","case.p","control.chi","control.p","denovo.case","denovo.control","case.trs","case.kds","ctrl.trs","ctrl.kds","tr.OR","TR.p","dn.OR","DN.p")
+  LL <- c(0,LL); LLB <- c(tail(LLB,1),LLB)
+  rownames(X) <- paste0(round(LL/1000)," - ",round(LLB/1000)," kb")
+  rownames(X)[1] <- "Overall"
+  for (cc in 1:length(LL)) {
+    val.x <- rownames(sum.del[sum.del$width>LL[cc] & sum.del$width<LLB[cc] ,])
+    #prv(val.x) ; print(tail(head(colnames(dd),200),100))
+    keep <- which(colnames(dd) %in% val.x);
+    missn <- which(!val.x %in% colnames(dd))
+    if(length(missn)>0) {
+      cat("data didn't have ",length(missn)," regions",if(length(missn)<10) { comma(val.x[missn])} else { ""},"\n") 
+    }
+    X[cc,1:10] <- round(trans.tests(dd[,keep]),4)
+    X[cc,11] <- X[cc,10]
+    X[cc,10] <- round(as.numeric(X[cc,9])/as.numeric(X[cc,1])) 
+    X[cc,12] <- round(as.numeric(X[cc,11])/as.numeric(X[cc,2]))
+    X[cc,13] <- X[cc,1]/X[cc,2]
+    X[cc,14] <- t.o.p(X[cc,1],X[cc,2],X[cc,10],X[cc,12])$p     #,6291,1514)$p
+    X[cc,15] <- X[cc,7]/X[cc,8]
+    X[cc,16] <- t.o.p(X[cc,7],X[cc,8],X[cc,10],X[cc,12])$p    #,6291,1514)$p
+  }
+  return(X)
+}
+
+
+
+
 ## make a modified version of the top table that takes into account quality scores and 'decline'
 compile.qs.results.to.cc.toptable <- function(qs.results,dir,suffix,cnvResult,decline.thresh=-.1) {
   results1 <- qs.results$DEL
@@ -124,9 +186,12 @@ summary.of.cnv.change.with.trios <- function(result.trio,result.no.trio,DEL=TRUE
 }
 
 
-
-full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,45),no.trios=c(51,53,49,48,46),
-              labels=c("RDUP", "RDEL", "RDEL+", "RDUP+", "normal"),silent=TRUE,thr=NA) {
+# across different HMMs, compares trio versus non trio calling, transmission
+# and denovo rates to aff/unaff, and proportion common to both sets, number dropped, etc
+# note that at the moment, 5 comparison trio sets is hard coded
+# need to make sure that each of the suffixes actually has a file present or won't run
+full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,5522),no.trios=c(51,53,49,48,522),
+              labels=c("RDUP", "RDEL", "RDEL+", "RDUP+", "normal"),silent=TRUE,thr=c(.9,.75)) {
   pp <- read.ped.file("~/Documents/necessaryfilesICHIPFam/t1dgc-pedfile-2011-08-05.tab")
   qq <- pp[pp$father!=0 & pp$mother!=0,]
   rr <- pp[pp$father==0 & pp$mother==0,]
@@ -204,9 +269,9 @@ trans.tests <- function(tt) {
     control <- did.trans1/(did.not1+did.trans1)
     denovo.cont <- (tt[8]-tt[14])/((tt[7]+tt[8])-(tt[14]+tt[16]))
     denovo.case <- tt[14]/(tt[14]+tt[16])
-    out <- c(case, control, case.chi, case.p, control.chi, control.p,denovo.case,denovo.cont)
+    out <- c(case, control, case.chi, case.p, control.chi, control.p,denovo.case,denovo.cont,did.trans,did.trans1)
     names(out) <- c("case.tr.rate","control.tr.rate","case.chi", "case.p",
-       "control.chi", "control.p","denovo.case","denovo.control")
+       "control.chi", "control.p","denovo.case","denovo.control","n.trans.case","n.trans.control")
     return(out)
 }
 
@@ -324,7 +389,7 @@ core.tdt <- function(dir,cnvrs,cnvs,ped,double.table,DEL=TRUE) {
 
 
 ## main function to conduct an analysis using trios, TDT, etc
-trio.analysis <- function(dir=NULL, cnvResults, ped.file, result.pref="",quality.scores=FALSE,restore=TRUE) {
+trio.analysis <- function(dir=NULL, cnvResults, ped.file, result.pref="",quality.scores=FALSE,dec.thr=.2,restore=TRUE) {
   dir <- validate.dir.for(dir,c("res","cnv.qc"))
   if(!is.list(cnvResults) | length(cnvResults)!=5 | !is(cnvResults[[1]])[1]=="RangedData") { 
     warning("cnvResults object should be a list of RangedData objects, length 5"); return(NULL) }
@@ -396,8 +461,16 @@ trio.analysis <- function(dir=NULL, cnvResults, ped.file, result.pref="",quality
   sum.del2[["genes"]] <- substr(sum.del2[["genes"]],1,14)
   sum.dup2[["genes"]] <- substr(sum.dup2[["genes"]],1,14)
   sink(ofn)
-   cat("\nDeletions TDT Results\n") ; print(sum.del2[sum.del2[,del.p]<.05,])
-   cat("\nDuplications TDT Results\n") ; print(sum.dup2[sum.dup2[,dup.p]<.05,])  # to file copy
+   if("decline" %in% colnames(sum.del2)){
+     cat("Top CNVs passing 'decline' threshold [>",dec.thr)
+     del.crit <- sum.del2$decline > -abs(dec.thr)
+     dup.crit <- sum.dup2$decline > -abs(dec.thr)
+     cat("\nDeletions TDT Results\n") ; print(sum.del2[del.crit & sum.del2[,del.p]<.05,])
+     cat("\nDuplications TDT Results\n") ; print(sum.dup2[dup.crit & sum.dup2[,dup.p]<.05,])  # to file copy
+     cat("Top CNVs failing 'decline' threshold [more likely to be false positives]")
+   } else { del.crit <- rep(F,nrow(sum.del2)); dup.crit <- rep(F,nrow(sum.dup2)) }
+   cat("\nDeletions TDT Results\n") ; print(sum.del2[!del.crit & sum.del2[,del.p]<.05,])
+   cat("\nDuplications TDT Results\n") ; print(sum.dup2[!dup.crit & sum.dup2[,dup.p]<.05,])  # to file copy
    top.dels <- rownames(cnvResults$cnvr[[1]][narm(which(cnvResults$cnvr[[1]]$tdt<.01)),])
    top.dups <- rownames(cnvResults$cnvr[[2]][narm(which(cnvResults$cnvr[[2]]$tdt<.01)),])
    #load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData"))

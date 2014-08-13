@@ -5,8 +5,8 @@ plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 3
-my.end <- 3
+my.st <- 4
+my.end <- 6
 do.cnv <- T
 comp <- F
 samp.set <- "light"

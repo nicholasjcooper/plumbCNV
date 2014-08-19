@@ -8,7 +8,7 @@ https://github.com/nicholasjcooper/plumbCNV
 
 This package has not yet been completely encased in the usual R format and directory structure, and so has not been submitted to CRAN.
 
-To use this now, you must install by copying the files to a directory on your machine. You must also copy the file iFunctions.R from the repository: nicholaslcooper/iChip, and it's probably easiest to copy this into the same directory as the plumbCNV scripts.
+To use this now, you must install by copying the files to a directory on your machine. You must also copy the file iFunctions.R from the repository: nicholasjcooper/iChip, and it's probably easiest to copy this into the same directory as the plumbCNV scripts.
 
 
 Running instructions

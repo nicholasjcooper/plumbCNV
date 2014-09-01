@@ -472,11 +472,13 @@ then
         #  CHANGED cut -f "$SampCol,$SnpCol,$A1,$A2" ==> AWK #old way doesn't allow numbers not in sequential order
        fi
   done
-
   wc -l *.lgen > filelensNEGL.txt
   ## combine into a single file
   cat *.lgen > combined.lgen
+  echo "preview of lgen file"
+  head combined.lgen
   # take first tab and first space to ensure we catch only the first col, regardless of delim in use #
+  echo "duplicating column 1 of lgen file as a proxy to code familyid, sampleid"
   cut -f 1 combined.lgen | cut -f 1 -d ' ' > fams.txt
   ## generate fake family file, which just codes for the different files 1,2,..,n
   if [ "$fakefam" = "yes" ] 
@@ -489,14 +491,24 @@ then
   else
      if [ -e snpdata.fam ]
      then
-      echo "Found existing snpdata.fam file, running plink from current directory"
+      echo "Found existing snpdata.fam file, creating index of family ids"
+      cut -f 2 snpdata.fam > TMPsamps.txt
+      cut -f 1 snpdata.fam > TMPfams.txt
+      paste TMPsamps.txt TMPfams.txt > map.txt
+      awk '
+       NR==FNR { map[$1] = $2; next }
+       $0 in map { $0 = map[$0] }
+       { print }
+      ' map.txt fams.txt > tempfam.txt
+      mv tempfam.txt fams.txt
+      rm TMPsamps.txt TMPfams.txt map.txt
      else
       echo "Warning! - did not find existing snpdata.fam file, attempting to create a fake one now"
       awk '{print $1, $1, 0, 0, 1, 1}' "$outdir"/ANNOTATION/subIdsALL.txt > snpdata.fam
      fi
   fi
   ## write in proper lgen format
-  paste fams.txt combined.lgen > snpdata.temp
+  paste -d ' ' fams.txt combined.lgen > snpdata.temp
   rm *.lgen
   mv snpdata.temp snpdata.lgen 
   rm fams.txt 
@@ -528,7 +540,7 @@ fi
 
 rm *.TMP 
 
-echo 'complete!'
+echo 'complete'
 
 
 # END main extraction #
@@ -645,8 +657,8 @@ then
   fi
   # create blank file for samples to remove (in case none are)
   touch snpdata.irem
-  echo "running commmand" plink --lfile snpdata  --map3 --missing --hardy --missing-genotype '-' --out snpdataout --noweb --geno "$snpcr" --hwe "$hwe" --mind "$sampcr"
-  plink --lfile snpdata  --map3 --missing --hardy --missing-genotype '-' --out snpdataout --noweb --geno "$snpcr" --hwe "$hwe" --mind "$sampcr"
+  echo "running commmand" plink --lfile snpdata  --map3 --missing --hardy --missing-genotype '-' --out snpdataout --noweb --geno "$snpcr" --hwe "$hwe" --mind "$sampcr" --allow-no-sex
+  plink --lfile snpdata  --map3 --missing --hardy --missing-genotype '-' --out snpdataout --noweb --geno "$snpcr" --hwe "$hwe" --mind "$sampcr" --allow-no-sex
 
   mv snpdataout.hwe snpdataout.hwe.messy
   grep ALL snpdataout.hwe.messy  > snpdataout2.hwe

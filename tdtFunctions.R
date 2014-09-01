@@ -1,8 +1,26 @@
+# TDT functions for plumbCNV transmission disequilibrium tests and family data analysis #
+
+# t.o.p - conduct a test of proportions
+# get.t1d.subset - return subset of a ranged object that overlaps ichip dense mapped regions
+# get.genic.subset - return subset of a ranged object that overlaps genes
+# length.analysis.fam analyse - transmission rates for different lengths for the families e.g, round(length.analysis.fam(suffix=50,DEL=TRUE,dec.thr=0.2),4)[,-c(3:6)] was used in the paper table 6 suppl
+# compile.qs.results.to.cc.toptable - make a modified version of the top table that takes into account quality scores and 'decline'
+# print.family.check internal - function called by family.check.and.validate prints statistics checking transmission/denovo rates in mothers/ fathers, affected/unaffected, etc input parameters are quite specific objects
+# summary.of.cnv.change.with.trios - look at the difference in CNVs called for the same dataset, with and without trio calling
+# full.analysis.of.withandwithout - across different HMMs, compares trio versus non trio calling, transmission and denovo rates to aff/unaff, and proportion common to both sets, number dropped, etc note that at the moment, 5 comparison trio sets is hard coded need to make sure that each of the suffixes actually has a file present or won't run
+# trans.tests - calculate proper sum level stats for transmissions, etc
+# family.check.and.validate - runs then print statistics checking transmission/denovo rates in mothers/ fathers, affected/unaffected, etc famstats is part of a name of the file to store family analysis statistics in
+# plot.each.family.for.cnv - in the current directory, generate plots of all members of each family that has a CNV e.g, dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies") family.check.and.validate(dir,"famstats_trios",suffix="48") plot.each.family.for.cnv(dir,reg="S1",chromo=1,cnv.bounds=c(197158752,197170596),suffix=48)
+# ped.interp - add column to a ped file, showing in plain english who is who within families, mum dad, boy, girl, etc
+# core.tdt - the core function to just calculate the TDT for a set of CNVs/CNVRs
+# trio.analysis - main function to conduct an analysis using trios, TDT, etc
+# add.all.ids - add all ids in the study to CNV/snpMatrix object containing only some (e.g, passing qc, have CNV, etc)
+# make.cnv.reg.snp.matrix - make a snp matrix that represents a set of CNVs
+# get.ped.linked.sets - extract family links from a ped file
+# list.to.env - internal, just until NCmisc library is updated
+# get.CNV.wise.inheritance.counts - generate table of counts, transmissions, etc for each CNV that is used for TDT and other transmission analysis
 
 
-# convert Z scores to p values
-# this should be in iFunctions
-# Z.to.p <- function(Z) { p <- 2*pnorm(-abs(Z)); p[!is.finite(p)] <- NA; return(p) }
 
 # conduct a test of proportions
 t.o.p <- function(p1,p2,n1,n2) {
@@ -13,7 +31,7 @@ t.o.p <- function(p1,p2,n1,n2) {
 }
 
 
-
+# return subset of a ranged object that overlaps ichip dense mapped regions
 get.t1d.subset <- function(X) {
   source("~/github/iChip/iFunctions.R")
   ichip.regions <- reader("/chiswick/data/ncooper/imputation/common/iChipFineMappingRegionsB36.RData")
@@ -21,15 +39,57 @@ get.t1d.subset <- function(X) {
   return(filt.sd)
 }
 
+#return subset of a ranged object that overlaps genes
 get.genic.subset <- function(X,DB="gene") {
   filt.sd <- find.overlaps(X,db=DB,thresh=0.01,ranges.out=TRUE)
   return(filt.sd)
 }
 
+
+#' specific.denovo.analysis(dir,54)
+
+specific.denovo.analysis <- function(dir,suffix=54,DEL=TRUE,decline=0.5,rm.dups=TRUE) {
+    load(cat.path(dir$res,"famstats_trios",suf=suffix,ext="RData"))
+    load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData"))
+              dec <- -abs(decline)
+              if(!DEL) { tt0 <- tt1; tt1 <- tt2 }
+              aff.dn <- (tt1[14,])/(tt1[22,])
+              unaff.dn <- (tt1[8,]-tt1[14,])/(tt1[6,]-tt1[22,]) 
+              unaff.n <- (tt1[8,]-tt1[14,])
+              aff.n <- (tt1[14,])
+              unaff.t <- (tt1[6,]-tt1[22,])
+              aff.t <- (tt1[22,])
+              dont <- (unaff.n==0 & aff.n==0) | is.infinite(aff.dn) | is.infinite(unaff.dn) | unaff.t==0 | unaff.n>unaff.t
+              
+              aff.n <- aff.n[!dont]; unaff.n <- unaff.n[!dont]
+              aff.t <- aff.t[!dont]; unaff.t <- unaff.t[!dont]
+              aff.dn <- aff.dn[!dont]; unaff.dn <- unaff.dn[!dont]
+              
+              top <- numeric();for (cc in 1:length(aff.n)) { print(cc); top[cc] <- FET(aff.n[cc],unaff.n[cc],case.d=aff.t[cc],cont.d=unaff.t[cc]) }
+              
+              or.dn <- aff.dn/unaff.dn
+              mm <- cbind(aff.n,aff.t,aff.dn,unaff.n,unaff.t,unaff.dn,or.dn,top)
+              if(DEL) {
+                ss <- sum.del[rownames(mm),c(1:4,8,16:19)]
+              } else { ss <- sum.dup[rownames(mm),c(1:4,8,16:19)] }
+    if(rm.dups) {
+      DD <- data.frame.to.ranged(ss)
+      DD <- remove.duplicated.id.ranges(DD,"genes")
+      ss <- ranged.to.data.frame(DD,TRUE)
+    }
+              ss$genes <- substr(ss$genes, 1,14)
+              if(!DEL) { tt1 <- tt0 } # return it back (don't think it matters, but j.i.c)
+              out <- cbind(ss,mm)
+              out <- out[out$decline>dec,]
+              return(out[order(out$top),])
+}
+
+
+
 # analyse transmission rates for different lengths for the families #
 # e.g, round(length.analysis.fam(suffix=50,DEL=TRUE,dec.thr=0.2),4)[,-c(3:6)]
 # was used in the paper table 6 suppl 
-length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400)),T1D=FALSE,GENE=FALSE) {
+length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400)),T1D=FALSE,GENE=FALSE,rm.dups=TRUE) {
   fn <- cat.path("RESULTS",fn="TDT_results",suf=suffix,ext="RData")
   if(!file.exists(fn)) { stop("TDT results file ",fn," did not exist") }
   if(DEL) { sum.del <- reader(fn)$sum.del } else { sum.del <- reader(fn)$sum.dup }
@@ -40,15 +100,24 @@ length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400
   #prv(fn,fn2)
   LLB <- c(LL[-1],250000000)
   ## filter 'declines'
+  if(rm.dups) {
+    DD <- data.frame.to.ranged(sum.del)
+    DD <- remove.duplicated.id.ranges(DD,"genes")
+    sum.del <- ranged.to.data.frame(DD,TRUE)
+  }
   sum.del <- sum.del[!is.na(sum.del$decline),]
   sum.del <- sum.del[sum.del$decline>dec.thr,]
+  
   if(T1D | GENE) {  sd <- data.frame.to.ranged(sum.del[,1:3]) }
   if(T1D) { sd <- get.t1d.subset(sd); keep.nms <- rownames(sd) ; sum.del <- sum.del[keep.nms,] }
   if(GENE) { sd <- get.genic.subset(sd); keep.nms <- rownames(sd) ; sum.del <- sum.del[keep.nms,] }  
   #prv(dd,keep.nms,filt.sd); print(head(sum.del))
-  X <- matrix(nrow=1+length(LL),ncol=16)
+  X <- matrix(nrow=1+length(LL),ncol=19)
   X <- as.data.frame(X)
-  colnames(X) <- c("case.tr.rate","control.tr.rate","case.chi","case.p","control.chi","control.p","denovo.case","denovo.control","case.trs","case.kds","ctrl.trs","ctrl.kds","tr.OR","TR.p","dn.OR","DN.p")
+  colnames(X) <- c("case.tr.rate","control.tr.rate","case.chi","case.p",
+                   "control.chi","control.p","denovo.case","denovo.control",
+                   "case.trs","case.kds","ctrl.trs","ctrl.kds","tr.OR","TR.p",
+                   "dn.OR","DN.p" , "tr.rate","denovo.rate.av","denovo.rate.calc")
   LL <- c(0,LL); LLB <- c(tail(LLB,1),LLB)
   rownames(X) <- paste0(round(LL/1000)," - ",round(LLB/1000)," kb")
   rownames(X)[1] <- "Overall"
@@ -68,6 +137,9 @@ length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400
     X[cc,14] <- t.o.p(X[cc,1],X[cc,2],X[cc,10],X[cc,12])$p     #,6291,1514)$p
     X[cc,15] <- X[cc,7]/X[cc,8]
     X[cc,16] <- t.o.p(X[cc,7],X[cc,8],X[cc,10],X[cc,12])$p    #,6291,1514)$p
+    X[cc,17] <- (0.8060218*X[cc,1]) + (0.1939782*X[cc,2])
+    X[cc,18] <- (0.8060218*X[cc,7]) + (0.1939782*X[cc,8])
+    X[cc,19] <- (round(X[cc,7]*X[cc,10]) + round(X[cc,8]*X[cc,12]))/(X[cc,10]+X[cc,12])
   }
   return(X)
 }
@@ -77,6 +149,7 @@ length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400
 
 ## make a modified version of the top table that takes into account quality scores and 'decline'
 compile.qs.results.to.cc.toptable <- function(qs.results,dir,suffix,cnvResult,decline.thresh=-.1) {
+  #cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt")
   results1 <- qs.results$DEL
   results1 <- within(results1,{decline <- rowMeans(cbind(c(qc90_cs-qc50_cs)/qc50_cs, c(qc90_ct-qc50_ct)/qc50_ct),na.rm=T)})
   print(head(results1[order(results1$qc75_sig),],15))
@@ -124,7 +197,7 @@ print.family.check <- function(tt1,tt2,mothrate,fathrate,denov_ctrl,denov_case,t
   cat(paste("Transmissions (mums v dads) rDUPs: Z=",round(ZZ6,4),",p=",round(Z.to.p(ZZ6),5)),"\n")
 }
 
-
+# look at the difference in CNVs called for the same dataset, with and without trio calling
 summary.of.cnv.change.with.trios <- function(result.trio,result.no.trio,DEL=TRUE,ids=NULL,silent=FALSE,thr=NULL) {
   if(DEL) { list.el <- 4 } else { list.el <- 5 }
   if(length(result.trio)!=5) { result.trio <- result.trio[[1]] }
@@ -191,7 +264,7 @@ summary.of.cnv.change.with.trios <- function(result.trio,result.no.trio,DEL=TRUE
 # note that at the moment, 5 comparison trio sets is hard coded
 # need to make sure that each of the suffixes actually has a file present or won't run
 full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,5522),no.trios=c(51,53,49,48,522),
-              labels=c("RDUP", "RDEL", "RDEL+", "RDUP+", "normal"),silent=TRUE,thr=c(.9,.75)) {
+              labels=c("RDUP", "RDEL", "RDEL+", "RDUP+", "normal"),silent=TRUE,thr=c(.9,.75),rm.dups=FALSE) {
   pp <- read.ped.file("~/Documents/necessaryfilesICHIPFam/t1dgc-pedfile-2011-08-05.tab")
   qq <- pp[pp$father!=0 & pp$mother!=0,]
   rr <- pp[pp$father==0 & pp$mother==0,]
@@ -220,12 +293,33 @@ full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,5522),no.trios=c
     cnvResult.trio[[1]][[5]][["score"]] <- dup.qs.tr[[1]]
     cnvResult.raw[[1]][[4]][["score"]] <- del.qs.ntr[[1]]
     cnvResult.raw[[1]][[5]][["score"]] <- dup.qs.ntr[[1]]
+    if(rm.dups) {
+      # Plink gives duplicate ranges! #
+      fn.t <- cat.path("RESULTS",fn="TDT_results",suf=trios[cc],ext="RData")
+      fn.nt <- cat.path("RESULTS",fn="TDT_results",suf=no.trios[cc],ext="RData")
+      if(!file.exists(fn.t) | !file.exists(fn.nt)) { 
+        warning("TDT results files ",fn.t,", or ",fn.tr," did not exist") 
+        rm.dup <- F
+      }
+    }
+    if(rm.dups) {
+      sum.del <- reader(fn.t)$sum.del ; sum.dup <- reader(fn.t)$sum.dup
+      sum.del <- remove.duplicated.id.ranges(data.frame.to.ranged(sum.del))
+      sum.dup <- remove.duplicated.id.ranges(data.frame.to.ranged(sum.dup))
+      val.dls.t <- rownames(sum.del)
+      val.dps.t <- rownames(sum.dup)
+      sum.del <- reader(fn.nt)$sum.del ; sum.dup <- reader(fn.nt)$sum.dup
+      sum.del <- remove.duplicated.id.ranges(data.frame.to.ranged(sum.del))
+      sum.dup <- remove.duplicated.id.ranges(data.frame.to.ranged(sum.dup))
+      val.dls.nt <- rownames(sum.del)
+      val.dps.nt <- rownames(sum.dup)
+    } else { val.dls.t <- val.dps.t <- val.dls.nt <- val.dps.nt <- NULL }
     ccm <-  c(6291,1514)/sum(c(6291,1514))  #c(.37,.63) #cae-control ratio
     # get denovo and transmission rates
-    tt1.tr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=trios[cc],ext="RData"))$tt1)[c(1,2,7,8)]
-    tt1.ntr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=no.trios[cc],ext="RData"))$tt1)[c(1,2,7,8)]
-    tt2.tr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=trios[cc],ext="RData"))$tt2)[c(1,2,7,8)]
-    tt2.ntr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=no.trios[cc],ext="RData"))$tt2)[c(1,2,7,8)]     
+    tt1.tr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=trios[cc],ext="RData"))$tt1,val.dls.t)[c(1,2,7,8)]
+    tt1.ntr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=no.trios[cc],ext="RData"),)$tt1,val.dls.nt)[c(1,2,7,8)]
+    tt2.tr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=trios[cc],ext="RData"))$tt2,val.dps.t)[c(1,2,7,8)]
+    tt2.ntr <- trans.tests(reader(cat.path("RESULTS","famstats_trios",suf=no.trios[cc],ext="RData"))$tt2,val.dps.nt)[c(1,2,7,8)]     
     tr.change1 <- round(c(sum(tt1.tr[1:2]*ccm) , sum(tt1.ntr[1:2]*ccm)),3)
     tr.change2 <- round(c(sum(tt2.tr[1:2]*ccm) , sum(tt2.ntr[1:2]*ccm)),3)
     dn.change1 <- round(c(sum(tt1.tr[3:4]*ccm) , sum(tt1.ntr[3:4]*ccm)),3)
@@ -252,7 +346,19 @@ full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,5522),no.trios=c
 
 
 # calculate proper sum level stats for transmissions, etc
-trans.tests <- function(tt) {
+trans.tests <- function(tt,use=NULL) {
+    if(!is.null(use)) {
+      ## this option allows specifying which regions to use (e.g, valid regions, etc.)
+      missn <- which(!use %in% colnames(tt))
+      if(length(missn)>0) {
+        cat("data didn't have ",length(missn)," regions",if(length(missn)<10) { comma(use[missn])} else { ""},"\n") 
+      }
+      keep <- which(colnames(tt) %in% use)
+      prv(use)
+      print(length(use)); print(Dim(tt))
+      cat("removed ",length(which(!colnames(tt) %in% use)),"regions\n")
+      tt <- tt[,keep]
+    }
     tt <- rowSums(tt)
     trios.with <- (tt[12]+tt[13]-tt[20]) 
     trios.with1 <- (tt[3]+tt[4]-tt[21]) 
@@ -358,7 +464,7 @@ plot.each.family.for.cnv <- function(dir,ped,reg="S1",chromo=1,cnv.bounds=c(1971
 ped.interp <- function(ped,long=TRUE) {
   want <- c("familyid","member","father","mother","sex","affected")
   sample.info <- read.sample.info(dir)
-  if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'get.pedData()']") }
+  if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'read.pedData()']") }
   long.codes <- c("father","mother","boy","girl","control","t1d")
   short.codes <- c("F","M","B","G","Ct","T1")
   if(long) { codes <- long.codes } else { codes <- short.codes }
@@ -372,7 +478,7 @@ ped.interp <- function(ped,long=TRUE) {
 }
 
 # the core function to just calculate the TDT for a set of CNVs/CNVRs
-core.tdt <- function(dir,cnvrs,cnvs,ped,double.table,DEL=TRUE) {
+core.tdt <- function(dir,cnvrs,cnvs,ped,double.table,DEL=TRUE,rm.dups=TRUE) {
   cnvs <- update.cnvrs.with.cn(cnvs,double.table,DEL=DEL)
   tdt3 <- make.cnv.reg.snp.matrix(cnvs)
   tdt3 <- add.all.ids(tdt3, ped, dir)
@@ -384,6 +490,11 @@ core.tdt <- function(dir,cnvrs,cnvs,ped,double.table,DEL=TRUE) {
   ## remove NAs..
   sum.del2 <- sum.del[!is.na(sum.del$p.tdt),]
   sum.del2[["genes"]] <- substr(sum.del2[["genes"]],1,10);
+  if(rm.dups) {
+    DD <- data.frame.to.ranged(sum.del)
+    DD <- remove.duplicated.id.ranges(DD,"genes")
+    sum.del <- ranged.to.data.frame(DD,TRUE)
+  }
   return(list(cnvrs=cnvrs,sum.del=sum.del,tdt3=tdt3,ped=ped))
 }
 
@@ -402,7 +513,7 @@ trio.analysis <- function(dir=NULL, cnvResults, ped.file, result.pref="",quality
   double.del.table <- cnvResults[[4]][which(cnvResults[[4]]$cn==0),] # rareDELs
   double.dup.table <- cnvResults[[5]][which(cnvResults[[5]]$cn==4),] # rareDUPs
 
-  ped <- get.pedData(ped.file)
+  ped <- read.pedData(ped.file)
 
   if(quality.scores) {
     results <- process.quality.scores(DT,suffix=result.pref,dir,restore=restore)
@@ -496,7 +607,7 @@ add.all.ids <- function(tdt.cnv, ped, dir) {
   want <- c("familyid","member","father","mother","sex","affected")
   sample.info <- read.sample.info(dir)
   if(!all(c("phenotype","QCfail") %in% colnames(sample.info))) { stop("invalid sample.info file in 'dir$ano'") }
-  if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'get.pedData()']") }
+  if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'read.pedData()']") }
   cur.ids <- rownames(tdt.cnv)
   all.ids <- rownames(sample.info)
   all.ids <- all.ids[all.ids %in% rownames(ped)]
@@ -565,7 +676,7 @@ make.cnv.reg.snp.matrix <- function(X) {
 ## extract family links from a ped file
 get.ped.linked.sets <- function(ped,tdt3) {
   want <- c("familyid","member","father","mother","sex","affected")
-  if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'get.pedData()']") }
+  if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'read.pedData()']") }
   #which are the route cases
   ind <- which(with(ped,father==1 & mother==2 & affected==2))
   #which of these cases actually in the cnv dataset

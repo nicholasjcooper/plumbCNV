@@ -1,4 +1,46 @@
 
+##### FUNCTION INDEX #####
+# validate.dir.for - in case the 'dir' input list object is not the standardised list form, convert allows flexible use of list or regular directory specifications in plumbCNV functions
+# jlapply
+# table2d
+# remove.duplicated.id.ranges
+# moved to snpMatLst: == > get.SnpMatrix.in.file
+# logiti
+# FET
+# find.overlaps
+# get.overlap.stats.chr - prv(next.chr, x, y, xx, yy)
+# reduce.list.to.scalars.old
+# nmoo
+# reduce.list.to.scalars.2
+# rlts
+# reduce.list.to.scalars
+# fill.blank.matches - ensure a blank entry for cnvs with no overlaps full.len is an optional desired out-length for the list (which if trailing cells are blank might differ from the guess) head(paste(names(newlist)))
+# overlap.pc
+# import.marker.data
+# chip.coverage - calculate % of chromosomes/genome covered by a set of microarray markers in terms of possible CNVs detectable targ.int 100000 size of windows to find min.snps minimum number of snps per window can return the gaps - they'll be unmerged...
+# calc.cov
+# get.dgv.ranges - download or use local version of DGV (database for Genomic Variants)
+# draw.cnv.bounds
+# read.penn.cnv.file
+# rmv.dir.plink.file
+# remove.samp.from.plink - remove specific sample from a plink file - eg because had too many cnvs
+# plink.to.Ranges
+# Ranges.to.cnvgsa
+# add.genes.to.GSA
+# get.geneData.obj
+# full.cnvGSA
+# plink.to.cnvGSA
+# rmv.dir.penn.cnv.file
+# stats.on.CNV.file
+# convert.penn.to.plink
+# read.plink.file
+# extractROH
+# convert.snp.indx.to.pos 
+# get.ROH.for.SnpMatrix - either use 'dir' to automatically get snp.info and failures
+# tdt.snp2
+################
+
+
 ### VERY GENERAL ###
 
 # to make plumbcnv work, need to make this tiny fix to reader's get.delim (should fix in april)
@@ -207,31 +249,31 @@ remove.duplicated.id.ranges <- function(X,column="id") {
 }
 
 
-# specific to me
+# specific to me? MOVED TO SNPMATRIXLIST.R
 # reads snp matrices from RData binary file. if it finds multiple, will attempt to join them together
 # can also handle an XSnpMatrix
-get.SnpMatrix.in.file <- function(file,warn=TRUE){
-  obj.nm <- paste(load(file))
-  ## NOW MAKE SURE WE HAVE EXACTLY ONE SNPMATRIX OBJECT FROM THIS FILE ##
-  if(length(obj.nm)>0) {
-    typz <- sapply(obj.nm,function(X) { is(get(X))[1] })
-    vld <- which(typz %in% c("XSnpMatrix","SnpMatrix"))
-    if(length(vld)<1) { stop("no SnpMatrix objects found in file")}
-    if(length(vld)>1) {
-      if(warn) { warning("found multiple SnpMatrix objects in datafile, attempting to rbind() them") }
-      concat.snp.matrix <- NULL; 
-      vld <- vld[order(names(typz)[vld])] # alphabetical order should ensure consistency across multiple data files
-      try(concat.snp.matrix <- do.call("rbind",args=lapply(obj.nm[vld],function(X) get(X))))
-      if(is.null(concat.snp.matrix)) { stop("SnpMatrix objects had different numbers of SNPs [cols], could not rbind")}
-      obj.nm <- "concat.snp.matrix"
-    } else {
-      obj.nm <- obj.nm[vld]
-    }
-  }
-  ret.out <- get(obj.nm[1])
-  if(is(ret.out)[1]=="XSnpMatrix") { if(warn) { warning("read XSnpMatrix from ",file) } }
-  return(ret.out)
-}
+#get.SnpMatrix.in.file <- function(file,warn=TRUE){
+#  obj.nm <- paste(load(file))
+#  ## NOW MAKE SURE WE HAVE EXACTLY ONE SNPMATRIX OBJECT FROM THIS FILE ##
+#  if(length(obj.nm)>0) {
+#    typz <- sapply(obj.nm,function(X) { is(get(X))[1] })
+#    vld <- which(typz %in% c("XSnpMatrix","SnpMatrix"))
+#    if(length(vld)<1) { stop("no SnpMatrix objects found in file")}
+#    if(length(vld)>1) {
+#      if(warn) { warning("found multiple SnpMatrix objects in datafile, attempting to rbind() them") }
+#      concat.snp.matrix <- NULL; 
+#      vld <- vld[order(names(typz)[vld])] # alphabetical order should ensure consistency across multiple data files
+#      try(concat.snp.matrix <- do.call("rbind",args=lapply(obj.nm[vld],function(X) get(X))))
+#      if(is.null(concat.snp.matrix)) { stop("SnpMatrix objects had different numbers of SNPs [cols], could not rbind")}
+#      obj.nm <- "concat.snp.matrix"
+#    } else {
+#      obj.nm <- obj.nm[vld]
+#    }
+#  }
+#  ret.out <- get(obj.nm[1])
+#  if(is(ret.out)[1]=="XSnpMatrix") { if(warn) { warning("read XSnpMatrix from ",file) } }
+#  return(ret.out)
+#}
 
 
 

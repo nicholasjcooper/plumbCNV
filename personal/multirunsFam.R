@@ -13,14 +13,14 @@ trio.quality.scores <- T
 }
 
 if(T) {
-suffix <- 5522
+suffix <- 4422
 metabo <- F
 plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 6
-my.end <- 6
+my.st <- 0
+my.end <- 2
 do.cnv <- T
 comp <- F
 samp.set <- "light"
@@ -51,6 +51,8 @@ load.all.libs()
 
 
 
+
+
 #plumbCNV(dir.raw="/ipswich/data/Immunochip/FinalReports/",
 #         dir.base="/chiswick/data/ncooper/ImmunochipReplication/",
 
@@ -62,7 +64,7 @@ auxdirF <- "/home/ncooper/Documents/necessaryfilesICHIPFam"
 
 dir_rawM <- "/chiswick/data/store/metabochip/FinalReports/"
 dir_rawI <- "/ipswich/data/Immunochip/FinalReports/"
-dir_rawF <- "/ipswich/data/Immunochip/FinalReports/"
+dir_rawF <- "/sopworth/data/illumina/hui/t1dgc-asp/t1dgc_asp_immchip_gt_cluster_manif_B/t1d_asp_use_immchip_gt_cluster/"  #"/ipswich/data/Immunochip/FinalReports/"
 
 dir_baseM <- "/chiswick/data/ncooper/metabochipRunTest/"
 dir_baseI <- "/chiswick/data/ncooper/immunochipRunTest/"
@@ -89,12 +91,12 @@ chip.settings <- list(dir.raw=dir_rawF,dir.base=dir_baseF,snp.support=s.supF,
 base.settings <- list(dt.name="datatracker",
                       delete.as.we.go=F,big.lrr="LRR.dsc",big.baf="BAF.dsc",
                       grps=c(1),snp.fields=NULL,geno.file=NULL,
-                      run.mode=c("scratch","normal","big")[2],
+                      run.mode=c("scratch","normal","big")[1],
                       snp.run.mode=c("normal","skip","plink")[3],
                       plink.imp=T,fet.analysis.p=0.05,HD.mode=F,
                       n.cores=22,low.ram=F,
                       hide.penn.plink=T,penn.path="/usr/local/bin/penncnv64/",
-                      ucsc="hg18",erase.previous=T,verbose=F)
+                      build="hg18",erase.previous=T,verbose=F)
 
 
 penn.settings <- list(hmm=hmm.file,

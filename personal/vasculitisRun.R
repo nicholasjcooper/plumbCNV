@@ -5,7 +5,7 @@ plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 4
+my.st <- 6
 my.end <- 6
 do.cnv <- T
 comp <- F

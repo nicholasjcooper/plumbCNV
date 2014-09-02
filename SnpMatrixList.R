@@ -70,6 +70,106 @@ snpSel <- function(snpMatLst,snps,dir=NULL) {
   return(outobj)
 }
 
+
+string_in_common <- function(instrings, inverse=FALSE)
+{
+  ## takes a set of strings and produces
+  ## a single string which is made up of the characters common to
+  ## each string. can be useful in creating filenames or titles to 
+  ## avoid repetition of long strings
+  numstrz <- length(instrings)
+  if(inverse) { newCharz <- vector("list",numstrz) } 
+  for (cc in 1:numstrz)
+  {
+    nextCharz <- strsplit(instrings[cc],"")[[1]]
+    if (cc==1)
+    {
+      curCharz <- nextCharz
+    } else {
+        curCharz <- curCharz[!is.na(match(curCharz,nextCharz))]
+    }
+  }
+  if(!inverse) {
+    outstring <- paste(curCharz,collapse="")
+  } else {
+    for (cc in 1:numstrz)
+    {
+      nextCharz <- strsplit(instrings[cc],"")[[1]]
+      ii <- match(nextCharz,curCharz)
+      adup <- which(duplicated(ii))
+      if(length((adup))>0) {
+        for (dd in 1:length((adup))) {
+          ii[adup[dd]] <- match(nextCharz[adup[dd]],curCharz[-ii[adup[dd]]])
+        }
+      }
+      newCharz[[cc]] <- nextCharz[is.na(ii)]
+    }
+    outstring <- lapply(newCharz, function(X) { paste(X,collapse="") })
+  }
+  return(outstring)
+}
+
+
+
+
+if(F) {
+
+WTCCC2.dir <- "/ipswich/data/chrisw/MS-sawcer/WTCCC2"
+subdir <- "CCC2_Cases_UKC/"
+fulldir <- cat.path(WTCCC2.dir,fn="",pref=subdir)
+dat.fn <- list.files(fulldir)
+dat.fn <- cat.path(fulldir,dat.fn[grep(".gen.gz",dat.fn)])
+samp.fn <- cat.path("/ipswich/data/chrisw/MS-sawcer/WTCCC2","MS_UKC_illumina.sample",pref=subdir)
+ms.dr <- "/chiswick/data/ncooper/imputation/MS/"
+sml <- impute.to.annot(dat.fn=dat.fn, samp.fn=samp.fn, combine=TRUE,
+                            snpcol=1, out.pref="TEMP", out.dir=ms.dr, verbose=TRUE)
+}
+
+
+impute.to.annot <- function(dat.fn=dat.fn, samp.fn=samp.fn,
+                            HD=TRUE, combine=FALSE, snpcol=2, out.pref="SnpMatrix", 
+                            out.dir=getwd(), verbose=FALSE) {
+  samp <- reader(samp.fn)
+  if(length(rownames(samp)[1])==1) { samp <- samp[-1,] }
+  samp.ids <- rownames(samp)
+  ii <- which(tolower(colnames(samp)) %in% "sex")
+  if(length(ii)>0) { sex <- samp[[ii]] } else { sex <- NULL }
+  ii <- which(substr(tolower(colnames(samp)),1,4) %in% c("case","phen"))
+  if(length(ii)>0) { pheno <- samp[[ii]] } else { pheno <- NULL }
+  if(length(samp.ids)<2000 & combine) { combine <- TRUE } else { combine <- FALSE }
+  snpMatLst <- vector("list",length(dat.fn))
+  names(snpMatLst) <- basename(dat.fn)
+  if(!combine) {
+    nms <- string_in_common(basename(dat.fn),inverse=TRUE)
+  }
+  ofn <- character(length(dat.fn))
+  for (cc in 1:length(dat.fn)) {
+    snpMat <- read.impute(dat.fn[cc],rownames = samp.ids, snpcol = snpcol)
+    if(HD & !combine) { 
+      ofn[cc] <- cat.path(out.dir, fn=out.pref,suf=nms[cc],ext="RData")
+      save(snpMat,file=ofn[cc]) 
+      if(verbose) { cat("saved to",ofn[cc],"\n") }
+      snpMatLst[[cc]] <- ofn[cc]
+    } else {
+      snpMatLst[[cc]] <- snpMat
+    }
+  }
+  if(combine) {
+    if(verbose) { cat("combining",length(snpMatLst),"objects with same samples, different regions\n") }
+    snpMat <- do.call("cbind",args=snpMatLst)
+    if(HD) {
+      ofn <- cat.path(out.dir, pref="ALL_",string_in_common(basename(dat.fn)),ext="RData")
+      save(snpMat, file=ofn)
+      if(verbose) { cat("saved combined object to",ofn,"\n") }
+      return(ofn)
+    } else {
+      return(snpMat)
+    }
+  } else {
+    return(snpMatLst)
+  }
+}
+
 # apply a function to each element of a snpMatLst
 fun.snpMatLst <- function(snpMatLst,fun=nrow,fail=T,dir=NULL,...)
 {

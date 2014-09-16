@@ -196,7 +196,7 @@ hwe.density.plots <- function(data="snpqc.txt",hwe.thr=10^-5,zoom=T,
 
 hwe.vs.callrate.plots <- function(data="snpqc.txt",callrate.snp.thr=.95,hwe.thr=10^-5,
                                   Z.hwe=NULL,call.rate=NULL,zoom=T,full=T,dir=NULL,
-                                  fn="HWEvsCallrate.pdf",excl=F, incl=F) {
+                                  fn="HWEvsCallrate.pdf",excl=F, incl=F,jpg=FALSE) {
   # make plots of HWE against callrate; can enter a file location/data.frame or vecs of hwe/
   if(!is.null(dir)) { dir <- validate.dir.for(dir,"cr") }
   if(!full & !zoom) { return(NULL) }
@@ -226,14 +226,19 @@ hwe.vs.callrate.plots <- function(data="snpqc.txt",callrate.snp.thr=.95,hwe.thr=
              lty=c("solid","dashed"),col="blue",bg="white",box.col="white",box.lty="dotted",cex=scl)
     }
   }
-  if(!is.null(dir)) { ofn <- cat.path(dir$cr,fn); scl <- 1; pdf(ofn) 
-  } else { if(zoom & full) { par(mfrow=c(1,2)); scl <- 0.6 } else { scl <- 1 } }
+  if(!is.null(dir)) { 
+   ofn <- cat.path(dir$cr,fn,ext=if(jpg) {"jpg"} else { "pdf" }); scl <- 1; 
+    if(jpg) { jpeg(ofn) } else { pdf(ofn) }
+  } else { 
+    if(zoom & full) { par(mfrow=c(1,2)); scl <- 0.6 } else { scl <- 1 }
+  }
   if(full) {
     plot(Z.hwe,call.rate,pch=".",xlab="HWE Z-score",ylab="call rate",
          main="full range",ylim=c(1,0),bty="n")
     add.boundary.and.legend(callrate.snp.thr=callrate.snp.thr,hwe.thr=hwe.thr,scl=scl)
   }
   if(zoom) {
+    if(zoom & full & jpg) { dev.off(); ofn <- cat.path("",ofn,suf="_zoom",ext="jpg"); jpeg(ofn) }
     plot(Z.hwe,call.rate,pch=".",xlim=c(-10,10),ylim=c(1,callrate.snp.thr-.01),
          xlab="HWE Z-score",ylab="call rate",main="cutoff range",bty="n")
     add.boundary.and.legend(callrate.snp.thr=callrate.snp.thr,hwe.thr=hwe.thr,scl=scl)

@@ -7288,7 +7288,7 @@ prob.norm <- function(x,mu=0,sig=1) {
 get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info=NULL,L=T,R=T) {
   rownames(ranged) <- rN <- paste("CNV",1:nrow(ranged),sep="")
   if(!is.na(nsnp) & is(snp.info)[1]=="RangedData") {
-    fl <- get.adj.nsnp(snp.info,ranged,nsnp)
+    fl <- exp.window.nsnp(ranged,snp.info,nsnp)
     fl2 <- get.ratio.set(ranged,ratio=ratio,bp=bp)
     lenz <- (fl[,2]-fl[,1]) + (fl[,4]-fl[,3]); 
     lenz2 <- (fl2[,2]-fl2[,1]) + (fl2[,4]-fl2[,3]) ;
@@ -7302,14 +7302,14 @@ get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info
   if(L) {
     left <- RangedData(ranges=IRanges(start=fl[,1],end=fl[,2],names=rownames(ranged)),space=chr2(ranged),id=idz)
     #rownames(left) <- rownames(ranged)
-    flanking_1 <- range.snp(snp.info,toGenomeOrder2(left,strict=T))
+    flanking_1 <- range.snp(toGenomeOrder2(left,strict=T),snp.info=snp.info)
     if(nrow(flanking_1)!=length(idz)) { stop("unequal lengths, or id column missing from ranged") }
     if(!is.null(rownames(flanking_1))) { flanking_1 <- flanking_1[rN,] } # ensures same order
   }
   if(R) {
     right <- RangedData(ranges=IRanges(start=fl[,3],end=fl[,4],names=rownames(ranged)),space=chr2(ranged),id=idz)
     #    rownames(right) <- rownames(ranged)
-    flanking_2 <- range.snp(snp.info,toGenomeOrder2(right,strict=T))
+    flanking_2 <- range.snp(toGenomeOrder2(right,strict=T),snp.info=snp.info)
     if(nrow(flanking_2)!=length(idz)) { stop("unequal lengths, or id column missing from ranged") }
     if(!is.null(rownames(flanking_2))) { flanking_2 <- flanking_2[rN,] } # ensures same order
   }
@@ -7580,8 +7580,8 @@ calc.quality.stats <- function(DEL, bigBAF, bigPCC, snp.info, pr.acc=0.5,
   ## get the raw data
   cat("\nDeriving CNV quality scores\n")
   cat(" extracting data for CNVs and adjacent regions\n")
-  cnv <- big.extract.snp.ranges(range.snp(snp.info,DEL),samples=DEL$id,bigPCC)
-  cnvbaf <- big.extract.snp.ranges(range.snp(snp.info,DEL),samples=DEL$id,bigBAF,snp.info=snp.info)
+  cnv <- big.extract.snp.ranges(range.snp(DEL,snp.info=snp.info),samples=DEL$id,bigPCC)
+  cnvbaf <- big.extract.snp.ranges(range.snp(DEL,snp.info=snp.info),samples=DEL$id,bigBAF,snp.info=snp.info)
   if(do.chr) {
     #skipping chromosome QS reduces need to grab large chunks of data, reduces RAM req'mnt
     chrN <- chrIndices2(snp.info)
@@ -9417,7 +9417,7 @@ get.dat.for.ranges <- function(ranges,dir,pcCor=T,BAF=F,snp.names=T,snp.pos=F,ge
   bigMat <- get.big.matrix(fn,dir$big)
   snp.info <- read.snp.info(dir)
   snp.info <- snp.info[snp.info$QCfail==0,]
-  first.last.snps <- range.snp(snp.info,ranges)
+  first.last.snps <- range.snp(ranges,snp.info=snp.info)
   inf <- x.y.for.snp.range(first.last.snps,bigMat,snp.info,genome=genome,unord=BAF)
   besr <- big.extract.snp.ranges(first.last.snps,ranges$id,bigMat,snp.info=snp.info)
   if(snp.pos) { besr.x <- besr }

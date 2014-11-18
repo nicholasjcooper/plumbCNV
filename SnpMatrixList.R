@@ -80,7 +80,7 @@ rbind3 <- function(...,silent=TRUE){
 }
 
 # determine whether a snpMatLst is a list of filenames, SnpMatrix objects, or just a [a]SnpMatrix
-snp.mat.list.type <- function(snpMatLst,fail=T)
+snp.mat.list.type <- function(snpMatLst,fail=FALSE)
 {
   # plumbCNV snp-qc can be run on a list of snpMatrix objects in memory ('memory') or
   # on a list of RData files on 'disk' to save RAM, this fn detects which type is in use
@@ -252,35 +252,70 @@ read.impute.list <- function(dat.fn=dat.fn, samp.fn=samp.fn,
 }
 
 # apply a function to each element of a snpMatLst
-fun.snpMatLst <- function(snpMatLst,fun=nrow,fail=T,dir=NULL,...)
+fun.snpMatLst <- function(snpMatLst,fun=nrow,fail=T,dir=NULL,n.cores=1,...)
 {
   # ... further arguments to fun()
   # get dimensions of snpMatLst (SnpMatrix list) regardless
   # of whether it's a set of SnpMatrix objects or list of file locations
+  .do1 <- function(lst,dir,fun) {
+    TF <- is.file(paste(lst),dir)
+    if(TF) {
+      fnm <- find.file(paste(lst),dir)
+      snpMat <- get.SnpMatrix.in.file(fnm)
+      #snpMat <- get(paste(load())) 
+      res <- fun(snpMat,...)
+    } else {
+      warning(paste("invalid snpMat file",lst))
+      res <- NULL
+    }
+    return(res)
+  }
   HD <- switch(snp.mat.list.type(snpMatLst,fail),snpmatrix="snpmatrix",memory=F,disk=T,error=NULL)
   if(is.null(dir)) { dir <- getwd() } # ; warning("no directory passed to function") }
   if(HD=="snpmatrix") { return(fun(snpMatLst,...)) }
   if(HD) {
     n.grp <- length(snpMatLst)
     list.spec <- vector("list",n.grp)
-    for (cc in 1:n.grp)
-    {
-      TF <- is.file(paste(snpMatLst[[cc]]),dir)
-      if(TF) { 
-        fnm <- find.file(paste(snpMatLst[[cc]]),dir)
-        snpMat <- get.SnpMatrix.in.file(fnm)
-        #snpMat <- get(paste(load())) 
-        list.spec[[cc]] <- fun(snpMat,...)
-      } else {
-        warning(paste("invalid snpMat file",cc)) 
-      }
+    if(n.cores>1) {
+      list.spec <- mclapply(snpMatLst,.do1,dir=dir,fun=fun,mc.cores=n.cores)
+    } else {
+      list.spec <- lapply(snpMatLst,.do1,dir=dir,fun=fun)
     }
   } else {
-    list.spec <- lapply(snpMatLst,fun,...)
+    if(n.cores>1) {
+      list.spec <- mclapply(snpMatLst,fun,mc.cores=n.cores,...)
+    } else {
+      list.spec <- lapply(snpMatLst,fun,...)
+    }
   }
   return(list.spec)
 }
 
+
+#(load("/ipswich/data/gdxbase/ld/ld_4.18/RDATA/ThousandGenomes_05_11_CEU/genotypes_chr22_ThousandGenomes_CEU_r0511.RData"))
+#snps$genotypes,support
+if(F) {
+chr.list <- vector("list",22)
+for (cc in 1:22) {
+  (load(paste0("/ipswich/data/gdxbase/ld/ld_4.18/RDATA/ThousandGenomes_05_11_CEU/genotypes_chr",cc,"_ThousandGenomes_CEU_r0511.RData")))
+  keepers <- get.ichip.1000(snps$support)
+  SNPS <- snps$genotypes[,rownames(keepers)]
+  colnames(SNPS) <- keepers[["ichip"]]
+  chr.list[[cc]] <- SNPS
+}
+sml.1000 <- chr.list
+}
+
+
+get.ichip.1000 <- function(support,build=37) {
+  sup <- data.frame.to.ranged(support,chr="chromosome",start="position",end="position",build=build)
+  keepers <- subsetByOverlaps(sup,get.support(build=build))
+  ii <- match(start(keepers),start(get.support()))
+  keepers[["ichip"]] <- rownames(get.support())[ii]
+  return(keepers)
+}                                                                                                                                                                               
+                                                                                                                                                                                    
+  
 
 
 # specific to me?
@@ -288,11 +323,16 @@ fun.snpMatLst <- function(snpMatLst,fun=nrow,fail=T,dir=NULL,...)
 # can also handle an XSnpMatrix
 get.SnpMatrix.in.file <- function(file,dir=NULL,warn=FALSE){
   if(!is.null(dir)) { file <- find.file(file,dir) }
+  #print(file); print(dir)
   obj.nm <- paste(load(file))
   ## NOW MAKE SURE WE HAVE EXACTLY ONE SNPMATRIX OBJECT FROM THIS FILE ##
   if(length(obj.nm)>0) {
-    typz <- sapply(obj.nm,function(X) { is(get(X))[1] })
-    vld <- which(typz %in% c("XSnpMatrix","SnpMatrix","aSnpMatrix"))
+    if(length(obj.nm)==1) { 
+      typz <- is(get(obj.nm))[1] 
+    } else {
+      typz <- sapply(obj.nm,function(X) { is(get(X))[1] })  
+    }
+    vld <- which(typz %in% c("XSnpMatrix","SnpMatrix","aSnpMatrix","aXSnpMatrix"))
     if(length(vld)<1) { stop("no SnpMatrix objects found in file:",file)}
     if(length(vld)>1) {
       if(warn) { warning("found multiple SnpMatrix objects in datafile, attempting to rbind() them") }
@@ -340,8 +380,8 @@ snpMatLst.collate <- function(snpMatLst, verbose=TRUE, dir=getwd()) {
     }
   }
   spec <- get.snpMat.spec(snpMatLst,dir=dir)
-  nr <- nrowL(dat.fn,list=F)
-  nc <- ncolL(dat.fn,list=F)
+  nr <- nrowL(snpMatLst,list=F)
+  nc <- ncolL(snpMatLst,list=F)
   if(!check.snpmat.size(nr,nc)) { stop("Proposed SnpMatrix would be",nr,"rows by",nc,"columns, which exceeds the maximum possible size of a standard R object, suggest leaving this object as a SnpMatrixList") }
   if((typ2 %in% c("sampleSubGroups","snpSubGroups")) & typ=="disk") {
     if(verbose) { cat("Extracting",length(snpMatLst),if(typ2=="sampleSubGroups") {"sample"} else {"SNP"},"subsets from files\n") }
@@ -444,7 +484,7 @@ ncolL <- function(snpMatLst,list=TRUE,dir=NULL) {
 # 'lapply' function for SnpMatrixList, also works for normal SnpMatrix or aSnpMatrix or XSnpMatrix
 #' @param c.fun function to combine the result, noting that the raw form of the result is a list, so
 #' if the result should be a vector, then the appropriate combination function would be 'unlist'.
-smlapply <- function(snpMatLst,FUN=nrow,c.fun=NULL,dir=NULL,...) {
+smlapply <- function(snpMatLst,FUN=nrow,c.fun=NULL,dir=NULL,n.cores=1,...) {
   if(is(snpMatLst)[1] %in% c("XSnpMatrix","SnpMatrix","aSnpMatrix")) { return(FUN(snpMatLst)) }
   typ <- snp.mat.list.type(snpMatLst,fail=TRUE) #disk or memory
   typ2 <- get.split.type(snpMatLst,dir=dir)  # singleEntry snpSubGroups sampleSubGroups
@@ -452,7 +492,7 @@ smlapply <- function(snpMatLst,FUN=nrow,c.fun=NULL,dir=NULL,...) {
   if(typ2=="singleEntry") { return(FUN(snpMatLst[[1]])) }
   if(typ2=="sampleSubGroups" | typ2=="snpSubGroups") {
     #alln <- lapply(snpMatLst,rownames)
-    alln <- fun.snpMatLst(snpMatLst,fun=FUN,dir=dir,...)
+    alln <- fun.snpMatLst(snpMatLst,fun=FUN,dir=dir,n.cores=n.cores,...)
     if(is.function(c.fun)) {
       return(c.fun(alln))
     } else {
@@ -715,7 +755,7 @@ doSnpQC <- function(snpMatLst=NULL, snp.info=NULL, sample.info=NULL, dir=getwd()
     }
   }
   ## get snp call rates ##
-  HD <- switch(snp.mat.list.type(snpMatLst,fail=T),memory=F,disk=T,error=NULL)
+  HD <- switch(snp.mat.list.type(snpMatLst,fail=F),memory=F,disk=T,error=NULL)
   if(is(snpMatLst[[1]])[1] %in% c("aSnpMatrix","SnpMatrix","XSnpMatrix")) { HD <- F } else { HD <- T }
   if (plink | is.null(snpMatLst)){
     if (!"snpdataout.lmiss" %in% list.files(dir$cr.plk)) {
@@ -901,7 +941,7 @@ get.split.type <- function(snpMatLst,head.only=TRUE,dir=NULL,allow.dif.dims=FALS
       }
     }                
   } else {
-    if(T | same.num.snps & !same.num.samples) { return("sampleSubGroups") }
+    if(same.num.snps & !same.num.samples) { return("sampleSubGroups") }
     if(!same.num.snps & same.num.samples) { return("snpSubGroups") }
     if(!same.num.snps & !same.num.samples & !allow.dif.dims) {
       stop("invalid/incomplete snpMatLst object") 
@@ -1289,3 +1329,230 @@ samp.from.annot <- function(aSnpMat) {
   return(df)
 }
 
+
+correct.by <- function(X) {
+  typ <- is(X)[1]
+  if(!typ %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix")) { stop("X must be a SnpMatrix object") }
+  cs <- col.summary(X)
+  if(nrow(cs)!=ncol(X)) { stop("col.summary length (",nrow(cs),") did not match length of X (",ncol(X),")")}
+  raf <- cs$RAF
+  nn <- cs$Calls
+  aa <- raf^2
+  ab <- raf*(1-raf)*2
+  bb <- (raf)^2
+  mN <- (aa*1) + (ab*2) + (bb*3)
+  ss <- ((bb*nn)*(3-mN)^2) + ((ab*nn)*(2-mN)^2) + ((aa*nn)*(1-mN)^2)
+  sD <- sqrt((1/(nn-1))*ss)  
+  sD[is.na(sD)] <- 1
+  sD[sD<.0001] <- 0.1
+  return(list(mean=mN,sd=sD))
+}
+
+bigSnpMatrix <- function(X,filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, mn.zero=TRUE, sd.hwe=TRUE, replace.missing=TRUE) {
+  typ <- is(X)[1]
+  max.gb <- NA
+  if(!typ %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) {
+      stop("X must be a SnpMatrix or aSnpMatrix object")
+  }
+  if(replace.missing) {
+    X <- randomize.missing2(X)
+  }
+  raw <- X@.Data
+  if(mn.zero | sd.hwe) {
+    oo <- correct.by(X); mN <- oo$mean; sD <- oo$sd
+  } 
+  #raw[raw==0] <- NA
+  if(!mn.zero) { mN <- 0 }
+  if(!sd.hwe) { sD <- 1 }
+  nC <- ncol(X); nR <- nrow(X)
+  dir <- dirname(filename); filename <- basename(filename)
+  if(dir=="") { dir <- getwd() }
+  if(tracker) { cat(" creating",nR,"x",nC,"target matrix,",cat.path(dir,filename),"...\n") }
+  des <- paste(filename,"dsc",sep=".")
+  bck <- paste(filename,"bck",sep=".")
+  bigSnp <- big.matrix(nrow=nR,ncol=nC, backingfile=bck, dimnames=list(rownames(X),colnames(X)),
+                         backingpath=dir, descriptorfile=des)
+  split.to <- 10*round(estimate.memory(bigSnp)) # split into .1GB chunks, save RAM without creating groups too small to process
+  #if(n.cores>4) { split.to <- split.to * 4 } # divide more if using multicores
+  stepz <- round(seq(from=1,to=nC+1,length.out=round((split.to+1))))
+  if((tail(stepz,1)) != nC+1) { stepz <- c(stepz,nC+1) }
+  split.to <- length(stepz)-1
+  for (cc in 1:split.to)
+  {
+    # within submatrix cols
+    c1 <- stepz[cc]; c2 <- stepz[cc+1]-1  # check this in FN!
+    # do the copying
+    lilColRange <- c(c1:c2)
+    if(tracker) {      loop.tracker(cc,split.to) }
+    if(is.finite(sum(lilColRange))) {
+      #cat(range(lilColRange)); cat(dim(bigTrans)); cat(dim(bigMat))
+      nxt.chunk <- raw[1:nR,lilColRange]
+      nxt.chunk <- apply(nxt.chunk,2,as.numeric)
+      bigSnp[1:nR,lilColRange] <- (nxt.chunk-mN[lilColRange])/sD[lilColRange]
+    } else {
+      cat(" Warning: empty interval ignored\n")
+    }
+    if(limit.ram & (cc %% (max.gb*10) == 0)) {
+      # reset memory after every 'max.gb' 1GB chunks to prevent skyrocketing RAM use #
+      fl.suc <- bigmemory::flush(bigSnp) ;  if(!fl.suc) { cat("flush failed\n") } ; gc()  
+      if(T) {
+        RR <- describe(bigSnp); rm(bigSnp); bigSnp <- attach.big.matrix(RR,path=dir)
+      }
+    }
+  }
+  if(tracker) {
+    prv(bigSnp)
+  }
+  return(bigSnp)
+}
+
+
+# sml <- list.files("/chiswick/data/ncooper/iChipData/",pattern="temp.ichip")
+# sml <- as.list(sml)
+# dd <- "/chiswick/data/ncooper/iChipData/"
+
+# convert a snpMatLst to a single SnpMatrix #
+bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missing=TRUE,
+                             filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, mn.zero=TRUE, sd.hwe=TRUE) {
+  typ <- snp.mat.list.type(snpMatLst,fail=TRUE) #disk or memory
+  typ2 <- get.split.type(snpMatLst,dir=dir)  # singleEntry snpSubGroups sampleSubGroups
+  max.gb <- NA
+  if(typ2=="snpmatrix") { return(bigSnpMatrix(snpMatLst)) } # was already a SnpMatrix
+  if(typ2=="singleEntry") { 
+    # just 1 element, no binding required
+    if(typ=="disk") {
+      oo <- (get.SnpMatrix.in.file(snpMatLst[[1]],dir=dir))
+    } else {
+      oo <- (snpMatLst[[1]])
+    }
+    return(bigSnpMatrix(oo))
+  }
+  spec <- get.snpMat.spec(snpMatLst,dir=dir)
+  nR <- nrowL(snpMatLst,dir=dir,list=F)
+  nC <- ncolL(snpMatLst,dir=dir,list=F)
+  cN <- colnamesL(snpMatLst,dir=dir,list=F)
+  rN <- rownamesL(snpMatLst,dir=dir,list=F)
+  #if(!check.snpmat.size(nr,nc)) { stop("Proposed bigSnpMatrix would be",nR,"rows by",nC,"columns, which exceeds the maximum possible size of a standard R object, suggest leaving this object as a SnpMatrixList") }
+  dir2 <- dirname(filename); filename <- basename(filename)
+  if(dir2=="") { dir2 <- getwd() }
+  if(tracker) { cat(" creating",nR,"x",nC,"target matrix,",cat.path(dir,filename),"...\n") }
+  des <- paste(filename,"dsc",sep=".")
+  bck <- paste(filename,"bck",sep=".")
+  bigSnp <- big.matrix(nrow=nR,ncol=nC, backingfile=bck, dimnames=list(rN,cN),
+                       backingpath=dir2, descriptorfile=des)
+  #typ2 <- "snpSubGroups" # why???
+  if((typ2 %in% c("sampleSubGroups","snpSubGroups"))) {
+    if(verbose) { cat("Extracting",length(snpMatLst),if(typ2=="sampleSubGroups") {"sample"} else {"SNP"},"subsets from files\n") }
+    if(typ2=="snpSubGroups") { 
+      stz <- c(1,1+cumsum(spec[2,])[-ncol(spec)]); enz <- cumsum(spec[2,])  # snp index
+    } else {
+      stz <- c(1,1+cumsum(spec[1,])[-ncol(spec)]); enz <- cumsum(spec[1,])  # sample index
+    }
+    #### HERE###
+    n.chr <- length(snpMatLst)
+    for (dd in 1:n.chr) {
+     # print(snpMatLst[[dd]])
+      if(typ=="disk") {
+        next.chr <- (get.SnpMatrix.in.file(snpMatLst[[dd]],dir=dir))
+      } else {
+        next.chr <- snpMatLst[[dd]]
+      }
+      ### check type of next chromosome (or sample subset)
+      typ3 <- is(next.chr)[1]
+      if(typ3 %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) {
+        if(replace.missing) { next.chr <- randomize.missing2(next.chr) }
+        raw <- next.chr@.Data
+      } else {
+        stop("SnpMatLst must contain only SnpMatrix or aSnpMatrix objects", "; type was: ",typ3)
+      }
+      #### means and SDs for standardizing ####
+      if(mn.zero | sd.hwe) {
+        oo <- correct.by(next.chr); mN <- oo$mean; sD <- oo$sd
+      } 
+      if(!mn.zero) { mN <- 0 }
+      if(!sd.hwe) { sD <- 1 }
+      #########
+      split.to <- 10*round(estimate.memory(next.chr)) # split into .1GB chunks, save RAM without creating groups too small to process
+      #if(n.cores>4) { split.to <- split.to * 4 } # divide more if using multicores
+      nr <- nrow(next.chr); nc <- ncol(next.chr)
+      stepz <- round(seq(from=1,to=nc+1,length.out=round((split.to+1))))
+      if((tail(stepz,1)) != nc+1) { stepz <- c(stepz,nc+1) }
+      split.to <- length(stepz)-1
+      for (cc in 1:split.to)
+      {
+        # within submatrix cols
+        c1 <- stepz[cc]; c2 <- stepz[cc+1]-1  # check this in FN!
+        # do the copying
+        lilColRange <- c(c1:c2)
+        if(is.finite(sum(lilColRange))) {
+          #cat(range(lilColRange)); cat(dim(bigTrans)); cat(dim(bigMat))
+          nxt.chunk <- raw[1:nr,lilColRange,drop=F]
+          nxt.chunk <- apply(nxt.chunk,2,as.numeric)
+          if(typ2=="snpSubGroups") {
+#            prv(stz[dd],enz[dd])
+            #return(list(bigSnp=bigSnp,stz=stz,enz=enz,dd=dd,nr=nr,lilColRange=lilColRange,nxt.chunk=nxt.chunk,mN=mN,sD=sD))
+            bigSnp[1:nr,(stz[dd]:enz[dd])[lilColRange]] <- (nxt.chunk-mN[lilColRange])/sD[lilColRange]  
+          } else {
+            bigSnp[stz[dd]:enz[dd],lilColRange] <- (nxt.chunk-mN[lilColRange])/sD[lilColRange]
+          }
+        } else {
+          cat(" Warning: empty interval ignored\n")
+        }
+        if(limit.ram & (cc %% (max.gb*10) == 0)) {
+          # reset memory after every 'max.gb' 1GB chunks to prevent skyrocketing RAM use #
+          fl.suc <- bigmemory::flush(bigSnp) ;  if(!fl.suc) { cat("flush failed\n") } ; gc()  
+          if(T) {
+            RR <- describe(bigSnp); rm(bigSnp); bigSnp <- attach.big.matrix(RR,path=dir)
+          }
+        }
+      }
+      if(tracker) { loop.tracker(dd,n.chr) }
+    }
+  } else {
+    stop("incorrect input caused failure to convert from SnpMatList to bigSnpMatrix format")
+  }
+  if(tracker) { prv(bigSnp) }
+  return(bigSnp)
+}
+
+#ld2 <- function(X) {
+#  mat <- SnpMatrix.to.data.frame(X,T)
+#  kk <- proc.time()[3]; out <- cor(mat,use="pairwise.complete")^2 ;jj <- proc.time()[3]; print(jj-kk)
+#  return(out)
+#}
+
+ld.prune.chr <- function(X,stats="R.squared",thresh=.50) {
+  kk <- proc.time()[3]; mat <- ld(X,X,stats=stats[1]) ; jj <- proc.time()[3]; print(jj-kk)
+  matt <- mat; matt[is.na(matt)] <- 0
+  exc <- length(matt[matt>thresh])
+  nsnp <- nrow(mat)
+  cat(out.of(exc,nsnp^2)," in matrix exceed ld threshold\n")
+  kk <- proc.time()[3];
+  mat[is.nan(mat)] <- runif(length(which(is.nan(mat))))/100
+  selected <- rep(T,nrow(mat))
+  winners <- NULL
+  while(any(selected)) {
+    tot.scores <- abs(rowMeans(mat[,selected,drop=F],na.rm=T))
+    tot.scores[is.na(tot.scores)] <- 0
+    winnerz <- which(tot.scores==max(tot.scores[selected],na.rm=T))
+    winnerz <- winnerz[winnerz %in% which(selected)]
+    if(length(winnerz)<1) {
+      winnerz <- which(tot.scores==max(tot.scores[selected],na.rm=T))
+      winnerz <- winnerz[winnerz %in% winners]
+      cat("this happened")
+    }
+    winner <- winnerz[sample(length(winnerz),1)]
+    if(!is.na(winner) & (!winner %in% winners)) {
+      winners <- c(winners,winner)
+      passz <- (mat[,winner] < thresh)
+      passz[is.na(passz)] <- T
+      #cat("winner ",rownames(mat)[winner],"had",length(which(!passz)),"in ld. ",out.of(length(which(selected)),length(selected)),"\n")
+      selected <- selected & passz
+      if(any(is.na(selected))) { prv(selected,passz)}
+    } 
+    selected[winner] <- F
+  }
+  jj <- proc.time()[3]; print(jj-kk)
+  cat("pruned",out.of((nsnp-length(winners)),nsnp),"SNPs\n")
+  return(winners)
+}

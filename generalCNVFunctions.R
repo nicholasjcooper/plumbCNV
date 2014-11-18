@@ -421,6 +421,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   ## overlap with genes or exons or DGV
   ## percentages with respect to the CNVs or with respect to the reference
   #e.g, look in db to find exon, gene or dgv best match ; default is gene
+  if(is(ref)[1]=="GRanges") { ref <- as(ref,"RangedData") }
   if(is(ref)[1]=="RangedData" & all(db==c("gene","exon","dgv"))) {
     db <- "custom ranges"
   }
@@ -805,7 +806,7 @@ import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames
 ### LESS GENERAL ###
 
 # calculate relative chip coverage vs gwas
-chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
+chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,add.missing.chr=TRUE,
                           full.chr.lens=T,verbose=T,dir="",build="hg18",ranges=F) {
   # calculate % of chromosomes/genome covered by a set of microarray markers in terms of
   # possible CNVs detectable
@@ -835,6 +836,7 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
     rd3 <- RangedData(IRanges(start=(chr.lens.full-enz-targ.int)[enz>0],end=(chr.lens.full-targ.int)[enz>0]),space=chr.set[enz>0])
     rd  <- rbind(toGenomeOrder2(rd,strict=T),toGenomeOrder2(rd2,strict=T),toGenomeOrder2(rd3,strict=T))
   } else { 
+    cat("using range restricted by start and end of chip coverage for each chromosome")
     chr.lens <- chr.lens.range  
   }
   rd <- toGenomeOrder2(rd,strict=T)
@@ -859,10 +861,98 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,
   return(outlist)
 }
 
+
+# calculate relative chip coverage vs gwas
+chip.coverage2 <- function(snp.info,targ.int=100000,min.snps=10,by.chr=F,pad.missing.autosomes=TRUE,
+                           verbose=T,dir="",build="hg18",ranges=F,alt.ref=NULL) {
+  # calculate % of chromosomes/genome covered by a set of microarray markers in terms of
+  # possible CNVs detectable
+  # targ.int #100000  ## size of windows to find
+  # min.snps ## minimum number of snps per window
+  # can return the gaps - they'll be unmerged...
+  if(!is.null(alt.ref) & !by.chr) {
+    if(is(alt.ref)[1]!=is(snp.info)[1]) { stop("alt.ref should be NULL, or same type as snp.info") }
+    if(length(grep("chr",chrNames2(snp.info)))>0) { alt.ref <- set.chr.to.char(alt.ref) } else { alt.ref <- set.chr.to.numeric(alt.ref) }
+    snp.info.sub <- subsetByOverlaps(snp.info,alt.ref)
+    #prv(snp.info.sub)
+    covered <- calc.cov2(snp.info.sub, targ.int, min.snps)
+    cov <- sum(as.numeric(width((covered))))
+    total.ref <- sum(as.numeric(width(alt.ref)))
+    cat("Base pairs covered: ",cov,"\n")
+    cat("Base pairs of gap: ",total.ref-cov,"\n")
+    cat("Coverage % of alternative reference, bp=",(total.ref),": ",cov/(total.ref),"\n")
+    return(cov/(total.ref))
+  } else {
+    covered <- calc.cov2(snp.info, targ.int, min.snps)
+    not.covered <- invert.granges(as(covered,"GRanges"),pad.missing.autosomes=pad.missing.autosomes,build=build)
+  }
+  if(ranges) { return(covered) }
+  if(!by.chr) {
+    cov <- sum(as.numeric(width((covered))))
+    not.cov <- sum(as.numeric(width((not.covered))))
+    cat("Base pairs covered: ",cov,"\n")
+    cat("Base pairs of gap: ",not.cov,"\n")
+    pc <- cov/(cov+not.cov)
+    cat("Coverage % of genome bp=",(cov+not.cov),": ",pc,"\n")
+    return(pc)
+  } else {
+    covered <- as(covered,"RangedData")
+    not.covered <- as(not.covered,"RangedData")
+    chr.cov <- chr.gap <- chr.pc <- vector("list",length(covered))
+    names(chr.pc) <- names(chr.gap) <- names(chr.cov) <- chrNames(covered)
+    for (cc in 1:length(chr.cov)) {
+      chr.cov[[cc]] <- sum(as.numeric(width((covered[cc]))))
+      chr.gap[[cc]] <- sum(as.numeric(width((not.covered[cc]))))
+      chr.pc[[cc]] <- chr.cov[[cc]]/(chr.cov[[cc]]+chr.gap[[cc]])
+    }
+    return(list(pc=chr.pc,cov=chr.cov,gap=chr.gap))
+  }
+}
+  
+calc.cov2 <- function (snp.info, targ.int, min.snps) {
+  typ <- is(snp.info)[1]
+  if(!typ %in% c("RangedData","GRanges","ChipInfo")) { stop("snp.info must be GRanges, RangedData, or ChipInfo type") }
+  snp.info <- toGenomeOrder2(snp.info)
+  st <- start(snp.info)
+  ch <- chr2(snp.info)
+  tch <- table(ch)
+  if(sum(as.numeric(tch))<1) { stop("no SNPs found in snp.info") }
+  chr.list <- names(tch)[as.numeric(tch)>0]
+  nchr <- length(chr.list)
+  chr.cov <- vector("list",nchr)
+  names(chr.cov) <- chr.list
+  if(length(nchr)<1) { prv(snp.info); stop("no chromosomes found in snp.info") }
+  for (cc in 1:nchr) {
+    #print(cc)
+    nch <- chr.list[cc]
+    sel <- ch==nch
+    nsnp <- length(st[sel])  
+    if(nsnp<(min.snps+1)) { 
+      warning("chr",nch," had too few snps for any coverage")
+      chr.cov[[cc]] <- RangedData(IRanges(start=1,end=1),space=nch)
+    } else {
+      chz <- ch[sel][1:(nsnp-(min.snps-1))]
+      stz <- st[sel][1:(nsnp-(min.snps-1))]
+      enz <- st[sel][min.snps:nsnp]
+      if(any(stz>enz)) { stop("start should never be > end") }
+      range6 <- RangedData(IRanges(start=stz,end=enz),space=chz)   
+      toolong <- width(range6)>targ.int
+      chr.cov[[cc]] <- reduce(range6[!toolong,])
+    }
+    #loop.tracker(cc,nchr)
+  }
+ # print(sapply(chr.cov,is))
+  #return(chr.cov)
+  out.obj <- toGenomeOrder2(do.call("rbind",args=chr.cov))
+  out.obj <- as(out.obj,typ)
+  return(out.obj)
+}
+
+
 # internal function used by chip.coverage() to calculate coverage gaps
 calc.cov <- function (snp.info, targ.int, min.snps) {
   cur.chr <- chr2(snp.info)
-  if(nrow(snp.info)<10) { warning("not enough snps to calculate coverage"); return(NA) }
+  if(nrow(snp.info)<(min.snps+1)) { warning("not enough snps to calculate coverage"); return(NA) }
   nsnp <- nrow(snp.info)-min.snps;
   beg <- fin <- Chr <- integer(nsnp) 
   lenz <- dif <- numeric(nsnp)
@@ -877,6 +967,7 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
         # if the 'min.snps' distance is longer than 'targ.int'
         dif[cc] <- 0
         gap <- lenz[cc]-targ.int # difference between interval and targ.int
+        skipnum <- 0
         while(dif[cc]<gap) {
           # see how many snps we need to skip ahead until the gap to 10th [min.snp] snp is <= targ.int
           # record this distance as a gap where a CNV can't be detected, then start again from the 'skipnum' snp
@@ -884,6 +975,8 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
           dif[cc] <- startz[cc+skipnum] - startz[cc]   ## old idea, don't think it works : dif2 <- startz[cc+min.snps+skipnum+1] - startz[min.snps+cc]
         }
         beg[cc] <- startz[cc]; fin[cc] <- startz[cc+skipnum]; Chr[cc] <- cur.chr[cc]
+      } else {
+        # otherwise 'min.snps' were in an interval <=targ.int, so all is kosher
       }
     } else {
       # this counter helps to skip snps which are too far apart to call a targ.int size CNV with min.snps
@@ -897,6 +990,53 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
   rd <- toGenomeOrder2(rd,strict=T)
   return(rd)
 }
+
+
+get.genome <- function(build=NULL,num.names=TRUE) {
+  ccc <- get.chr.lens(build=build,names=T)
+  ch <- names(ccc); if(num.names) { ch <- gsub("chr","",ch) }
+  ii <- RangedData(IRanges(start=rep(1,length(ccc)),end=as.numeric(ccc)),space=ch)
+  return(toGenomeOrder2(ii))
+}
+
+
+#dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
+#hh550 <- reader("~/Downloads/hh550.map")
+#colnames(hh550) <- c("chr","pos")
+#hh550 <- data.frame.to.ranged(hh550)
+#hh550 <- toGenomeOrder2(subsetByOverlaps(hh550, get.genome(build=36))) # make sure no illegal SNP positions!
+#ichip.regions <- reader("/chiswick/data/ncooper/imputation/COMMON/iChipFineMappingRegionsB36.RData")
+#snp.info <- read.snp.info(dir)
+#i12 <- set.chr.to.numeric(ichip.regions)
+#t1d <- get.t1d.subset(i12,build=36)
+#sum <- make.summary.of.ichip.vs.550.coverage(hh550,snp.info,alt.ref2,alt.ref3)
+  
+make.summary.of.ichip.vs.550.coverage <- function(hh550,snp.info,t1d,i12,build="hg18") {
+  #source("~/github/plumbCNV/generalCNVFunctions.R")
+  cnv.sizes <- c(5000,10000,20000,50000,100000,200000,400000,1000000,3000000)
+  regs <- c("T1D","Immune12","Genome")
+  chips <- c("ImmunoChip","HumanHapMap550K")
+  cols <- paste(rep(regs,length(chips)),rep(chips,each=length(regs)),sep="-")
+  result.mat <- matrix(nrow=length(cnv.sizes),ncol=length(cols))
+  colnames(result.mat) <- cols
+  rownames(result.mat) <- cnv.sizes
+  snp.infoA <- select.autosomes(snp.info)
+  hh550A <- select.autosomes(hh550)
+  for(cc in 1:length(cnv.sizes)) {
+    Header(paste0(cnv.sizes[cc]/1000,"K minimum CNV size"))
+    result.mat[cc,1] <-chip.coverage2(snp.infoA,cnv.sizes[cc],6,alt.ref=t1d,build=build) # T1D regions coverage for iChip
+    result.mat[cc,2] <-chip.coverage2(snp.infoA,cnv.sizes[cc],6,alt.ref=i12,build=build) # immune regions coverage for iChip
+    result.mat[cc,3] <-chip.coverage2(snp.infoA,cnv.sizes[cc],6,build=build)                  # genome coverage for iChip
+    
+    result.mat[cc,4] <-chip.coverage2(hh550A,cnv.sizes[cc],6,alt.ref=t1d,build=build) # T1D regions coverage for 550k
+    result.mat[cc,5] <-chip.coverage2(hh550A,cnv.sizes[cc],6,alt.ref=i12,build=build) # immune regions coverage for 550k
+    result.mat[cc,6] <-chip.coverage2(hh550A,cnv.sizes[cc],6,build=build)                  # genome coverage for 550k
+  }
+  
+  print(result.mat,quote=F)
+  return(result.mat)
+}
+
 
 # import the DGV into a rangedData object
 get.dgv.ranges <- function(dir=NULL,build="hg18",bioC=TRUE,text=FALSE,shortenID=TRUE, compact=FALSE, alt.url=NULL, GRanges=TRUE)

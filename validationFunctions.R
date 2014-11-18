@@ -18,20 +18,26 @@ extract.cnv.regions <- function(dir, type="DEL", by.cnv=F, enriched=T, genes=T, 
   cnv.ov <- cat.path(dir$cnv.qc,pref="rare",fn=type,ext="cnv.overlap")
   ## read in cnv overlap file
   #print(cnv.ov)
+  n.pheno <- n.phenos(dir)
+  do.case.ctrl <- n.pheno>1
   tt <- read.table(cnv.ov,header=T,stringsAsFactors=FALSE)
   # tt <- reader(cnv.ov)
   inter <- tt[tt[,2]=="CON",]
   un <- tt[tt[,2]=="UNION",] # CNVRs
-  pp <- strsplit(un[,4],":",fixed=T)
-  case <- as.numeric(sapply(pp,"[",1)); ctrl <- as.numeric(sapply(pp,"[",2))
-  ii <- ((case/ctrl)[case!=0 & ctrl!=0]) #[1:100]
-  if(prt) { cat("Ratio summary:\n"); print(summary(ii)) }
-  case0 <- case; case0[case0==0] <- 0.5; ctrl0 <- ctrl; ctrl0[ctrl0==0] <- 0.5;
-  ii0 <- (case0/ctrl0)
+  #prv(tt) ; print(head(un))
+  if(T | do.case.ctrl) {
+    # can still do this when only one phenotype as plink will add 0's for the other
+    pp <- strsplit(un[,4],":",fixed=T)
+    case <- as.numeric(sapply(pp,"[",1)); ctrl <- as.numeric(sapply(pp,"[",2))
+    ii <- ((case/ctrl)[case!=0 & ctrl!=0]) #[1:100]
+    if(prt) { cat("Ratio summary:\n"); print(summary(ii)) }
+    case0 <- case; case0[case0==0] <- 0.5; ctrl0 <- ctrl; ctrl0[ctrl0==0] <- 0.5;
+    ii0 <- (case0/ctrl0)
+  }  
   main <- tt[tt[,2]!="UNION" & tt[,2]!="CON",]  # results for individuals
   #print(table(tt[[1]]))
   #print(dim(main)); print(dim(tt)); 
-  if(FET) {
+  if(FET & do.case.ctrl) {
     fet <- FET(case,ctrl,dir)
     CNVRs <- RangedData(IRanges(start=as.numeric(un[,6]),end=as.numeric(un[,7]),
                                 names=un[,1]),space=as.numeric(un[,5]),cases=case,ctrls=ctrl,sig=fet)
@@ -40,7 +46,7 @@ extract.cnv.regions <- function(dir, type="DEL", by.cnv=F, enriched=T, genes=T, 
                                 names=un[,1]),space=as.numeric(un[,5]),cases=case,ctrls=ctrl)
   }
   
-  if(enriched) {
+  if(enriched & do.case.ctrl) {
     many.ctrl <- un[which(ii0<=lwr),]
     many.case <- un[which(ii0>=upr),]
     if(genes) {
@@ -124,8 +130,16 @@ toptables <- function(oo1,oo2,pv=0.05,prt=T) {
 # could use a clean up
 full.cnvr.summary <- function(cnvs1,oo1,dir,thr=c(.5,.75,.9)) {
   sample.info <- read.sample.info(dir)
-  p.c <- table(sample.info$phenotype,sample.info$QCfail)[,1]
-  case.d <- p.c[2]; cont.d <- p.c[1]
+  n.ph <- n.phenos(dir)
+  if(n.ph>2) { warning("this analysis assumes exactly 2 phenotypes, so interpret output with caution as ",
+                       n.ph," phenotypes were found") }
+  if(n.ph==2) {
+    p.c <- table(sample.info$phenotype,sample.info$QCfail)[,1]
+    case.d <- p.c[2]; cont.d <- p.c[1]
+  } else {
+    case.d <- cont.d <- nrow(sample.info[sample.info$QCfail==0,])
+    warning("only 1 phenotype found, so setting cases=controls for cnv counts, ignore stats")
+  }
   all.reg <- unique(cnvs1$cnvr)
   #tapply(cnvs1$score[cnvs1$cnvr=="S20"],cnvs1$phenotype[cnvs1$cnvr=="S20"])
   #tapply(cnvs1$score[cnvs1$cnvr=="S20"],cnvs1$phenotype[cnvs1$cnvr=="S20"])
@@ -465,11 +479,19 @@ process.quality.scores <- function(DT,suffix,dir,n.pcs=NA,restore=T) {
   if(length(cnvResults)==5) { if(!all(names(cnvResults) %in% exp.names)) { names(cnvResults) <- exp.names } }
   #x.result$rareDEL <- x.result$rareDEL[!x.result$rareDEL$roh,]
   ofn <- cat.path(dir$res,"qs.del.backup",suf=suffix,ext="RData")
-  if(F & file.exists(ofn) & restore) { print(load(ofn)) } else {
+ # print(ofn)
+  if(file.exists(ofn) & restore) { print(load(ofn)) } else {   
+  #if(F & file.exists(ofn) & restore) { print(load(ofn)) } else {
     qs.sc <- get.quality.scores(x.result$rareDEL,dir)
     save(qs.sc,file=ofn)
   }
   qs.mat <- make.qs.table(qs.sc)
+  n.pheno <- n.phenos(dir) 
+  if(nrow(qs.mat)!=nrow(x.result[[4]])) {
+    stop("quality score matrix dimensions do not match CNV dataset, please use restore=FALSE or try regenerating input data")}
+  rnms <- sapply(strsplit(rownames(qs.mat),".",fixed=T),"[",1) # get the base ids from the rownames (repeated have .2, .3 etc)
+  if(any(rnms!=x.result[[4]]$id)) { 
+    warning("it looks like the ids between the quality scores and the CNV dataset do not match, check or consider rerunning with restore=FALSE")}
   ofn <- cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt")
   write.table(qs.mat,file=ofn,quote=F);   cat("wrote:",ofn,"\n")
   scrs <- qs.mat[[2]]; scrs[is.na(scrs)] <- qs.mat[[3]][is.na(scrs)]
@@ -482,9 +504,11 @@ process.quality.scores <- function(DT,suffix,dir,n.pcs=NA,restore=T) {
   #print(Dim(cnvResults))
   cnvResults$rareDEL[["score"]] <- scrs;
   save(cnvResults,file=res.fn)
-  x.result$rareDEL <- x.result$rareDEL[scrs>=thr,]
+  x.result$rareDEL <- x.result$rareDEL[scrs>=thr, ,drop=FALSE]
   ofn <- cat.path(dir$res,"qs.dup.backup",suf=suffix,ext="RData")
-  if(F & file.exists(ofn) & restore) { print(load(ofn)) } else {
+#  print(ofn)
+  #if(F & file.exists(ofn) & restore) { print(load(ofn)) } else {
+  if(file.exists(ofn) & restore) { print(load(ofn)) } else {
     qs.sc2 <- get.quality.scores(x.result$rareDUP,dir)
     save(qs.sc2,file=ofn)
   }
@@ -500,22 +524,27 @@ process.quality.scores <- function(DT,suffix,dir,n.pcs=NA,restore=T) {
   cnvResults$rareDUP[["score"]] <- scrs2;
   save(cnvResults,file=res.fn)
   cat("wrote file results with quality scores inserted to:",res.fn,"\n")
-  x.result$rareDUP <- x.result$rareDUP[scrs2>=thr,] # what is the different to cnvResults???
+  x.result$rareDUP <- x.result$rareDUP[scrs2>=thr, ,drop=FALSE] # what is the different to cnvResults???
   
   ## add QS to cnvrs
-  oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
-  cnvs1 <- extract.cnv.regions(dir,type="del",by.cnv=T,lwr=0.25,upr=4,FET=T)
-  oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
-  cnvs2 <- extract.cnv.regions(dir,type="dup",by.cnv=T,lwr=0.25,upr=4,FET=T)
+  do.fet <- n.pheno>1
+  oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=do.fet,prt=F)
+  cnvs1 <- extract.cnv.regions(dir,type="del",by.cnv=T,lwr=0.25,upr=4,FET=do.fet)
+  oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=do.fet,prt=F)
+  cnvs2 <- extract.cnv.regions(dir,type="dup",by.cnv=T,lwr=0.25,upr=4,FET=do.fet)
   qs1 <- qs.mat; qs2 <- qs.mat2
   #print(load(getSlot(read.data.tracker(dir),"cnvresults")))
   cnvResults[[4]][["score"]] <- qs1[,1]
   cnvResults[[5]][["score"]] <- qs2[,1]
   cnvs1 <- add.scores.to.cnvrs(cnvs1,cnvResults[[4]],"score")
   cnvs2 <- add.scores.to.cnvrs(cnvs2,cnvResults[[5]],"score")
-  results1 <- full.cnvr.summary(cnvs1,oo1,dir,thr=c(.5,.75,.9))
-  results2 <- full.cnvr.summary(cnvs2,oo2,dir,thr=c(.5,.75,.9))
-  return(list(DEL=results1,DUP=results2,cnvs1=cnvs1,cnvs2=cnvs2))
+ # if(n.pheno>1) {
+    results1 <- full.cnvr.summary(cnvs1,oo1,dir,thr=c(.5,.75,.9))
+    results2 <- full.cnvr.summary(cnvs2,oo2,dir,thr=c(.5,.75,.9))
+    return(list(DEL=results1,DUP=results2,cnvs1=cnvs1,cnvs2=cnvs2))
+ # } else {
+ #   return(list(DEL=NULL,DUP=NULL,cnvs1=cnvs1,cnvs2=cnvs2))
+ # }
 }
 
 
@@ -530,8 +559,8 @@ add.scores.to.cnvrs <- function(cnvs.r,cnvs.d,colname="score") {
     if(length(sset1)==length(sset2)) {
       cnvs.r[[colname]][sset1] <- cnvs.d[[colname]][sset2]
     } else {
-      new <- (cnvs.r[sset1,])
-      old <- (cnvs.d[sset2,])
+      new <- (cnvs.r[sset1, ,drop=FALSE])
+      old <- (cnvs.d[sset2, ,drop=FALSE])
       new.id <- paste(chr2(new),start(new),end(new),sep=".")
       old.id <- paste(chr2(old),start(old),end(old),sep=".")
       sset0 <- match(new.id,old.id)
@@ -691,6 +720,15 @@ num.more.than.55 <- function(X,n=.55) {
   out <- length(X[X>n])
   return(out)
 }
+
+
+# create object with haplosufficiency scores #
+#JS <- reader("~/Downloads/JuliaSteinberg_HISPredictions_20140607.tab")
+#JS[["rs"]] <- ENS.to.GENE(rownames(JS))
+#JS <- JS[!duplicated(JS$rs),]
+#JS[["ENS"]] <- rownames(JS)
+#rownames(JS) <- JS$rs
+#ooe2[["Hap40"]] <- hap.mean(ooe2,JS,FUN=num.more.than.55,n=.4)
 
 ## retrieve a mean/median/max haploinsufficiency probability vector
 hap.mean <- function(X,ref,FUN=mean,...,gene.col="gene",build=36) {

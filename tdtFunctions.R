@@ -30,19 +30,96 @@ t.o.p <- function(p1,p2,n1,n2) {
  return(list(Z=z,p=Z.to.p(z)))
 }
 
+# use full list of ichip dense regions combined with a list of t1d
+# SNPs to get the t1d regions
+get.t1d.regions <- function(dense.reg,build=36,invert=FALSE) {
+  source("~/github/iChip/iFunctions.R")
+  if(is.null(dense.reg)) { dense.reg <- reader("/chiswick/data/ncooper/imputation/COMMON/iChipFineMappingRegionsB36.RData") }
+  if(is(dense.reg)[1]=="GRanges") { dense.reg <- as(dense.reg,"RangedData") }
+  if(!is(dense.reg)[1]=="RangedData") { stop("dense.reg must be RangedData") }
+  ichip.regions <- dense.reg
+  rs.ids <- get.t1dbase.snps()
+  options(ucsc=ucsc.sanitizer(build)); locs <- Pos(rs.ids); chrs <- Chr(rs.ids)
+  good <- !is.na(locs) & !is.na(chrs)
+  locs <- locs[good]; chrs <- chrs[good]
+  t1dgr <- as(make.granges(chr=chrs,pos=locs),"RangedData")
+  t1d.regions <- find.overlaps(ichip.regions,ref=t1dgr,thresh=0.000000000001,ranges.out=TRUE)
+  if(invert) { t1d.regions <- invert.granges(t1d.regions) }
+  return(t1d.regions)
+}
 
 # return subset of a ranged object that overlaps ichip dense mapped regions
-get.t1d.subset <- function(X) {
+get.t1d.subset <- function(X,t1d.only=TRUE,build=36,ichip.regions=NULL,T1D.regions=NULL,invert=FALSE) {
   source("~/github/iChip/iFunctions.R")
-  ichip.regions <- reader("/chiswick/data/ncooper/imputation/common/iChipFineMappingRegionsB36.RData")
-  filt.sd <- find.overlaps(X,ref=ichip.regions.36,thresh=0.01,ranges.out=TRUE)
+  if(is.null(ichip.regions)) {
+    ichip.regions <- reader("/chiswick/data/ncooper/imputation/COMMON/iChipFineMappingRegionsB36.RData")
+  }
+  if(t1d.only) {
+    if(is.null(T1D.regions)) {
+      T1D.regions <- get.t1d.regions(ichip.regions,build=build,invert=invert)
+    }
+    T1D.regions <- as(T1D.regions,"RangedData")
+    filt.sd <- find.overlaps(X,ref=T1D.regions,thresh=0.000000000000001,ranges.out=TRUE)
+  } else {
+    filt.sd <- find.overlaps(X,ref=ichip.regions,thresh=0.000000000000001,ranges.out=TRUE)
+  }
   return(filt.sd)
 }
 
 #return subset of a ranged object that overlaps genes
 get.genic.subset <- function(X,DB="gene") {
-  filt.sd <- find.overlaps(X,db=DB,thresh=0.01,ranges.out=TRUE)
+  filt.sd <- find.overlaps(X,db=DB,thresh=0.00000000000001,ranges.out=TRUE)
   return(filt.sd)
+}
+
+## select the empty space between ranges for the whole genome
+invert.granges <- function(X,inclusive=FALSE,build=NULL,pad.missing.autosomes=TRUE) {
+  typ <- is(X)[1]
+  if(!typ %in% c("GRanges","RangedData","ChipInfo")) { stop("invalid type for X; ",typ) }
+  if(is.null(build)) { build <- getOption("ucsc") }
+  build <- ucsc.sanitizer(build)
+  X <- toGenomeOrder2(X)
+  X <- set.chr.to.char(X)
+  ch <- chrNames2(X)
+  chrLs <- get.chr.lens(mito=T,names=T,build=build)
+  chm <- ch
+  chm[ch %in% c("chrXY","XY")] <- gsub("Y","",chm[ch %in% c("chrXY","XY")])
+  ii <- match(chm,names(chrLs))
+  if(any(is.na(ii))) { stop("contained chromosome name not in reference: ",comma(ch[is.na(ii)])) }
+  chrL <- as.integer(chrLs[ii])
+  #all.dat <- GRanges()
+  all.dat <- vector("list",length=length(ch)); names(all.dat) <- ch
+  offs <- if(inclusive) { 0 } else { 1 }
+  for (cc in 1:length(ch)) {
+    nxt.chr <- chr.sel(X,ch[cc])
+    st <- as.integer(start(nxt.chr)); en <- as.integer(end(nxt.chr))
+    new.st <- as.integer(c(1,en+offs))
+    new.en <- as.integer(c(st-offs,chrL[cc]))
+    #prv(new.st,new.en)
+    if(any(new.en<new.st)) {
+      ind <- (rep(which(new.en<new.st),each=5)+rep(c(-2,-1,0,1,2),length(which(new.en<new.st))))
+      ind <- ind[ind %in% 1:length(new.st)] #; prv(ind)
+      cat("Found illegal start/end in ",ch[cc],"\n")
+      print(head(cbind(chr=(rep(ch[cc],length(new.st))),start=new.st,end=new.en)[ind,]))
+      if(length(grep("19",ch[cc]))>0) { cat("you may be using incorrect value of 'build' (current is '",build,"')\n",sep="") }
+    }
+    all.dat[[cc]] <- make.granges(chr=rep(ch[cc],length(new.st)),start=new.st,end=new.en)
+  }
+  if(pad.missing.autosomes) {
+    autoz <- paste0("chr",1:22)
+    misn <- (!autoz %in% ch)
+    if(any(misn)) { 
+      mis.list <- vector("list",length(which(misn))); names(mis.list) <- autoz[misn]
+      for(dd in 1:length(which(misn))) {
+        mis.list[[dd]] <- make.granges(chr=autoz[which(misn)[dd]],st=1,end=chrLs[which(misn)[dd]])
+      }
+      all.dat <- c(all.dat,mis.list)
+    }
+  }
+  myDat <- do.call("rbind",args=lapply(all.dat,as,"RangedData"))
+  myDat <- toGenomeOrder2(myDat)
+  myDat <- as(myDat,typ)
+  return(myDat)
 }
 
 
@@ -65,31 +142,203 @@ specific.denovo.analysis <- function(dir,suffix=54,DEL=TRUE,decline=0.5,rm.dups=
               aff.t <- aff.t[!dont]; unaff.t <- unaff.t[!dont]
               aff.dn <- aff.dn[!dont]; unaff.dn <- unaff.dn[!dont]
               
-              top <- numeric();for (cc in 1:length(aff.n)) { print(cc); top[cc] <- FET(aff.n[cc],unaff.n[cc],case.d=aff.t[cc],cont.d=unaff.t[cc]) }
+              top <- numeric();for (cc in 1:length(aff.n)) {  top[cc] <- FET(aff.n[cc],unaff.n[cc],case.d=aff.t[cc],cont.d=unaff.t[cc]) }
               
               or.dn <- aff.dn/unaff.dn
               mm <- cbind(aff.n,aff.t,aff.dn,unaff.n,unaff.t,unaff.dn,or.dn,top)
+              nmz <- rownames(mm)
+              nmz <- nmz[nmz %in% rownames(if(DEL) { sum.del } else { sum.dup })]
+              mm <- mm[nmz,]
               if(DEL) {
-                ss <- sum.del[rownames(mm),c(1:4,8,16:19)]
-              } else { ss <- sum.dup[rownames(mm),c(1:4,8,16:19)] }
-    if(rm.dups) {
-      DD <- data.frame.to.ranged(ss)
-      DD <- remove.duplicated.id.ranges(DD,"genes")
-      ss <- ranged.to.data.frame(DD,TRUE)
-    }
+                ss <- sum.del[nmz,c(1:4,8,16:19)]
+              } else { 
+                ss <- sum.dup[nmz,c(1:4,8,16:19)] 
+              }
+              if(rm.dups) {
+                DD <- data.frame.to.ranged(ss)
+                DD <- remove.duplicated.id.ranges(DD,"genes")
+                ss <- ranged.to.data.frame(DD,TRUE)
+                nmz <- rownames(mm)
+                nmz <- nmz[nmz %in% rownames(ss)]
+                mm <- mm[nmz,]
+                ss <- ss[nmz,]
+              }
               ss$genes <- substr(ss$genes, 1,14)
               if(!DEL) { tt1 <- tt0 } # return it back (don't think it matters, but j.i.c)
+              #prv(ss,mm)
               out <- cbind(ss,mm)
               out <- out[out$decline>dec,]
               return(out[order(out$top),])
 }
 
 
+# for denovos, removes any siblings who have the same denovo CNV as
+# this should be basically impossible
+# creates a logical vector for a ranged object
+fam.killer <- function(X,fam.col="famid",cnvr.col="cnvr", denovo="denovo") {
+  if(is(X)[1]=="GRanges") { 
+    fid <- mcols(X)[,fam.col]; cnv <- mcols(X)[,cnvr.col] ; denovo <- mcols(X)[,denovo] 
+  } else { 
+    fid <- X[[fam.col]]; cnv <- X[[cnvr.col]] ; denovo <- X[[denovo]] 
+  }
+  nr <- nrow(X)
+  filt <- rep(1,nr)
+  dn <- (denovo==1)
+  cnv <- cnv[dn]; fid <- fid[dn]
+  #filt[fid[1:(nr-1)]==fid[2:nr]] <- 0
+  #filt[which(fid[1:(nr-1)]==fid[2:nr])+1] <- 0
+  tttt <- (table(cnv,fid))
+  culprits <- which(tttt>1,arr.ind=T)
+  #prv(culprits)
+  if(nrow(culprits)>1) {
+    for (cc in 1:nrow(culprits)) {
+      filt[dn][fid==colnames(tttt)[culprits[cc,2]] & cnv==rownames(tttt)[culprits[cc,1]]] <- 0
+    }
+  }
+  return(as.logical(filt))
+}
+
+
+#make.sup.table.6(T1D=FALSE,GENE=FALSE,fish=TRUE)
+#make.sup.table.6(T1D=FALSE,GENE=FALSE,fish=FALSE)
+#make.sup.table.6(T1D=TRUE,GENE=FALSE,fish=TRUE)
+
+make.sup.table.6 <- function(suffix=54,DEL=TRUE, dec.steps=c(0,0.5,0.8,0.9),
+                             T1D=FALSE,GENE=FALSE,fish=TRUE,invert.t1d=FALSE,Ns=c(6291,1514)) {
+  .do.a.row <- function(myTab,fish=TRUE) {
+    case.dn <- round(with(myTab,denovo.case[1]*case.n[1]))
+    ctrl.dn <- round(with(myTab,denovo.control[1]*ctrl.n[1]))
+    case.kd <- myTab$case.n[1]
+    ctrl.kd <- myTab$ctrl.n[1]
+    tot.case <- Ns[1]
+    tot.cont <- Ns[2]
+    test.case <- tot.case
+    test.ctrl <- tot.cont
+    rate1 <- round(case.dn/tot.case,4)
+    rate2 <- round(ctrl.dn/tot.cont,4)
+    #fish <- TRUE
+    #print(myTab)
+    row <- c(Affected=out.of(case.dn,case.kd,T,F),
+             Rate.a=rate1,
+             Unaffected=out.of(ctrl.dn,ctrl.kd,T,F),
+             Rate.u=rate2,
+             OR=round(rate1/rate2,2),
+             p.value=round(({if(fish) { FET(case.dn,ctrl.dn,case.d=test.case,cont.d=tot.cont) } else { t.o.p(rate1,rate2,case.kd,ctrl.kd)$p }}) ,3),
+             CNVs.excluded=paste0(round((1-((case.kd+ctrl.kd)/(1371+363)))*100,0),"%"),
+             Rate.tr=round(myTab$tr.rate[1],3),
+             Ratio=round(myTab$tr.OR[1],2) )
+  }
+  tab <- NULL
+  for(dd in 1:length(dec.steps)) {
+    X <- length.analysis.fam(suffix=suffix,DEL=DEL,dec.thr=1-dec.steps[dd],T1D=T1D,GENE=GENE,invert.t1d=invert.t1d,Ns=Ns)[,-c(3:6)] 
+    #return(X) #  remove this line
+    #prv(X); print(colnames(X))
+    tab <- rbind(tab,.do.a.row(X,fish=fish))
+  }
+  tab <- cbind((paste0(dec.steps*100,"%")),tab)
+  return(tab)
+}
+
+#naughty - get.naughty.list(dir)
+#DELK <- DELK[!DELK$cnvr %in% naughty,]
+get.naughty.list <- function(dir,DEL=TRUE) {
+  oo1 <- extract.cnv.regions(dir,type=if(DEL) {"del"} else {"dup"},by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+  # determined naughty list below using this:
+  # cut <- oo1[["cases"]]>70 | oo1[["ctrls"]]>70
+  # oo1[which(cut),]
+  regionsGT1pc <- rownames(oo1)[  c(grep("FCGR3",oo1$genes),
+                                  grep("TPPP",oo1$genes),
+                                  grep("KIAA",oo1$genes),
+                                  grep("BACH2",oo1$genes),grep("DDX12",oo1$genes),
+                                  grep("SULT1A",oo1$genes),grep("KIR",oo1$genes),
+                          (if(!DEL) {
+                            c(which(rownames(oo1)=="S61"),which(rownames(oo1)=="S80"),which(rownames(oo1)=="S96"))
+                          } else {
+                            c(which(rownames(oo1)=="S1"),which(rownames(oo1)=="S23"),which(rownames(oo1)=="S148"))
+                          }))]
+  return(regionsGT1pc)
+}
+
+annotate.denovos <- function(qs.results,sum.del,tdt3,rm.sib.denovos=TRUE,DEL=TRUE,
+                             ped.file="~/Documents/necessaryfilesICHIPFam/t1dgc-pedfile-2011-08-05.tab") {
+  ped <- read.pedData(ped.file)
+  ped.list <- get.ped.linked.sets(ped,tdt3)
+  del <- if(DEL) { qs.results$cnvs1 } else { qs.results$cnvs2 }
+  intp <- ped.interp(ped,dir=dir)
+  Ped <- reader(ped.file,header=T)
+  del <- remove.duplicated.id.ranges(del)
+  ii <- match(del$id,Ped[,2])
+  ii2 <- match(del$id,rownames(intp))
+
+  del[["mother"]] <- Ped[ii,"mother"]
+  del[["father"]] <- Ped[ii,"father"]
+  del[["who"]] <- intp[ii2,"who"]
+  del[["famid"]] <- intp[ii2,"familyid"]
+  del[["decline"]] <- sum.del$decline[match(del$cnvr,rownames(sum.del))]
+  
+  del[["mother"]][del[["mother"]]==0] <- NA
+  del[["father"]][del[["father"]]==0] <- NA
+  
+  pedasp <- Ped[Ped$father!=0 & Ped$mother!=0,]
+  aff <- pedasp$t1d==2
+  aff.ids <- tapply(pedasp[aff,2],factor(pedasp[aff,1]),c)
+  unaff.ids <- tapply(pedasp[!aff,2],factor(pedasp[!aff,1]),c)
+  
+  famz <- del$famid
+  ii3 <- match(famz,names(aff.ids))
+  ii4 <- match(famz,names(unaff.ids))
+  del[["affected.kids"]] <- sapply(aff.ids[ii3],paste,collapse=",")
+  del[["unaffected.kids"]] <- sapply(unaff.ids[ii4],paste,collapse=",")
+  del[["denovo"]] <- rep(0,nrow(del))
+  
+  DELK <- del[!is.na(del$mother) | !is.na(del$father),]
+  DELP <- del[is.na(del$mother) & is.na(del$father),]
+  for (cc in 1:nrow(DELK)) {
+    kidf <- DELK$famid[cc]
+    this.chr <- chr2(DELK[cc,])
+    parz <- which((DELP$famid %in% kidf) & (chr2(DELP)==this.chr))
+    if(length(parz)>0) {
+      DELPAR <- DELP[parz,]
+      if(all( (start(DELPAR)>end(DELK[cc,])) | (end(DELPAR)<start(DELK[cc,])) )) {
+        DELK[["denovo"]][cc] <- 1
+      } else {
+        DELK[["denovo"]][cc] <- 0
+      }   
+    } else {
+      DELK[["denovo"]][cc] <- 1
+    }
+    loop.tracker(cc,nrow(DELK))
+  }
+  ## may still contain sibling denovos, remove using fam.killer() ##
+  if(rm.sib.denovos) {
+    DELK <- DELK[fam.killer(DELK),]
+  }
+  return(list(kids=DELK,parents=DELP))
+}
+
+
+
+FETable <- function(X,by.col=TRUE,stat="all",verbose=TRUE,Ns=NULL) {
+  if(all(Dim(X)!=c(2,2))) { stop("must be a 2 x 2 table of counts") }
+  if(any(as.numeric(X)!=round(as.numeric(X)))) { stop("must be whole numbers not decimals") }
+  if(any(is.na(as.numeric(X)))) { warning("found NAs in table, will convert to zeros"); X[is.na(X)] <- 0 }
+  if(!by.col) { X <- t(X) }
+  totz <- colSums(X,na.rm=TRUE)
+  if(length(Ns)==2) { totz <- Ns } 
+  if(verbose) {  cat(out.of(X[2,1],totz[1]),"versus",out.of(X[2,2],totz[2]),"\n") }
+  #row1 <- FET(X[1,1],X[1,2],case.d=totz[1],cont.d=totz[2],stat=stat)
+  row2 <- FET(X[2,1],X[2,2],case.d=totz[1],cont.d=totz[2],stat=stat)
+  return(row2)
+}
+
+
+
 
 # analyse transmission rates for different lengths for the families #
 # e.g, round(length.analysis.fam(suffix=50,DEL=TRUE,dec.thr=0.2),4)[,-c(3:6)]
 # was used in the paper table 6 suppl 
-length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400)),T1D=FALSE,GENE=FALSE,rm.dups=TRUE) {
+length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2,q.thr=NA,
+    LL=c(0,1000*c(20,400)),T1D=FALSE,GENE=FALSE,rm.dups=TRUE,invert.t1d=FALSE, Ns=c(6291,1514)) {
   fn <- cat.path("RESULTS",fn="TDT_results",suf=suffix,ext="RData")
   if(!file.exists(fn)) { stop("TDT results file ",fn," did not exist") }
   if(DEL) { sum.del <- reader(fn)$sum.del } else { sum.del <- reader(fn)$sum.dup }
@@ -105,19 +354,28 @@ length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400
     DD <- remove.duplicated.id.ranges(DD,"genes")
     sum.del <- ranged.to.data.frame(DD,TRUE)
   }
-  sum.del <- sum.del[!is.na(sum.del$decline),]
-  sum.del <- sum.del[sum.del$decline>dec.thr,]
-  
+  if(all(!is.na(dec.thr))) {
+    sum.del <- sum.del[!is.na(sum.del$decline),]
+    sum.del <- sum.del[sum.del$decline>dec.thr,]
+  }
+  if(all(!is.na(q.thr))) {
+    #sum.del <- sum.del[sum.del$score>q.thr,]
+  }
   if(T1D | GENE) {  sd <- data.frame.to.ranged(sum.del[,1:3]) }
-  if(T1D) { sd <- get.t1d.subset(sd); keep.nms <- rownames(sd) ; sum.del <- sum.del[keep.nms,] }
-  if(GENE) { sd <- get.genic.subset(sd); keep.nms <- rownames(sd) ; sum.del <- sum.del[keep.nms,] }  
+  #return(sd) # remove this line
+  #iioo <- get.t1d.subset(sd,invert=invert.t1d)
+  #iioo2 <- get.genic.subset(sd)
+  #prv(iioo,iioo2)
+  if(T1D) { sd <- get.t1d.subset(sd,invert=invert.t1d); keep.nms <- rownames(sd)  }
+  if(GENE) { sd <- get.genic.subset(sd); keep.nms <- rownames(sd) ;  }  
+  if(T1D | GENE) {  sum.del <- sum.del[keep.nms,] }
   #prv(dd,keep.nms,filt.sd); print(head(sum.del))
-  X <- matrix(nrow=1+length(LL),ncol=19)
+  X <- matrix(nrow=1+length(LL),ncol=21)
   X <- as.data.frame(X)
   colnames(X) <- c("case.tr.rate","control.tr.rate","case.chi","case.p",
                    "control.chi","control.p","denovo.case","denovo.control",
                    "case.trs","case.kds","ctrl.trs","ctrl.kds","tr.OR","TR.p",
-                   "dn.OR","DN.p" , "tr.rate","denovo.rate.av","denovo.rate.calc")
+                   "dn.OR","DN.p" , "tr.rate","denovo.rate.av","denovo.rate.calc","case.n","ctrl.n")
   LL <- c(0,LL); LLB <- c(tail(LLB,1),LLB)
   rownames(X) <- paste0(round(LL/1000)," - ",round(LLB/1000)," kb")
   rownames(X)[1] <- "Overall"
@@ -129,17 +387,23 @@ length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2, LL=c(0,1000*c(20,400
     if(length(missn)>0) {
       cat("data didn't have ",length(missn)," regions",if(length(missn)<10) { comma(val.x[missn])} else { ""},"\n") 
     }
-    X[cc,1:10] <- round(trans.tests(dd[,keep]),4)
+    #prv(dd,keep,dd[,keep])
+    #return(list(dd=dd,keep=keep))
+    ttdd <- trans.tests(dd[,keep,drop=FALSE])
+    X[cc,1:10] <- round(ttdd[1:10],4)
     X[cc,11] <- X[cc,10]
     X[cc,10] <- round(as.numeric(X[cc,9])/as.numeric(X[cc,1])) 
     X[cc,12] <- round(as.numeric(X[cc,11])/as.numeric(X[cc,2]))
     X[cc,13] <- X[cc,1]/X[cc,2]
-    X[cc,14] <- t.o.p(X[cc,1],X[cc,2],X[cc,10],X[cc,12])$p     #,6291,1514)$p
+    X[cc,14] <- t.o.p(X[cc,1],X[cc,2],X[cc,10],X[cc,12])$p  # 6291,1514)$p  
     X[cc,15] <- X[cc,7]/X[cc,8]
-    X[cc,16] <- t.o.p(X[cc,7],X[cc,8],X[cc,10],X[cc,12])$p    #,6291,1514)$p
+    if(length(Ns)==2) { n1 <- Ns[1]; n2 <- Ns[2] } else { n1 <- X[cc,10]; n2 <- X[cc,12] }
+    X[cc,16] <- t.o.p(X[cc,7],X[cc,8],n1,n2)$p    #,X[cc,10],X[cc,12])$p  # else it's out of only those fams with cnvs
     X[cc,17] <- (0.8060218*X[cc,1]) + (0.1939782*X[cc,2])
     X[cc,18] <- (0.8060218*X[cc,7]) + (0.1939782*X[cc,8])
     X[cc,19] <- (round(X[cc,7]*X[cc,10]) + round(X[cc,8]*X[cc,12]))/(X[cc,10]+X[cc,12])
+    X[cc,20] <- ttdd[11]
+    X[cc,21] <- ttdd[12]
   }
   return(X)
 }
@@ -259,6 +523,30 @@ summary.of.cnv.change.with.trios <- function(result.trio,result.no.trio,DEL=TRUE
 }
 
 
+# internal function for full.analysis.of...
+# does its best to match CNVs without unique ids.
+# then replaces any missing with a randomly sampled value
+matcho <- function(X,Y) {
+      main.ids <- X[["id"]]
+      sco.ids <- rownames(Y)
+      cnt <- 1
+      orig.ids <- main.ids
+      while(any(duplicated(main.ids))) {
+        cnt <- cnt+1
+        main.ids[duplicated(main.ids)] <- paste(orig.ids[duplicated(main.ids)],cnt,sep=".")
+      }
+      ii <- (match(main.ids,sco.ids))
+      cat("matched",out.of(length(narm(ii)),length(ii)),"quality scores to CNVs\n")
+      ii[is.na(ii)] <- length(sco.ids)+1
+      #jj <- main.ids %in% sco.ids
+      qs <- Y[[1]][ii]
+      repl <- sample(narm(qs),length(qs[is.na(qs)]),replace=T)
+      qs[is.na(qs)] <- repl # replace missing with randomly sampled quality scores
+      return(qs)
+}
+
+
+# need to be in the home directory of the project, e.g, /chiswick/data/ncooper/ImmunochipFamilies/
 # across different HMMs, compares trio versus non trio calling, transmission
 # and denovo rates to aff/unaff, and proportion common to both sets, number dropped, etc
 # note that at the moment, 5 comparison trio sets is hard coded
@@ -289,10 +577,15 @@ full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,5522),no.trios=c
     del.qs.ntr <- reader(cat.path("RESULTS","qs.del.results",suf=no.trios[cc],ext="txt"))
     dup.qs.tr <- reader(cat.path("RESULTS","qs.dup.results",suf=trios[cc],ext="txt"))
     dup.qs.ntr <- reader(cat.path("RESULTS","qs.dup.results",suf=no.trios[cc],ext="txt"))
-    cnvResult.trio[[1]][[4]][["score"]] <- del.qs.tr[[1]]
-    cnvResult.trio[[1]][[5]][["score"]] <- dup.qs.tr[[1]]
-    cnvResult.raw[[1]][[4]][["score"]] <- del.qs.ntr[[1]]
-    cnvResult.raw[[1]][[5]][["score"]] <- dup.qs.ntr[[1]]
+  #  prv(trios[cc],cnvResult.trio[[1]][[5]],dup.qs.tr)
+    QS <- matcho(cnvResult.trio[[1]][[4]],del.qs.tr)
+    cnvResult.trio[[1]][[4]][["score"]] <- QS
+    QS <- matcho(cnvResult.trio[[1]][[5]],dup.qs.tr)
+    cnvResult.trio[[1]][[5]][["score"]] <- QS
+    QS <- matcho(cnvResult.raw[[1]][[4]],del.qs.ntr)
+    cnvResult.raw[[1]][[4]][["score"]] <- QS
+    QS <- matcho(cnvResult.raw[[1]][[5]],dup.qs.ntr)
+    cnvResult.raw[[1]][[5]][["score"]] <- QS
     if(rm.dups) {
       # Plink gives duplicate ranges! #
       fn.t <- cat.path("RESULTS",fn="TDT_results",suf=trios[cc],ext="RData")
@@ -375,9 +668,11 @@ trans.tests <- function(tt,use=NULL) {
     control <- did.trans1/(did.not1+did.trans1)
     denovo.cont <- (tt[8]-tt[14])/((tt[7]+tt[8])-(tt[14]+tt[16]))
     denovo.case <- tt[14]/(tt[14]+tt[16])
-    out <- c(case, control, case.chi, case.p, control.chi, control.p,denovo.case,denovo.cont,did.trans,did.trans1)
+    case.n <- (tt[14]+tt[16])
+    cont.n <- ((tt[7]+tt[8])-(tt[14]+tt[16]))
+    out <- c(case, control, case.chi, case.p, control.chi, control.p,denovo.case,denovo.cont,did.trans,did.trans1, case.n, cont.n)
     names(out) <- c("case.tr.rate","control.tr.rate","case.chi", "case.p",
-       "control.chi", "control.p","denovo.case","denovo.control","n.trans.case","n.trans.control")
+       "control.chi", "control.p","denovo.case","denovo.control","n.trans.case","n.trans.control","case.n","ctrl.n")
     return(out)
 }
 
@@ -429,18 +724,18 @@ plot.each.family.for.cnv <- function(dir,ped,reg="S1",chromo=1,cnv.bounds=c(1971
   cnv.w <- diff(cnv.bounds)
   plot.window <- c(cnv.bounds[1]-cnv.w,cnv.bounds[2]+cnv.w) 
   if(DEL) {
-    tt1 <- get.CNV.wise.inheritance.counts(tdt3,ped=ped)
+    tt1 <- get.CNV.wise.inheritance.counts(tdt3,ped=ped,req.both.parents=F)
     ttt <- (as.numeric(tdt3[,reg]))
     names(ttt) <- rownames(tdt3)
   } else {
-    tt2 <- get.CNV.wise.inheritance.counts(tdt4,ped=ped)
+    tt2 <- get.CNV.wise.inheritance.counts(tdt4,ped=ped,req.both.parents=F)
     ttt <- (as.numeric(tdt4[,reg]))
     names(ttt) <- rownames(tdt4)
   }
   tt <- tt1
   tt[,which(tt[8,]>5)]
   ped[["cnv.reg"]] <- ttt[match(rownames(ped),names(ttt))]
-  ped <- ped.interp(ped,F)  
+  ped <- ped.interp(ped,F,dir=dir)  
   with(ped , table(father,affected,cnv.reg,exclude=NULL))
   fam.grps <- tapply(rownames(ped),factor(ped$familyid),c)
   s6.grps.list <- tapply(ped[,"cnv.reg"],factor(ped$familyid),c)
@@ -461,11 +756,11 @@ plot.each.family.for.cnv <- function(dir,ped,reg="S1",chromo=1,cnv.bounds=c(1971
 }
 
 # add column to a ped file, showing in plain english who is who within families, mum dad, boy, girl, etc
-ped.interp <- function(ped,long=TRUE) {
+ped.interp <- function(ped,long=TRUE,dir) {
   want <- c("familyid","member","father","mother","sex","affected")
   sample.info <- read.sample.info(dir)
   if(!all(want %in% colnames(ped))) { stop("invalid ped file frame [use 'read.pedData()']") }
-  long.codes <- c("father","mother","boy","girl","control","t1d")
+  long.codes <- c("father","mother","boy","girl","unknown","control","t1d")
   short.codes <- c("F","M","B","G","Ct","T1")
   if(long) { codes <- long.codes } else { codes <- short.codes }
   ped[["who"]] <- ""
@@ -473,7 +768,7 @@ ped.interp <- function(ped,long=TRUE) {
   ped[["who"]][(is.na(ped$father) & ped$sex==2)] <- codes[2]
   ped[["who"]][(!is.na(ped$father) & ped$sex==1)] <- codes[3]
   ped[["who"]][(!is.na(ped$father) & ped$sex==2)] <- codes[4]
-  ped[["who"]] <- paste(ped[["who"]],codes[5:6][ped$affected],sep=".")
+  ped[["who"]] <- paste(ped[["who"]],codes[5:7][1+as.numeric(ped$affected)],sep=".")
   return(ped)
 }
 
@@ -517,6 +812,8 @@ trio.analysis <- function(dir=NULL, cnvResults, ped.file, result.pref="",quality
 
   if(quality.scores) {
     results <- process.quality.scores(DT,suffix=result.pref,dir,restore=restore)
+    ofn=cat.path(dir$res,"TDT_prelim",suf=result.pref,ext="RData")
+    save(results,ped,file=ofn)
     oo3 <- results[[3]]
     oo4 <- results[[4]]
     oo3 <- remove.duplicated.id.ranges(oo3)
@@ -541,8 +838,10 @@ trio.analysis <- function(dir=NULL, cnvResults, ped.file, result.pref="",quality
       for (dd in 1:length(colz)) {
          cn[jj,dd] <- paste(colz[dd],cc,sep="_")
          # rint(cn)
-         sum.del[[cn[jj,dd]]][match(rownames(outlist1a$sum.del),rownames(sum.del))] <- outlist1a$sum.del[[colz[dd]]] 
-         sum.dup[[cn[jj,dd]]][match(rownames(outlist2a$sum.del),rownames(sum.dup))] <- outlist2a$sum.del[[colz[dd]]]     
+         rn1a <- rownames(outlist1a$sum.del); rnd <- rownames(sum.del)
+         sum.del[[cn[jj,dd]]][narm(match(rn1a,rnd))]  <- outlist1a$sum.del[[colz[dd]]][rn1a %in% rnd] 
+         rn2a <- rownames(outlist2a$sum.del); rndp <- rownames(sum.dup)
+         sum.dup[[cn[jj,dd]]][narm(match(rn2a,rndp))] <- outlist2a$sum.del[[colz[dd]]][rn2a %in% rndp] 
       }
     }
     cs.pc <-(sum.del[,cn[3,1]] - sum.del[,cn[1,1]])/sum.del[,cn[1,1]]
@@ -720,7 +1019,7 @@ list.to.env <- function(list) {
 
 
 ## generate table of counts, transmissions, etc for each CNV that is used for TDT and other transmission analysis
-get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
+get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,req.both.parents=TRUE,
                                             replace.na=FALSE,replace.with=c(M=0.5,D=0.5,C=0.5)) {
   if(is(tdt.snp)[1]=="SnpMatrix") {  TDT <- SnpMatrix.to.data.frame(tdt.snp) } else { TDT <- tdt.snp }
   if(!is.data.frame(TDT)) { stop("tdt.snp must be a SnpMatrix or data.frame with snp-ids as rownames") }
@@ -818,8 +1117,13 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
     if(length(dels)<1) { next }  # skip if this mother has none
     their.folks <- c(rownames(mm)[kmlink[cc]],rownames(ff)[kflink[cc]])
     #cat("processing child:",rownames(kk)[cc],"with parents",paste(their.folks, collapse=","),"\n")
-    if(length(their.folks)<1) { next }
+    if(req.both.parents) {
+      if(length(their.folks)<2) { next }
+    } else {
+      if(length(their.folks)<1) { next }
+    }
     mat <- TDT[their.folks,dels,drop=FALSE]  # extract mother+father of child for these DEL/DUP snps
+#    if(any(is.na(mat))) {  next }  #  uncomment for confident de novo rate, but then is too conservative for trans.
     #if("S6" %in% colnames(mat)) { print(mat) }
     if(replace.na) { mat[is.na(mat)] <- force.percentage(replace.with[[3]]) }
    # if("S1" %in% colnames(mat)) { print(cc);print(mat); print(mat2) }
@@ -868,6 +1172,70 @@ get.CNV.wise.inheritance.counts <- function(tdt.snp,ped=NULL,only.doubles=FALSE,
 
 
 
+
+
+#make.sup.table.6b(DELK,54,filt=filt,T1D=FALSE,GENE=FALSE,fish=TRUE)
+
+make.sup.table.6b <- function(DELK,suffix=54,DEL=TRUE, q.thr=c(0,.75,.9,.95),
+                             T1D=FALSE,GENE=FALSE,fish=TRUE,invert.t1d=FALSE,Ns=c(6291,1514)) {
+  .do.a.row <- function(X,myTab,fish=TRUE,tot.n=2000) {
+    case.dn <- X[2,1]
+    ctrl.dn <- X[2,2]
+    case.kd <- colSums(X)[1]
+    ctrl.kd <- colSums(X)[2]
+    tot.case <- Ns[1]
+    tot.cont <- Ns[2]
+    test.case <- case.kd
+    test.ctrl <- ctrl.kd
+    rate1 <- round(case.dn/tot.case,4)
+    rate2 <- round(ctrl.dn/tot.cont,4)
+    #fish <- TRUE
+    #print(myTab)
+    #print(FET(case.dn,ctrl.dn,case.d=test.case,cont.d=test.ctrl))
+    row <- c(Affected=out.of(case.dn,case.kd,T,F),
+             Rate.a=rate1,
+             Unaffected=out.of(ctrl.dn,ctrl.kd,T,F),
+             Rate.u=rate2,
+             OR=round((case.dn/test.case)/(ctrl.dn/test.ctrl),2),
+             p.value=round(({if(fish) { FET(case.dn,ctrl.dn,case.d=test.case,cont.d=test.ctrl) } else { t.o.p(rate1,rate2,case.kd,ctrl.kd)$p }}) ,5),             CNVs.excluded=paste0(round((1-((case.kd+ctrl.kd)/(tot.n)))*100,0),"%"),
+             Rate.tr=round(myTab$tr.rate[1],3),
+             Ratio=round(myTab$tr.OR[1],2) )
+  }
+  tab <- NULL
+  if(T1D) { DELK <- get.t1d.subset(DELK,invert=invert.t1d) }
+  if(GENE) { DELK <- get.genic.subset(DELK)  }
+  filt <- list()
+  for(cc in 1:length(q.thr)) {
+    filt[[cc]] <- with(DELK,score>q.thr[cc])
+  }
+  if(any(q.thr==0)) {
+    filt[[which((q.thr==0))]] <- with(DELK,rep(T,nrow(DELK)))
+  }
+  ntrues <- sapply(filt,function(X) { length(which(X)) })
+  lowfilt <- which(ntrues==max(ntrues,na.rm=T))[1]
+  for(dd in 1:length(filt)) {
+    X <- table(DELK$denovo[filt[[dd]]],DELK$phenotype[filt[[dd]]])[,2:1]
+    if(dd==lowfilt) { tot.n <- sum(as.numeric(X)) }
+    myTab <- length.analysis.fam(suffix=suffix,DEL=DEL,
+      dec.thr=c(0.99,.5,.2,.1)[dd],q.thr=NA #1-dec.steps[dd],
+      ,T1D=T1D,GENE=GENE,invert.t1d=invert.t1d,Ns=Ns)[,-c(3:6)]
+    #p1 <- FETable(X,stat="p.value")
+    #OR <- FETable(X,stat="estimate")
+    if(length(Dim(X))==1 & all(Dim(X)==2)) {
+      X <- rbind(X,c(0,0)) # add zero counts
+    }
+    if(all(length(Dim(X)==2)) & all(Dim(X)==c(2,2))) {
+      tab <- rbind(tab, .do.a.row(X,myTab,fish=fish,tot.n=tot.n) )
+    } else {
+      prv(X)
+      #tab <- tab
+    }
+   # tab <- rbind(tab,dar)
+  }
+  tab <- cbind((paste0(round(q.thr*100,0),"%")),tab)
+  #tab <- cbind((paste0(dec.steps*100,"%")),tab)
+  return(tab)
+}
 
 
 

@@ -13,14 +13,14 @@ trio.quality.scores <- T
 }
 
 if(T) {
-suffix <- 4422
+suffix <- 54  # 4422
 metabo <- F
 plumber <- T
 dgv.valid <- F
 samp.excl <- F
 eval <- F
-my.st <- 0
-my.end <- 2
+my.st <- 2 #0
+my.end <- 6  # 2
 do.cnv <- T
 comp <- F
 samp.set <- "light"
@@ -30,7 +30,7 @@ cov.for.sex <- F
 use.trio.calling <- T
 trio.quality.scores <- T
 q.cores <- 100 #NA
-hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hhdup2.hmm"
+hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hhdel.hmm"
 }
 
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
@@ -192,10 +192,14 @@ if(plumber) {
 }
 
 ## do some TDT checks
-#top.dels <- rownames(cnvResult$cnvr[[1]][narm(which(cnvResult$cnvr[[1]]$tdt<.01)),])
-#top.dups <- rownames(cnvResult$cnvr[[2]][narm(which(cnvResult$cnvr[[2]]$tdt<.01)),])
-#load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData"))
-#family.check.and.validate(dir,"famstats_trios",top.dels=top.dels,top.dups=top.dups)
+DT <- read.data.tracker(dir)
+qs.results <- process.quality.scores(DT,suffix=suffix,dir=dir,n.pcs=NA,restore=TRUE)
+top.dels <- rownames(cnvResult$cnvr[[1]][narm(which(cnvResult$cnvr[[1]]$tdt<.01)),])
+top.dups <- rownames(cnvResult$cnvr[[2]][narm(which(cnvResult$cnvr[[2]]$tdt<.01)),])
+load(cat.path(dir$res,"TDT_results",suf=suffix,ext="RData"))
+family.check.and.validate(dir,"famstats_trios",top.dels=top.dels,top.dups=top.dups)
+
+
 #plot.each.family.for.cnv(dir,reg="S1",chromo=1,cnv.bounds=c(197158752,197170596),suffix=48)
 
 if(eval) {

@@ -257,6 +257,23 @@ if(file.exists(cat.path(scr.dir,"generalCNVFunctions.R"))) {
 
 
 
+##### temporary until NCmisc updated #######
+
+out.of <- function(n,N=100,digits=2,pc=TRUE,oo=TRUE,use.sci=FALSE) {
+  pct <- 100*(n/N)
+  outof <- paste(n,"/",N,sep="")
+  if(use.sci) {
+    percent <- paste(round(pct,digits),"%",sep="")
+  } else {
+    percent <- paste(format(round(pct,digits),scientific=FALSE),"%",sep="")
+  }  
+  if(pc & oo) {
+    outof <- paste(outof," (",percent,")",sep="")
+  } else {
+    if(pc) { outof <- percent }
+  }
+  return(outof)
+}
 
 
 
@@ -1440,7 +1457,7 @@ get.plate.info <- function(dir, id.col=1, plate.col=2, well.col=NA,fn="plate.loo
   dir <- validate.dir.for(dir,c("ano"),warn=F)
   if(fn %in% list.files(dir$ano))
   {
-    plate.lookup <- reader(cat.path(dir$ano,fn))  #read.delim  ,header=T,stringsAsFactors=F)
+    plate.lookup <- read.delim(cat.path(dir$ano,fn),header=T,stringsAsFactors=F)
     if(verbose) { cat("\nRetrieving Plate/Well information from lookup table:\n") }
     if(prev) { print(head(plate.lookup,4)) }
     cN <- colnames(plate.lookup)
@@ -1451,6 +1468,7 @@ get.plate.info <- function(dir, id.col=1, plate.col=2, well.col=NA,fn="plate.loo
     if(length(which(any.plates))>0) { plate.col <- which(any.plates)[1] }
     if(length(any.wells)>0) { well.col <- any.wells[1] }
     select.cols <- c(id.col,plate.col)
+    if(select.cols[1]==select.cols[2]) { select.cols[1] <- 1 ; warning("something went wrong with id/plate column number detection")}
     if(verbose) { cat(" taking id, plate from columns:",paste(cN[select.cols],collapse=", "),"\n") }
     if (!is.na(well.col)) { select.cols <- c(select.cols,well.col) }
     plate.lookup <- plate.lookup[,select.cols]
@@ -2416,9 +2434,13 @@ import.snp.matrix.list <- function(snp.list,dir,data=NULL,samples=NULL,allele.co
  old.dir <- getwd(); setwd(dir$cr)
  ######
  #############id.file.names <- paste(data,".ids",sep="")
- if(!is.list(subs.list)) { subs.list <- as.list(subs.list) } # force list
+ if(!is.list(subs.list)) { 
+   # force list
+   subs.list1 <- as.list(subs.list) ; subs.list2 <- list(subs.list)
+   if(length(subs.list2)==length(data.fn)) { subs.list <- subs.list2 } else { subs.list <- subs.list1 }
+ }
  # subs.list <- as.list(unlist(subs.list))  # safer saner??
- prv(subs.list,data.fn)
+ #prv(subs.list,data.fn)
  if(length(subs.list)!=length(data.fn)) { stop("Must be same number of datafiles as lists of IDs") }
  # Read each set of SNPs into a SnpMatrix object stored in a list element
  snpMatLst <- list()
@@ -3931,6 +3953,20 @@ make.trio.file <- function(fn,dir=NULL,trio.fn="triolist.txt") {
   return(dir.num)
 }
 
+#internal
+#find how many phenotypes there are for the current project
+n.phenos <- function(dir,pheno.names=c("pheno","phenotype","case")) {
+  sample.info <- read.sample.info(dir)
+  search.str <- which(tolower(colnames(sample.info)) %in% pheno.names)
+  if(length(search.str)>0) { 
+    pheno <- sample.info[,search.str[1]]
+    n.pheno <- length(table(pheno))
+  } else {
+    n.pheno <- 0
+    warning("no phenotype found in 'sampleinfo.tab'. All samples set to 'unaffected'")
+  }
+  return(n.pheno)
+}
 
 
 make.fam.file <- function(sample.info,dir,out.fn="plink.fam")
@@ -5108,7 +5144,7 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
   
   orig.snp.info <- snp.info
   snp.qc.list <- doSnpQC(dir=dir, plink=import.plink, n.cores=l.cores, proc=2,
-                         call.rate=callrate.snp.thr, hwe.thr=hwe.thr,
+                         call.rate=callrate.snp.thr, hwe.p.thr=hwe.thr,
                          grp.hwe.z.thr=grp.hwe.z.thr, grp.cr.thr=grp.cr.thr, maf.thr=NA,
                          snpMatLst=snpMatLst, subIDs.plink=subIDs.actual, group.miss=group.miss,
                          snp.info=snp.info, sample.info=sample.info, autosomes.only=autosomes.only)
@@ -7240,11 +7276,38 @@ ratio.flanks <- function(pos,chr,ratio=5,bp=NA,chr.lens=get.chr.lens()) {
 }
 
 
+# internal, make sure col2>col1 and col4>col3
+check.orderz <- function(tt) {
+  tt <- apply(tt,2,as.numeric)
+  bad <- tt[,1]>tt[,2]
+  if(any(bad)) {
+    tt12 <- tt[,1:2]
+    tt[bad,1] <- tt12[bad,2]
+    tt[bad,2] <- tt12[bad,1]
+  }
+  bad <- tt[,3]>tt[,4]
+  if(any(bad)) {
+    tt34 <- tt[,3:4]
+    tt[bad,3] <- tt34[bad,2]
+    tt[bad,4] <- tt34[bad,1]
+  }
+  return(tt)
+}
+
 get.ratio.set <- function(ranged,ratio=5,bp=NA) {
   stz <- start(ranged)    ; enz <- end(ranged); chr <- chr2(ranged)
-  chr.lens <- get.chr.lens()
+#  chr.lens <- get.chr.lens()
+
+  ch <- chrnums.to.txt(chrNames2(ranged))
+  chrLs <- get.chr.lens(mito=T,names=T)
+  ii <- match(ch,names(chrLs))
+  if(any(is.na(ii))) { stop("contained chromosome name not in reference",comma(ch[is.na(ii)])) }
+  chr.lens <- chrLs[ii]
+  
   tt <- matrix(nrow=length(stz),ncol=4)
   for (cc in 1:length(stz)) { tt[cc,] <- ratio.flanks(c(stz[cc],enz[cc]),chr[cc],ratio=ratio,bp=bp,chr.lens=chr.lens) }
+  tt <- apply(tt,2,as.numeric)
+  tt <- check.orderz(tt)
   return(tt)
 }
 
@@ -7286,20 +7349,30 @@ prob.norm <- function(x,mu=0,sig=1) {
 
 
 get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info=NULL,L=T,R=T) {
+  #print(ranged[960,])
+  if(nrow(ranged)<1) { warning("passed range of length zero") ; return(NULL) }
   rownames(ranged) <- rN <- paste("CNV",1:nrow(ranged),sep="")
   if(!is.na(nsnp) & is(snp.info)[1]=="RangedData") {
     fl <- exp.window.nsnp(ranged,snp.info,nsnp)
     fl2 <- get.ratio.set(ranged,ratio=ratio,bp=bp)
+    fl <- apply(fl,2,as.numeric)
+    fl2 <- apply(fl2,2,as.numeric)
     lenz <- (fl[,2]-fl[,1]) + (fl[,4]-fl[,3]); 
     lenz2 <- (fl2[,2]-fl2[,1]) + (fl2[,4]-fl2[,3]) ;
-    print(length(which(lenz>lenz2)))
-    fl3 <- fl; fl3[lenz>lenz2,] <- fl2[lenz>lenz2,]; fl <- fl3
+    if(any(lenz>lenz2)) {
+      print(length(which(lenz>lenz2)))
+      fl3 <- fl; fl3[lenz>lenz2,] <- fl2[lenz>lenz2,]; fl <- fl3
+    }
   } else {
     fl <- get.ratio.set(ranged,ratio=ratio,bp=bp)
   }
+  fl <- check.orderz(fl)
   idz <- (ranged$id);  #print(length(idz)) #print(dim(ranged))
   if(!L & !R) { warning("L and R both unselected, returning nothing"); return(NULL) }
+  if(any(!is.numeric(fl))) { stop("fl must be numeric") } 
   if(L) {
+    #prv(fl[,1],fl[,2])
+    if(any(fl[,1]>fl[,2])) { print(head(fl[fl[,1]>fl[,2],])) }
     left <- RangedData(ranges=IRanges(start=fl[,1],end=fl[,2],names=rownames(ranged)),space=chr2(ranged),id=idz)
     #rownames(left) <- rownames(ranged)
     flanking_1 <- range.snp(toGenomeOrder2(left,strict=T),snp.info=snp.info)
@@ -7307,6 +7380,8 @@ get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info
     if(!is.null(rownames(flanking_1))) { flanking_1 <- flanking_1[rN,] } # ensures same order
   }
   if(R) {
+    #prv(fl[,3],fl[,4])
+    if(any(fl[,3]>fl[,4])) { print(head(fl[fl[,3]>fl[,4],])) }
     right <- RangedData(ranges=IRanges(start=fl[,3],end=fl[,4],names=rownames(ranged)),space=chr2(ranged),id=idz)
     #    rownames(right) <- rownames(ranged)
     flanking_2 <- range.snp(toGenomeOrder2(right,strict=T),snp.info=snp.info)
@@ -7588,6 +7663,7 @@ calc.quality.stats <- function(DEL, bigBAF, bigPCC, snp.info, pr.acc=0.5,
     chrSnps <- cbind(rownames(snp.info)[chrN[,1]],rownames(snp.info)[chrN[,2]])
     chrDat <- big.extract.snp.ranges(chrSnps[as.numeric(chr2(DEL)),],samples=DEL$id,bigPCC)
   }
+  #prv(DEL)
   flanking1mb <- get.flanks.from.big.mat(DEL,bigPCC,bp=10^6,snp.info=snp.info, nsnp=NA)
   #print(head(flanking1mb))
   flanking2 <- get.flanks.from.big.mat(DEL,bigPCC,ratio=short.ratio,snp.info=snp.info, nsnp=nsnp)
@@ -8227,7 +8303,7 @@ add.to.sample.info <- function(sample.info,more.info,to.add=NULL,overwrite=F,ver
   if(verbose) { cat("",round(mat.fil.list$maxpc*100,1),
                     "% of ids in batch lookup table matched sample.info\n") }
   indx <- mat.fil.list$index
-  
+  #prv(mat.fil.list,more.info,sample.info)
   if(length(narm(indx))>0) {
     whichoz <- c(1:ncol(more.info))
     # remove ID column and if overwrite=F, any columns already in sample.info
@@ -8401,7 +8477,7 @@ plot.one.errbar <- function(X,NN,LL,thrz,typ="rDEL") {
 }
 
 
-length.analysis.suf <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75,...) {
+length.analysis.suf <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75,T1D=FALSE,GENE=FALSE,...) {
   DELqs <- reader(cat.path(dir$res,"qs.del.results",suf=suffix,ext="txt"))
   DUPqs <- reader(cat.path(dir$res,"qs.dup.results",suf=suffix,ext="txt"))
   X <- cnvResult[[1]]
@@ -8409,12 +8485,12 @@ length.analysis.suf <- function(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75,
   X[[5]][["score"]] <- DUPqs[[1]]
   X[[4]] <- X[[4]][DELqs[[1]]>del.thr,]
   X[[5]] <- X[[5]][DUPqs[[1]]>dup.thr,]
-  return(length.analysis(LL=LL,dir,DEL=X[[4]],DUP=X[[5]],del.thr=del.thr,dup.thr=dup.thr,...))
+  return(length.analysis(LL=LL,dir,DEL=X[[4]],DUP=X[[5]],del.thr=del.thr,dup.thr=dup.thr,T1D=T1D,GENE=GENE,...))
 }
 
 
 length.analysis <- function(LL,dir,DEL=NULL,DUP=NULL,del.thr=.95,dup.thr=.75,
-                                  thr.col="score",cnts=NULL,upper.thr=3000000) {
+                                  thr.col="score",cnts=NULL,upper.thr=3000000,T1D=FALSE,GENE=FALSE) {
   thrsh <- .05/length(LL); blnk <- rep(NA,times=length(LL))
   resultsDEL <- resultsDUP <- data.frame(length=LL,cases=blnk,controls=blnk,ratio=blnk,FET=blnk,pass=blnk)
   if(!is.null(cnts)) {
@@ -8432,6 +8508,8 @@ length.analysis <- function(LL,dir,DEL=NULL,DUP=NULL,del.thr=.95,dup.thr=.75,
       DEL <- DEL[DEL[[thr.col]]>=del.thr,]
       if(nrow(DEL)<1) { warning("filter 'del.thr' on deletions DEL removed all records!"); return(NULL) }
     } else { warning(thr.col," not found in DEL, so thresholds were not applied") }
+    if(T1D) { DEL <- get.t1d.subset(DEL)  }
+    if(GENE) { DEL <- get.genic.subset(DEL)  }  
   }
   if(!is.null(DUP)) {
     #print(head(DUP)) 
@@ -8440,6 +8518,8 @@ length.analysis <- function(LL,dir,DEL=NULL,DUP=NULL,del.thr=.95,dup.thr=.75,
       DUP <- DUP[DUP[[thr.col]]>=dup.thr,]
       if(nrow(DUP)<1) { warning("filter 'dup.thr' on duplicates DUP removed all records!"); return(NULL) }
     } else { warning(thr.col,"not found in DUP, so thresholds were not applied") }
+    if(T1D) { DUP <- get.t1d.subset(DUP)  }
+    if(GENE) { DUP <- get.genic.subset(DUP)  } 
   }
   #  to retrieve final filtered lists : return(list(DEL=DEL,DUP=DUP)) 
   for(ll in 1:length(LL)) {
@@ -8868,9 +8948,10 @@ get.all.samp.fails <- function(dir,verb=F)
 # plot all the CNVs for individuals, in a RangedData object
 plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.flank=5,snp.info=NULL,
                             col1="black",scheme="mono",LRR=T,BAF=F,bafOverlay=F,hzOverlay=F,
-                            PREPOSTPC=F,baf.file="big.baf",lrr.file="big.pcc",n.cores=1,n.pcs=NA,...) {
+                            PREPOSTPC=F,baf.file="big.baf",lrr.file="big.pcc",n.cores=1,n.pcs=NA,geneOverlay=F,...) {
   must.use.package(c("parallel","bigmemory","biganalytics")); must.use.package("genoset",T)
   dir <- validate.dir.for(dir,c("big","res"))
+  #print(geneOverlay)
   if(is(cnv.ranges)[1]!="RangedData") { warning("not a RangedData object"); return(NULL) }
   if(any(!c("id") %in% colnames(cnv.ranges))) { warning("cnv.ranges must contain id"); return(NULL) }
   idz <- cnv.ranges$id; stz <- start(cnv.ranges); enz <- end(cnv.ranges); chrz <- chr2(cnv.ranges); wz <- width(cnv.ranges)
@@ -8923,7 +9004,7 @@ plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.f
         cnv.plot(DT=DT,cnvPlotFileName=paste(file,cc,sep="."),samples=paste(idz[cc]),Chr=chrz[cc],
                  Pos=poz,Cnv=c(stz[cc],enz[cc]),dir=dir,snp.info=snp.info,
                col1=col1,scheme=scheme,lrr.file=lrr.file,baf.file=baf.file,PREPOSTPC=PREPOSTPC,n.pcs=n.pcs,
-               LRR=LRR,BAF=BAF,bafOverlay=bafOverlay,hzOverlay=hzOverlay,pfb.rng=pfb.rng,hz.rng=hz.rng,...) }))
+               LRR=LRR,BAF=BAF,bafOverlay=bafOverlay,hzOverlay=hzOverlay,pfb.rng=pfb.rng,hz.rng=hz.rng,geneOverlay=geneOverlay,...) }))
       cc <- cc + 1
       if(nc==n.cores | cc==n.to.plot) { nutin <- parallel::mccollect(nufin); nc <- 0 }
     }
@@ -8934,7 +9015,7 @@ plot.all.ranges <- function(cnv.ranges,DT=NULL,file="all.ranges.pdf",dir="",pc.f
     #  suppressWarnings({
         cnv.plot(DT=DT,samples=paste(idz[cc]),Chr=chrz[cc],Pos=poz,Cnv=c(stz[cc],enz[cc]),dir=dir,snp.info=snp.info,
                col1=col1,scheme=scheme,lrr.file=lrr.file,baf.file=baf.file,PREPOSTPC=PREPOSTPC,n.pcs=n.pcs,
-               LRR=LRR,BAF=BAF,bafOverlay=bafOverlay,hzOverlay=hzOverlay,pfb.rng=pfb.rng,hz.rng=hz.rng,...) 
+               LRR=LRR,BAF=BAF,bafOverlay=bafOverlay,hzOverlay=hzOverlay,pfb.rng=pfb.rng,hz.rng=hz.rng,geneOverlay=geneOverlay,...) 
         #})
     }
     dev.off()
@@ -9068,6 +9149,7 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
                      c.xlim=NULL,c.ylim=NULL,cust.sub="",build="hg18",DT=NULL) {
   customLims <- rngOn <- zoom <- F # change this later if valid limits received
   must.use.package(c("bigmemory","biganalytics")); must.use.package("genoset",T)
+  #print(geneOverlay)
   #lrr.file.raw <- ""
   if(!LRR & !BAF) { warning("selected no LRR and no BAF so no plot(s) produced"); return(NULL) }
   if(!is.character(samples)) { warning("samples should be a list (character) of sample ids"); return(NULL) }
@@ -9266,12 +9348,14 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
       if(geneOverlay) {
         if(exons) { dat <- get.exon.annot(dir,GRanges=FALSE) } else { dat <- get.gene.annot(dir, GRanges=FALSE) }
         if(zoom) {
-          plot.gene.annot(gs=dat, chr=Chr[1], pos=Pos, x.scl=scl, y.ofs=(as.numeric(medSmooth)*.5)-1, width=.5, txt=T,
+          x.scl <- if(scl==10^6) { "mb" } else { if(scl==10^9 ) { "gb" } else { if(scl==10^3) { "kb"} else { "b" } } } 
+          #print(scl); print(x.scl)
+          plot.gene.annot(gs=dat, chr=Chr[1], pos=Pos/scl, scl=x.scl, y.ofs=(as.numeric(medSmooth)*.5)-1, width=.5, txt=T,
                           build=build, box.col=gene.col, txt.col="black", join.col="red", dir=dir)
         } else {
           warning("no gene overlay option when plotting more than 1 chromosome")
         }
-      }
+      } 
       if(tag.cnvs ) {
         chr.offset <- 0
         if(is(Cnv)[1]=="RangedData") { if("id" %in% colnames(Cnv)) { Cnv <- Cnv[Cnv$id %in% samples,] } }
@@ -10343,7 +10427,7 @@ plot.pheno.cnvs <- function(fn,type="DEL",pref="",dir)
     tt <- read.table(fn,  header=TRUE)
     if(length(Dim(tt))<2) {
       warning("problem with cnv.summary file: ",fn,", plot skipped")
-      prv(tt)
+    #  prv(tt)
       return(paste("failed to extract from",fn))
     }  
   }
@@ -11113,3 +11197,4 @@ plumbcnv <- function(settings=list(),...) {
 # library(reader)
 ## source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/bigHelpers.R")
 ## source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/TempFunctions.R")
+

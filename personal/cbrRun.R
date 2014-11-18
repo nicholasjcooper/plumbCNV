@@ -1,5 +1,5 @@
 
-suffix <- 229
+suffix <- 1
 metabo <- F
 plumber <- T
 dgv.valid <- F
@@ -10,17 +10,15 @@ my.end <- 6
 do.cnv <- T
 comp <- F
 samp.set <- "light"
-pca.set <- 24
+pca.set <- 12
 restore <- F
 sex.correct <- F
 q.cores <- 100 #NA
 hmm.file <- "/chiswick/data/ncooper/ImmunochipFamilies/ANNOTATION/hh0+.hmm"
-#hmm.file <- "hh550.hmm"
 
+library(reader); library(bigpca); library(NCmisc)
 #source("/chiswick/data/ncooper/ImmunochipReplication/Scripts/FunctionsCNVAnalysis.R")
-library(reader)
 source("~/github/plumbCNV/FunctionsCNVAnalysis.R")
- library(bigpca); library(NCmisc)
 load.all.libs()
 #source("~/github/plumbCNV/geneticsFunctions.R")
 
@@ -30,21 +28,12 @@ load.all.libs()
 #         dir.base="/chiswick/data/ncooper/ImmunochipReplication/",
 
 
-auxdirI <- "/home/ncooper/Documents/necessaryfilesICHIP"
-auxdirM <- "/home/ncooper/Documents/necessaryfilesMCHIP"
 
-dir_rawM <- "/chiswick/data/store/metabochip/FinalReports/"
-dir_rawI <- "/ipswich/data/Immunochip/FinalReports/"
-
-dir_baseM <- "/chiswick/data/ncooper/metabochipRunTest/"
-dir_baseI <- "/chiswick/data/ncooper/immunochipRunTwo/"
-
-s.supM <- "/chiswick/data/store/metabochip/PLINK/Metabo_20100426_58C.bim" # support file name (eg, bim)
-s.supI <- "/ipswich/data/Immunochip/FinalReports/sanger-controls.txt"
-
-gsfM <- F
+auxdirI <- "~/Documents/necessaryfilesCBR" # create this dir and copy a file.spec, and the snpNames.txt
+dir_rawI <- "/sopworth/data/illumina/hui/cbrmicro/cbr4k8k/"
+dir_baseI <- "/chiswick/data/ncooper/CBR"
+s.supI <- "/sopworth/data/illumina/hui/cbrmicro/cbr4k8k/cbr4k8k_FinalReport.txt" # get support from gs-file
 gsfI <- T
-
 
 ##############
 ## SETTINGS ##
@@ -110,9 +99,9 @@ if(pca.set==0) {
                        add.int=F,preserve.median=F,
                        comparison=F,comp.gc=F,comps="plate",exclude.bad.reg=F)
 } else {
-  if(pca.set<24) {
+  if(pca.set==12) {
     
-    pca.settings <- list(num.pcs=pca.set,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=sex.correct,
+    pca.settings <- list(num.pcs=12,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=sex.correct,
                          add.int=F,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   } else {
@@ -142,15 +131,10 @@ settings <- c(chip.settings,base.settings,snp.settings,samp.settings,pca.setting
 ###################
 
 
-dir <- make.dir("/chiswick/data/ncooper/immunochipRunTwo/")
+dir <- make.dir("/chiswick/data/ncooper/CBR/")
 
 
 if(plumber) {
-  if(samp.excl) {
-    ## add other sample exclusion ##
-    extra.excl <- "/home/ncooper/Documents/necessaryfilesICHIP/excl.samples.support.txt"
-    system(paste("cp",extra.excl,dir$excl))
-  }  
   cnvResult <- plumbcnv(settings,start.at=my.st,pause.after=my.end,restore.mode=restore,
                         result.pref=suffix)
   save(cnvResult,file=cat.path(dir$res,"fullresult",suf=suffix,ext="RData"))
@@ -164,17 +148,18 @@ DT <- read.data.tracker(dir)
 qs.results <- process.quality.scores(DT,suffix,dir,n.pcs=pca.set)
 final.tables <- compile.qs.results.to.cc.toptable(qs.results,dir,suffix,cnvResult)
 
-###LL <- c(0,10000,50000,100000,200000,300000,400000,500000,1000000,2000000,3000000,4000000)
+LL <- c(0,10000,50000,100000,200000,300000,400000,500000,1000000,2000000,3000000,4000000)
 # test case:controls for different length and QS thresholds
 
-LL <- c(0,1000*c(50,400)) ; LLB <- c(LL[-1],250000000)
+LL <- c(0,1000*c(200,2000))
+LLB <- c(LL[-1],250000000)
  
 length.analysis.suf(LL,dir,cnvResult,suffix,thr.col="score",cnts=c(9238,6524),upper.thr=LLB)
 
 #length.analysis(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75)
 
 
-#plot.all.samples.for.cnv(dir,reg="S21",dup=F,suffix="98")
+#plot.all.samples.for.cnv(dir,reg="S78",dup=F,suffix="1")
 
 
 

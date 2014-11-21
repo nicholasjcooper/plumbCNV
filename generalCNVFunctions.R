@@ -38,58 +38,14 @@
 # convert.snp.indx.to.pos 
 # get.ROH.for.SnpMatrix - either use 'dir' to automatically get snp.info and failures
 # tdt.snp2
+# either.side - retrieve the nearest genes either side of a set of locations, SNPs, CNVs or intervals
+# super.annotate.cnvs - add genes, bands, annotate unnamed genes and intergenic ranges,  optionally add haplosufficiency prediction categories
 ################
 
 
 ### VERY GENERAL ###
 
-# to make plumbcnv work, need to make this tiny fix to reader's get.delim (should fix in april)
-# 
-# get.delim <- function(fn,n=10,comment="#",skip=0,
-#                       delims=c("\t"," ","\t| +",";",","),large=10,one.byte=TRUE)  
-# {
-#   # test top 'n' lines to determine what delimeter the file uses
-#   if(!file.exists(fn)) { stop(paste("cannot derive delimiter as file",fn,"was not found"))}
-#   test.bit <- n.readLines(fn=fn,n=n,comment=comment,skip=skip)
-#   #print(test.bit)
-#   num.del <- list()
-#   if(any(nchar(delims)>1) & one.byte) { delims <- delims[-which(nchar(delims)>1)] }
-#   for (cc in 1:length(delims)) {
-#     fff <- nchar(delims[[cc]])==1
-#     num.del[[cc]] <- sapply(strsplit(test.bit,delims[[cc]],fixed=fff),length)
-#   }
-#   #prv(num.del)
-#   if(all(unlist(num.del)==1)) { 
-#     warning("not a delimited file, probably a vector file")
-#     return(NA)
-#   }
-#   # are there some delimiters that produce consistent ncol between rows?
-#   need.0 <- sapply(num.del,function(X) { sum(diff(X)) })
-#   num.del <- sapply(num.del,"[",1)
-#   if(any(!need.0)) {
-#     #rng <- range(num.del)
-#     candidates <- which(num.del>1 & num.del<=large & !need.0)
-#     #print(candidates)
-#     if(length(candidates)>0) { out <- candidates[1] 
-#     } else {
-#       candidates <- which(num.del>large & !need.0)
-#       if(length(candidates)>0) { out <- candidates[1]
-#       } else {
-#         candidates <- which(num.del==1 & !need.0)
-#         if(length(candidates)>0) { out <- candidates[1]
-#         } else {
-#           warning("no delimiters tried were able to produce a valid file spec")
-#           out <- NULL
-#         }
-#       }
-#     }
-#   } else {
-#     warning("no delimiters tried were able to produce a valid file spec")
-#     out <- NULL
-#   }
-#   #print(delims)
-#   return(delims[out])
-# }
+
 
 
 # internal function
@@ -111,6 +67,25 @@ validate.dir.for <- function(dir,elements,warn=F) {
 }
 
 
+
+# add genes, bands, annotate unnamed genes and intergenic ranges, 
+# optionally add haplosufficiency prediction categories
+super.annotate.cnvs <- function(oo1,hap=FALSE) {
+  oo1 <- Gene.pos(ranges=oo1,bioC=T,build=36)
+  oo1 <- oo1[,-which(colnames(oo1) %in% "index")]
+  oo1 <- Band.pos(ranges=oo1,bioC=T,build=36)
+  oo1[["gene"]][oo1[["gene"]]== ""] <- "unnamed-gene"
+  oo1[["gene"]][oo1[["gene"]] %in% "intergenic"] <- paste0("intergenic [",either.side(oo1[oo1[["gene"]] %in% "intergenic",],build=36,tracker=FALSE),"]")
+  oo1[["gene"]][oo1[["gene"]] %in% "unnamed-gene"] <- paste0("unnamed-gene [",either.side(oo1[oo1[["gene"]] %in% "unnamed-gene",],build=36,tracker=FALSE),"]")
+  if(hap) {
+    JS <- make.hap()
+    oo1[["Hap55"]] <- suppressWarnings(hap.mean(oo1,JS,FUN=num.more.than.55,n=.55))
+    oo1[["Hap65"]] <- suppressWarnings(hap.mean(oo1,JS,FUN=num.more.than.55,n=.65))
+  }
+  oo2 <- oo1
+  oo2[["gene"]] <- compact.gene.list(oo2[["gene"]])
+  return(oo2)
+}
 
 
 
@@ -168,6 +143,36 @@ jlapply <- function(list1, list2, FUN=NULL, select=F, pc=F, collapse=NULL) {
     new.list <- as.character(unlist(sapply(new.list,add.delim)))
   }
   return(new.list)
+}
+
+
+# retrieve the nearest genes either side of a set of locations, SNPs, CNVs or intervals
+# stored as a ranged data object
+# slow so don't run for duplicate ranges, and only run for 'intergenic' ranges or much
+# time will be wasted!
+either.side <- function(ranges,limit=NULL,build=NULL,collapse=TRUE,sep=",",tracker=TRUE) {
+  typ <- is(ranges)[1]
+  if(!typ %in% c("GRanges","RangedData","ChipInfo")) { stop("invalid 'ranges' object") }
+  chrz <- chr2(ranges)
+  stz <- start(ranges)
+  enz <- end(ranges)
+  left <- right <- character(length(stz))
+  midz <- round(rowMeans(cbind(stz,enz)))
+  ## preload gene annotation to save time ## 
+  ga <- get.gene.annot(build=build,GRanges=F) 
+  if(!exists("ga")) { stop("couldn't find gene annotation") }  ## load object: ga [gene database]
+  ga <- ga[ga$gene!="",]
+  ##
+  for (cc in 1:length(stz)) {
+    left[cc] <- nearest.gene(chrz[cc], midz[cc], n=1, side="left",ids=TRUE,limit=NULL,build=build, ga=ga) 
+    right[cc] <- nearest.gene(chrz[cc], midz[cc], n=1, side="right",ids=TRUE,limit=NULL,build=build, ga=ga) 
+    if(tracker) { loop.tracker(cc,length(stz)) }
+  }
+  if(collapse) {
+    return(paste(left,right,sep=sep))
+  } else {
+    return(data.frame(left=left,right=right))
+  }
 }
 
 

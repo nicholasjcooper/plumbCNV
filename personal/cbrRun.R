@@ -156,8 +156,11 @@ LLB <- c(LL[-1],250000000)
  
 length.analysis.suf(LL,dir,cnvResult,suffix,thr.col="score",cnts=c(9238,6524),upper.thr=LLB)
 
-#length.analysis(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75)
+oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+oo1 <- super.annotate.cnvs(oo1,hap=TRUE)
 
+
+#length.analysis(LL,dir,cnvResult,suffix,del.thr=.95,dup.thr=.75)
 
 #plot.all.samples.for.cnv(dir,reg="S78",dup=F,suffix="1")
 

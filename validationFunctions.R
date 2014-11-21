@@ -74,6 +74,7 @@ extract.cnv.regions <- function(dir, type="DEL", by.cnv=F, enriched=T, genes=T, 
 
 # taking the CNVR results for dels and dups, prints a summary table of top results
 toptables <- function(oo1,oo2,pv=0.05,prt=T) {
+  if(n.phenos(dir)>1) { warning("only 1 phenotype so top-tables not calculated"); return(NULL) }
   sig.dels <- which(oo1$sig<pv)
   sig.dups <- which(oo2$sig<pv)
   tt1 <- tt2 <- NULL
@@ -722,13 +723,19 @@ num.more.than.55 <- function(X,n=.55) {
 }
 
 
-# create object with haplosufficiency scores #
-#JS <- reader("~/Downloads/JuliaSteinberg_HISPredictions_20140607.tab")
-#JS[["rs"]] <- ENS.to.GENE(rownames(JS))
-#JS <- JS[!duplicated(JS$rs),]
-#JS[["ENS"]] <- rownames(JS)
-#rownames(JS) <- JS$rs
-#ooe2[["Hap40"]] <- hap.mean(ooe2,JS,FUN=num.more.than.55,n=.4)
+# create object with Julia Steinberg's haplosufficiency scores #
+make.hap <- function(fn="~/Downloads/JuliaSteinberg_HISPredictions_20140607.tab") {
+  JS <- reader(fn)
+  JS[["rs"]] <- suppressWarnings(ENS.to.GENE(rownames(JS)))
+  JS <- JS[!duplicated(JS$rs),]
+  JS[["ENS"]] <- rownames(JS)
+  rownames(JS) <- JS$rs
+  return(JS)
+}
+
+# JS <- make.hap()
+# ooe2[["Hap40"]] <- hap.mean(ooe2,JS,FUN=num.more.than.55,n=.4)
+
 
 ## retrieve a mean/median/max haploinsufficiency probability vector
 hap.mean <- function(X,ref,FUN=mean,...,gene.col="gene",build=36) {

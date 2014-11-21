@@ -11118,6 +11118,14 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
           tts <- toptables(oo1,oo2,force.percentage(fet.analysis.p))  # on screen copy
           cat("wrote to file:",ofn,"\n")
         }
+      } else {
+        if(n.phenos==1) {
+          oo2 <- extract.cnv.regions(dir,type="dup",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+          oo1 <- extract.cnv.regions(dir,type="del",by.cnv=F,lwr=0.25,upr=4,FET=T,prt=F)
+          CNVR <- list(deletions=oo1,duplications=oo2)
+        } else {
+          warning("no phenotypes codes found, skipping CNVR compilation")
+        }
       }
     }
   }

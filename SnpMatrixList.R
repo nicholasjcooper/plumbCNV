@@ -115,7 +115,13 @@ sampSel <- function(snpMatLst,samples,dir=NULL) {
   newlist <- fun.snpMatLst(snpMatLst,fun=sampselfun,dir=dir,samples=samples)
   nulz <- sapply(newlist,is.null)
   newlist <- newlist[!nulz] # remove NULLs from this list or else rbind doesn't work properly
-  outobj <- do.call("rbind",args=newlist)  
+  typ <- get.split.type(snpMatLst,dir=dd)
+  if(typ=="snpSubGroups") {
+    if(is(newlist[[1]])[1] %in% c("aSnpMatrix","aXSnpMatrix")) { fun <- "cbind3" } else { fun <- "cbind" }
+  } else {
+    if(is(newlist[[1]])[1] %in% c("aSnpMatrix","aXSnpMatrix")) { fun <- "rbind3" } else { fun <- "rbind" }
+  }
+  outobj <- do.call(fun,args=newlist)  
   if(is.character(samples)) { outobj <- outobj[samples,] }
   if(is.character(samples)) { outobj <- outobj[narm(match(samples,rownames(outobj))),] }
   return(outobj)
@@ -140,6 +146,12 @@ snpSel <- function(snpMatLst,snps,dir=NULL) {
   nulz <- sapply(newlist,is.null)
   newlist <- newlist[!nulz] # remove NULLs from this list or else cbind doesn't work properly
  # prv(newlist)
+  typ <- get.split.type(snpMatLst,dir=dd)
+  if(typ=="snpSubGroups") {
+    if(is(newlist[[1]])[1] %in% c("aSnpMatrix","aXSnpMatrix")) { fun <- "cbind3" } else { fun <- "cbind" }
+  } else {
+    if(is(newlist[[1]])[1] %in% c("aSnpMatrix","aXSnpMatrix")) { fun <- "rbind3" } else { fun <- "rbind" }
+  }
   outobj <- do.call("cbind",args=newlist) 
   colnames(outobj) <- clean.snp.ids(colnames(outobj))
   if(is.character(snps)) { outobj <- outobj[,narm(match(snps,colnames(outobj)))] }
@@ -1409,7 +1421,12 @@ bigSnpMatrix <- function(X,filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, 
 
 # sml <- list.files("/chiswick/data/ncooper/iChipData/",pattern="temp.ichip")
 # sml <- as.list(sml)
+# sml <- sml[c(11,15:22,1:10,12:14,24,23)]
 # dd <- "/chiswick/data/ncooper/iChipData/"
+
+# dd <- ("/chiswick/data/ncooper/imputation/T1D/PQDATA/")
+# sml <- as.list(sml)
+# sml <- sml[c(18:19,26:40,1:17,20:24)]
 
 # convert a snpMatLst to a single SnpMatrix #
 bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missing=TRUE,
@@ -1520,6 +1537,49 @@ bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missin
 #  kk <- proc.time()[3]; out <- cor(mat,use="pairwise.complete")^2 ;jj <- proc.time()[3]; print(jj-kk)
 #  return(out)
 #}
+
+# convert a SnpMatrix to a SnpMatrixList split by chromosomes.. can be a file based one too
+SnpMatrix.to.sml.by.chr <- function(X,snp.info=NULL,dir=NULL,build=NULL,genomeOrder=TRUE) {
+  typ <- is(X)[1]
+  if(!typ %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) { stop("X must be a SnpMatrix or equivalent") }
+  if(is.null(snp.info) & (typ %in% c("aSnpMatrix","aXSnpMatrix")))  { snp.info <- snp.from.annot(X) }
+  if(is.null(snp.info)) { snp.info <- get.support(build=build) }
+  if(any(!colnames(X) %in% rownames(snp.info))) { stop("all SNPs from X must have support in the aSnpMatrix, snp.info, or the result of get.support(build=build)")}
+  snp.info <- snp.info[colnames(X),]
+  if(genomeOrder) {
+    snp.info <- toGenomeOrder(snp.info)
+    X <- X[,rownames(snp.info)]
+  }
+  ch <- paste(chr2(snp.info))
+  chrz <- unique(paste(chr2(snp.info)))
+  n.chr <- length(chrz)
+  sml <- vector("list",n.chr)
+  if(!is.null(dir)) { if(file.exists(dir)) { disk <- TRUE } else { stop("dir '",dir,"'' did not exist") } } else { disk <- FALSE }
+  for (cc in 1:n.chr) {
+    if(disk) { 
+      ofn <- cat.path(dir,"CHR",suf=chrz[cc],ext="RData")
+      var <- paste0("chr",chrz[cc])
+      x <- X[,ch %in% chrz[cc]]
+      save(x,file=ofn)
+      sml[[cc]] <- ofn
+    } else {
+      sml[[cc]] <- X[,ch %in% chrz[cc]]
+    }
+  }
+  return(sml)
+}
+
+# to PCA 1000 genomes
+# (load("/chiswick/data/ncooper/imputation/THOUSAND/aligned1000g.RData"))
+# newsml <- SnpMatrix.to.sml.by.chr(asm.1000g.aligned)
+# ld.pruned <- smlapply(newsml,ld.prune.chr,thresh=0.1,n.cores=12)
+# pruned.1000g <- NULL
+# pruned.1000g <- asm.1000g.aligned[,unlist(ld.pruned)]
+# save(ld.pruned,pruned.1000g,file="pruned.list1000g.RData")
+# big1000 <- bigSnpMatrix(pruned.1000g,"big1000g")
+# result.quick <- big.PCA(big1000)
+# result.loadings <- big.PCA(big1000,return.loadings=TRUE)
+# save(result.quick,result.loadings,pruned.1000g,file=""pruned.list"PCA.1000g.RData")
 
 ld.prune.chr <- function(X,stats="R.squared",thresh=.50) {
   kk <- proc.time()[3]; mat <- ld(X,X,stats=stats[1]) ; jj <- proc.time()[3]; print(jj-kk)

@@ -420,6 +420,8 @@ compile.qs.results.to.cc.toptable <- function(qs.results,dir,suffix,cnvResult,de
   results2 <- qs.results$DUP
   results2 <- within(results2,{decline <- rowMeans(cbind(c(qc90_cs-qc50_cs)/qc50_cs, c(qc90_ct-qc50_ct)/qc50_ct),na.rm=T)})
   print(head(results2[order(results2$qc75_sig),],15))
+  qs.results$DEL <- results1
+  qs.results$DUP <- results2
   save(qs.results,file=cat.path(dir$res,"qs.filt.results",suf=suffix,ext="RData"))
 
   tt1 <- (results1[order(results1$qc90_sig),])
@@ -432,7 +434,9 @@ compile.qs.results.to.cc.toptable <- function(qs.results,dir,suffix,cnvResult,de
   oo1$ctrls  <- results1$qc90_ct[match(rownames(oo1),rownames(results1))]
   oo2$ctrls  <- results2$qc75_ct[match(rownames(oo2),rownames(results2))]
   oo2$cases  <- results2$qc75_cs[match(rownames(oo2),rownames(results2))]
-  toptables(oo1,oo2)
+  if(n.phenos(dir)>1) {
+    toptables(oo1,oo2)
+  }
   return(list(DEL=oo1,DUP=oo2))
 }
 

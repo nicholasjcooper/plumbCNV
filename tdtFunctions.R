@@ -67,8 +67,8 @@ get.t1d.subset <- function(X,t1d.only=TRUE,build=36,ichip.regions=NULL,T1D.regio
 }
 
 #return subset of a ranged object that overlaps genes
-get.genic.subset <- function(X,DB="gene") {
-  filt.sd <- find.overlaps(X,db=DB,thresh=0.00000000000001,ranges.out=TRUE)
+get.genic.subset <- function(X,DB="gene",...) {
+  filt.sd <- find.overlaps(X,db=DB,thresh=0.00000000000001,ranges.out=TRUE,...)
   return(filt.sd)
 }
 

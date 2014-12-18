@@ -70,13 +70,13 @@ validate.dir.for <- function(dir,elements,warn=F) {
 
 # add genes, bands, annotate unnamed genes and intergenic ranges, 
 # optionally add haplosufficiency prediction categories
-super.annotate.cnvs <- function(oo1,hap=FALSE) {
-  oo1 <- Gene.pos(ranges=oo1,bioC=T,build=36)
+super.annotate.cnvs <- function(oo1,build=NULL,hap=FALSE) {
+  oo1 <- Gene.pos(ranges=oo1,bioC=T,build=build)
   oo1 <- oo1[,-which(colnames(oo1) %in% "index")]
-  oo1 <- Band.pos(ranges=oo1,bioC=T,build=36)
+  oo1 <- Band.pos(ranges=oo1,bioC=T,build=build)
   oo1[["gene"]][oo1[["gene"]]== ""] <- "unnamed-gene"
-  oo1[["gene"]][oo1[["gene"]] %in% "intergenic"] <- paste0("intergenic [",either.side(oo1[oo1[["gene"]] %in% "intergenic",],build=36,tracker=FALSE),"]")
-  oo1[["gene"]][oo1[["gene"]] %in% "unnamed-gene"] <- paste0("unnamed-gene [",either.side(oo1[oo1[["gene"]] %in% "unnamed-gene",],build=36,tracker=FALSE),"]")
+  oo1[["gene"]][oo1[["gene"]] %in% "intergenic"] <- paste0("intergenic [",either.side(oo1[oo1[["gene"]] %in% "intergenic",],build=build,tracker=FALSE),"]")
+  oo1[["gene"]][oo1[["gene"]] %in% "unnamed-gene"] <- paste0("unnamed-gene [",either.side(oo1[oo1[["gene"]] %in% "unnamed-gene",],build=build,tracker=FALSE),"]")
   if(hap) {
     JS <- make.hap()
     oo1[["Hap55"]] <- suppressWarnings(hap.mean(oo1,JS,FUN=num.more.than.55,n=.55))
@@ -378,7 +378,7 @@ FET <- function(case,ctrl,dir=NULL,sample.info=NULL,case.d=NA,cont.d=NA,stat=c("
 find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.out=F, vals.out=F, vec.out=F, delim=",",
                           ref=NULL, none.val=0, fill.blanks=T, DEL=T, DUP=T, min.sites=0, len.lo=NA, len.hi=NA,
                           autosomes.only=T, alt.name=NULL, testy=F,
-                          db=c("gene","exon","dgv"), txid=F, build="hg18", n.cores=1, dir="", quiet=F) {
+                          db=c("gene","exon","dgv"), exid=F, build="hg18", n.cores=1, dir="", quiet=F) {
   if(is(cnv.ranges)[1]!="RangedData") {
     warning("'cnv.ranges' must be 'RangedData' type; returning null")
     return(NULL)
@@ -433,7 +433,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   db <- tolower(paste(db)[1])
   if(is(ref)[1]!="RangedData") {
     ; ano <- "gene" 
-    if(length(grep("exon",db))>0) { ano <- "exon" }
+    if(length(grep("exon",db))>0) { ano <- "exon" ; exid <- TRUE }
     if(length(grep("dgv",db))>0) { ano <- "dgv" }
     if(!quiet) { cat(" loading",ano,"annotation...\n") }
     ref <- switch(ano,exon=get.exon.annot(dir=dir,build=build,GRanges=FALSE),gene=get.gene.annot(dir=dir,build=build,GRanges=FALSE),
@@ -441,7 +441,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
     
   } else {
     # ref is already a ranges object for comparison passed in by parameter
-    if(any(tolower(db) %in% c("exon","gene","dgv")))  { ano <- db } else { ano <- "custom ranges" ; txid <- F }
+    if(any(tolower(db) %in% c("exon","gene","dgv")))  { ano <- db } else { ano <- "custom ranges" ; exid <- F }
   }
   do.check <- testy
   if(ano=="gene" | ano=="exon") { nbg <- T } else { nbg <- F } # use gene names if gene or exon
@@ -453,7 +453,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
   if(!quiet) { cat(" testing CNV set for overlaps with",ano,"...\n") }
  # if(do.check) { prv(ref,cnv.ranges) }
   mm <- overlap.pc(query=ref,subj=cnv.ranges,name.by.gene=nbg,
-                   rel.query=rel.ref,fill.blanks=fill.blanks, txid=txid,alt.name=alt.name,
+                   rel.query=rel.ref,fill.blanks=fill.blanks, exid=exid,alt.name=alt.name,
                    n.cores=n.cores,none.val=none.val,autosomes.only=autosomes.only)
 
 #  if(do.check) { prv(mm) }
@@ -490,7 +490,7 @@ find.overlaps <- function(cnv.ranges, thresh=0, geq=T, rel.ref=T, pc=T, ranges.o
 
 # internal specific to plumb
 ## mainly to tidy up the function below - does the processing for 1 chromosome
-get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.query=T, txid=F, prog=F, alt.name=NULL) {
+get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.query=T, exid=F, prog=F, alt.name=NULL) {
   #prv(next.chr, x, y, xx, yy)
   olp <- findOverlaps(x[[next.chr]],y[[next.chr]])  
   if(length(olp)==0 | length(subjectHits(olp))==0 | length(queryHits(olp))==0) {
@@ -499,9 +499,9 @@ get.overlap.stats.chr <- function (next.chr, x, y, xx, yy, name.by.gene=T, rel.q
   genes.per.cnv.n <- tapply(queryHits(olp),subjectHits(olp),c)
   match.num.to.names <- function(num,ind) { return(ind[num]) }
   if(name.by.gene) {
-    if(txid & ("txname" %in% colnames(xx))) {
+    if(exid & ("exon_name" %in% colnames(xx))) {
       # transcript id when using exons
-      ind <- xx[next.chr]$txname
+      ind <- xx[next.chr]$exon_name
       genes.per.cnv <- sapply(genes.per.cnv.n,match.num.to.names,simplify=F,ind=ind)
     } else {
       ind <- xx[next.chr]$gene
@@ -635,7 +635,7 @@ fill.blank.matches <- function(newlist,missing.val="",full.len=NA)
 # uses 'findOverlaps' and reports the percentage overlap for each region/etc
 # most sense when: x is reference (e.g, genes); y is regions of interest, eg.  CNVs
 overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autosomes.only=T,
-                       text.out=F,delim=",",none.val=0,n.cores=1, txid=F, prog=F, alt.name=NULL) {
+                       text.out=F,delim=",",none.val=0,n.cores=1, exid=F, prog=F, alt.name=NULL) {
   must.use.package(c("genoset","IRanges"),T)
   if(is(query)[1]!="RangedData" | is(subj)[1]!="RangedData") {
     warning("'query' and 'subj' must both be 'RangedData' type; returning null")
@@ -654,12 +654,13 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   ## reduce dimension of subj; 
   to.cut <- which(tolower(colnames(subj)) %in% c("cn","numsnps","fid","score"))
   if(length(to.cut)>0) { subj <- subj[,-to.cut] } # removing unnecessary cols speeds up
-  to.cut2 <- which(!tolower(colnames(query)) %in% c("gene","txid","txids","txname","txnames",alt.name))
+  to.cut2 <- which(!tolower(colnames(query)) %in% c("gene","exid","exids","exon_id","exon_name","txname","txnames",alt.name))
   if(length(to.cut2)>0) { query <- query[,-to.cut2] } # removing unnecessary cols speeds up
   #print(head(query))
   xlist <- set.chr.to.numeric(query,table.out=T)
  # print(head(xlist[[1]]))
   #  prv(xlist)
+  #prv(query)  ## remove me
   xx <- xlist[[1]]
   xx=toGenomeOrder2(xx,strict=T)
   #print(head(xx))
@@ -687,10 +688,10 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   if(n.cores>1) {
     must.use.package("parallel")
     by.chr.list <- parallel::mclapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy, alt.name=alt.name,
-                                       name.by.gene=name.by.gene, rel.query=rel.query, txid=txid, mc.cores=n.cores,prog=prog)
+                                       name.by.gene=name.by.gene, rel.query=rel.query, exid=exid, mc.cores=n.cores,prog=prog)
   } else {
     by.chr.list <- lapply(X=1:n.chr, FUN=get.overlap.stats.chr, x=x, y=y, xx=xx, yy=yy,  alt.name=alt.name,
-                          name.by.gene=name.by.gene, rel.query=rel.query, txid=txid, prog=prog)
+                          name.by.gene=name.by.gene, rel.query=rel.query, exid=exid, prog=prog)
   }
   if(prog) { cat("|\n") }
   # prv(by.chr.list)

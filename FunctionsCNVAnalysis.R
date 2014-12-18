@@ -1,7 +1,7 @@
 #options(stringsAsFactors=FALSE)
 
-scr.dir <- "~/github/plumbCNV/"
-ifun.dir <- "~/github/iChip"
+scr.dir <- "/home/ncooper/github/plumbCNV/"
+ifun.dir <- "/home/ncooper/github/iChip"
 
 library(reader)
 
@@ -6662,10 +6662,13 @@ q.submit <- function(penncmd,cc,dest,cluster.fn="q.cmd",grid.name="all.q",
   # make the qsub call
   # submit to queue
   sub.dir.path <- paste(dir.force.slash(dest),sub.dir.nm,sep="")
+  flag.fl.nm <- paste0(sub.dir.path,filepref,cc)
   if(!file.exists(sub.dir.path)) {
     dir.create(paste(sub.dir.path),showWarnings=F)
+  } else {
+    unlink(flag.fl.nm) # remove flag file from a previous run
   }
-  extraline <- paste("touch ",sub.dir.path,filepref,cc,sep="")
+  extraline <- paste0("touch ",flag.fl.nm)
   nxt.fn <- cat.path(dest,logpref,suf=cc,ext="sh")
   next.content <- paste(c(penncmd,extraline))
   writeLines(next.content,con=nxt.fn)
@@ -6719,7 +6722,8 @@ do.penn.qsub <- function(penn.calls, dir, hrs.guess=1, grid.name="all.q", cluste
 # can write your own function that constructs the cluster command using args( file.name, output.dir, id),
 # you then pass the name of your function as a string, as the argument to 'cluster.fn'
 # log pref is just what the command files generated and submitted to the queue will look like
-bash.qsub <- function(bash.commands, dir=getwd(), hrs.guess=NA, grid.name="all.q", cluster.fn="q.cmd", interval=60, logpref="X") {
+bash.qsub <- function(bash.commands, dir=getwd(), hrs.guess=NA,
+                      grid.name="all.q", cluster.fn="q.cmd", interval=60, logpref="X") {
   cat(" submitting bash commands to grid...\n")
   if(!is.na(hrs.guess)) {
     cat(" expect processing via the cluster to take roughly ",round(hrs.guess,2),"hrs ...\n",sep="")
@@ -10092,7 +10096,7 @@ pheno.ratios.table <- function(dir,sum.table)
 
 
 # note that only a column named 'gene' will be annotated! so change the name if you want to use for something else
-annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";", txid=F, build="hg18", autosomes.only=T, alt.name=NULL, dir=getwd()){
+annot.cnv <- function(cnvResults, gs=NULL, vec.out=T, delim=";",  build="hg18", autosomes.only=T, alt.name=NULL, dir=getwd()){
   ## which genes overlap with each CNV - don't forget to account for the empty ones!
   must.use.package("genoset")
   if(is(gs)[1]!="RangedData") { gs <- get.gene.annot(build=build,dir=dir,GRanges=FALSE) }

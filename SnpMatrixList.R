@@ -132,11 +132,18 @@ snpSel <- function(snpMatLst,snps,dir=NULL) {
   if(length(snps)>50000) { warning("This function is designed for small lists of 'snps', likely to fail for large datasets")}
   if(!is.character(snps)) { warning("This function is designed for character indexing, results may not be what you expect") }
   snpselfun <- function(snpMat,snps) {
+    if(is.factor(snps)) { snps <- paste(snps) }
     if(is.character(snps)) { 
       snps <- clean.snp.ids(snps)
       snps <- narm(match(snps,clean.snp.ids(colnames(snpMat)))) 
     }
+    if(is.numeric(snps)) {
+      snps <- snps[snps %in% 1:ncol(snpMat)]
+    } 
     if(length(snps)>0) { 
+      #prv(snps,snpMat)
+      #return(list(snps,snpMat))
+      #print(length(which(is.na(snps)))); print(summary(snps))
       out <- snpMat[,snps]
       #prv(out)
       return(out) 
@@ -152,9 +159,10 @@ snpSel <- function(snpMatLst,snps,dir=NULL) {
   } else {
     if(is(newlist[[1]])[1] %in% c("aSnpMatrix","aXSnpMatrix")) { fun <- "rbind3" } else { fun <- "rbind" }
   }
-  outobj <- do.call("cbind",args=newlist) 
+  #prv(newlist)
+  outobj <- do.call(fun,args=newlist) 
   colnames(outobj) <- clean.snp.ids(colnames(outobj))
-  if(is.character(snps)) { outobj <- outobj[,narm(match(snps,colnames(outobj)))] }
+  if(is.character(snps)) { snps <- clean.snp.ids(snps) ; outobj <- outobj[,narm(match(snps,colnames(outobj)))] }
   return(outobj)
 }
 
@@ -1342,41 +1350,107 @@ samp.from.annot <- function(aSnpMat) {
 }
 
 
+
+# remove snps missing from either of 2 snp matrices
+# if 'return.mat' is false, just returns the snpids to exclude.
+# if true, then if return.x is true, returns the cleaned 'X' snpMatrix, else the clean 'Y'
+rmv.common.missing <- function(X,Y,return.mat=FALSE,return.X=TRUE) {
+  if(is.null(dim(X)) | is.null(dim(Y))) { stop("X and Y must have 2 dimensions (e.g, SnpMatrix) and have SNP names as column names")}
+  x.snps <- colnames(X)
+  y.snps <- colnames(Y)
+  rafX <- (col.summary(X)$RAF)
+  rafY <- (col.summary(Y)$RAF)
+  print(length(which(is.na(rafX))))
+  print(length(which(is.na(rafY))))
+  x.bad <- x.snps[is.na(rafX)]
+  y.bad <- y.snps[is.na(rafY)]
+  more.bad1 <- x.snps[!x.snps %in% y.snps]
+  more.bad2 <- y.snps[!y.snps %in% x.snps]
+  all.bad <- unique(c(x.bad,y.bad,more.bad1,more.bad2))
+  if(return.mat) {
+    if(return.X) {
+      return(X[,which(!clean.snp.ids(colnames(X)) %in% clean.snp.ids(all.bad))])
+    } else {
+      return(Y[,which(!clean.snp.ids(colnames(Y)) %in% clean.snp.ids(all.bad))])
+    }
+  } else {
+    return(all.bad)
+  }
+}
+
+
+
 correct.by <- function(X) {
   typ <- is(X)[1]
   if(!typ %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix")) { stop("X must be a SnpMatrix object") }
   cs <- col.summary(X)
   if(nrow(cs)!=ncol(X)) { stop("col.summary length (",nrow(cs),") did not match length of X (",ncol(X),")")}
   raf <- cs$RAF
+  print(length(which(is.na(raf))))
+  #print(cs[which(is.na(raf)),])
   nn <- cs$Calls
   aa <- raf^2
   ab <- raf*(1-raf)*2
   bb <- (raf)^2
   mN <- (aa*1) + (ab*2) + (bb*3)
   ss <- ((bb*nn)*(3-mN)^2) + ((ab*nn)*(2-mN)^2) + ((aa*nn)*(1-mN)^2)
-  sD <- sqrt((1/(nn-1))*ss)  
+  #  sD <- sqrt((1/(nn-1))*ss)  
+  sD <- ss/nn
   sD[is.na(sD)] <- 1
   sD[sD<.0001] <- 0.1
   return(list(mean=mN,sd=sD))
 }
 
-bigSnpMatrix <- function(X,filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, mn.zero=TRUE, sd.hwe=TRUE, replace.missing=TRUE) {
+
+bigSnpMatrix <- function(X,filename="tempMatrix",tracker=TRUE, n.cores=1,
+                         limit.ram=FALSE, mn.zero=TRUE, sd.hwe=TRUE, replace.missing=TRUE, ref.data=NULL) {
+  aaa <- proc.time()[3]
   typ <- is(X)[1]
+  typ2 <- is(ref.data)[1]
   max.gb <- NA
   if(!typ %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) {
       stop("X must be a SnpMatrix or aSnpMatrix object")
   }
-  if(replace.missing) {
-    X <- randomize.missing2(X)
+  if(!is.null(ref.data)) {
+    if(!typ2 %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) {
+      warning("ref.data should be a SnpMatrix or aSnpMatrix object, will ignore")
+      ref.data <- NULL
+    } else {
+      if(all(clean.snp.ids(colnames(X)) %in% clean.snp.ids(colnames(ref.data)))) {
+        ref.data <- ref.data[,match(clean.snp.ids(colnames(X)),clean.snp.ids(colnames(ref.data)))]
+      } else {
+        warning("ref.data should contain all column names in X, will ignore")
+      }
+    }
   }
+  bbb <- proc.time()[3]; cat("ref data took ",round(bbb-aaa)," seconds\n")
+  if(replace.missing) {
+    X <- randomize.missing2(X,verbose=TRUE,n.cores=n.cores)
+    nmis <- length(which(X==as.raw("00")))
+    if(nmis>0) {
+      warning(out.of(nmis,do.call("*",args=as.list(Dim(X))))," data points are still missing from X")
+    }
+  }
+  ccc <- proc.time()[3]; cat("missing data took ",round(ccc-bbb)," seconds\n")
   raw <- X@.Data
   if(mn.zero | sd.hwe) {
-    oo <- correct.by(X); mN <- oo$mean; sD <- oo$sd
+    if(!is.null(ref.data)) {
+      oo <- correct.by(ref.data); mN <- oo$mean; sD <- oo$sd
+    } else {
+      oo <- correct.by(X); mN <- oo$mean; sD <- oo$sd
+    }
   } 
+  ddd <- proc.time()[3]; cat("mean/sd calc took ",round(ddd-ccc)," seconds\n")
+  #return(oo)
   #raw[raw==0] <- NA
-  if(!mn.zero) { mN <- 0 }
-  if(!sd.hwe) { sD <- 1 }
   nC <- ncol(X); nR <- nrow(X)
+  if(!mn.zero) { mN <- rep(0,nC) }
+  if(!sd.hwe) { sD <- rep(1,nC) }
+  sd.er <- (length(which(is.na(sD)))) 
+  mn.er <- (length(which(is.na(mN))))
+  if(sd.er>0)  { warning("St. Dev. could not be calculated for ",sd.er,"SNPs due to missingness; suggest using 'rmv.common.missing()' with ref.data prior to analysis") }
+  if(mn.er>0)  { warning("Mean offset could not be calculated for ",mn.er,"SNPs due to missingness; suggest using 'rmv.common.missing()' with ref.data prior to analysis") }
+  #prv(mN,sD)
   dir <- dirname(filename); filename <- basename(filename)
   if(dir=="") { dir <- getwd() }
   if(tracker) { cat(" creating",nR,"x",nC,"target matrix,",cat.path(dir,filename),"...\n") }
@@ -1384,7 +1458,8 @@ bigSnpMatrix <- function(X,filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, 
   bck <- paste(filename,"bck",sep=".")
   bigSnp <- big.matrix(nrow=nR,ncol=nC, backingfile=bck, dimnames=list(rownames(X),colnames(X)),
                          backingpath=dir, descriptorfile=des)
-  split.to <- 10*round(estimate.memory(bigSnp)) # split into .1GB chunks, save RAM without creating groups too small to process
+  eee <- proc.time()[3]; cat("creating big.matrix took ",round(eee-ddd)," seconds\n")
+  split.to <- round(10*estimate.memory(bigSnp)) # split into .1GB chunks, save RAM without creating groups too small to process
   #if(n.cores>4) { split.to <- split.to * 4 } # divide more if using multicores
   stepz <- round(seq(from=1,to=nC+1,length.out=round((split.to+1))))
   if((tail(stepz,1)) != nC+1) { stepz <- c(stepz,nC+1) }
@@ -1396,11 +1471,13 @@ bigSnpMatrix <- function(X,filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, 
     # do the copying
     lilColRange <- c(c1:c2)
     if(tracker) {      loop.tracker(cc,split.to) }
-    if(is.finite(sum(lilColRange))) {
+    if(is.finite(sum(as.numeric(lilColRange)))) {
       #cat(range(lilColRange)); cat(dim(bigTrans)); cat(dim(bigMat))
       nxt.chunk <- raw[1:nR,lilColRange]
-      nxt.chunk <- apply(nxt.chunk,2,as.numeric)
-      bigSnp[1:nR,lilColRange] <- (nxt.chunk-mN[lilColRange])/sD[lilColRange]
+      nxt.chunk <- t(apply(nxt.chunk,2,as.numeric))
+      new.val <- (nxt.chunk-mN[lilColRange])/sD[lilColRange]
+      bigSnp[1:nR,lilColRange] <- t(new.val)
+      #prv(new.val,nxt.chunk,lilColRange,c1,c2,cc)
     } else {
       cat(" Warning: empty interval ignored\n")
     }
@@ -1412,6 +1489,7 @@ bigSnpMatrix <- function(X,filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, 
       }
     }
   }
+  fff <- proc.time()[3]; cat("loop took ",round(fff-eee)," seconds\n")
   if(tracker) {
     prv(bigSnp)
   }
@@ -1419,12 +1497,154 @@ bigSnpMatrix <- function(X,filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, 
 }
 
 
+
+
+colmeansel <- function(x,sel) { 
+      if(is.null(dim(x))) {
+        mean(x[sel]) 
+      } else {
+        colMeans(x[sel,])
+      }
+}
+
+
+ld.prune.big <- function(X,stats="R.squared",thresh=.1,n.cores=1) {
+  if(estimate.memory(ncol(X)^2)<1) { ld.prune.chr(X,stats=stats,thresh=thresh) }
+  kk <- proc.time()[3]
+  mat <- big.ld(X,stats=stats[1],filename=paste0("tempLdMat",sample(10^6,1)),limit.ram=F,n.cores=n.cores)
+  jj <- proc.time()[3]; print(jj-kk)
+#  exc <- length(matt[matt>thresh])
+  nsnp <- ncol(mat)
+#  cat(out.of(exc,nsnp^2)," in matrix exceed ld threshold\n")
+  kk <- proc.time()[3];
+#  mat[is.nan(mat)] <- runif(length(which(is.nan(mat))))/100
+  selected <- rep(T,ncol(mat))
+  winners <- NULL
+  all.sums <- colsum(mat,na.rm=T)
+  all.ns <- nrow(mat) - colna(mat)
+  while(any(selected)) {
+    selectedPre <- selected
+    tot.scores <- abs(all.sums/all.ns)
+    tot.scores[is.na(tot.scores)] <- 0
+    winnerz <- which(tot.scores==max(tot.scores[selected],na.rm=T))
+    winnerz <- winnerz[winnerz %in% which(selected)]
+    if(length(winnerz)<1) {
+      winnerz <- which(tot.scores==max(tot.scores[selected],na.rm=T))
+      winnerz <- winnerz[winnerz %in% winners]
+      cat("this happened")
+    }
+    winner <- winnerz[sample(length(winnerz),1)]
+    if(!is.na(winner) & (!winner %in% winners)) {
+      winners <- c(winners,winner)
+      passz <- (mat[winner,] < thresh)
+      passz[is.na(passz)] <- T
+      cat("winner ",colnames(mat)[winner],"had",length(which(!passz)),"in ld. ",out.of(length(which(selected)),length(selected)),"\n")
+      selected <- selected & passz
+      if(any(is.na(selected))) { prv(selected,passz)}
+    }
+    selected[winner] <- F
+    ii <- which(selectedPre & !selected)
+    segm <- mat[ii, ,drop=F]
+    tot.dif <- colSums(segm,na.rm=T)
+    n.dif <- apply(segm,2,function(x) { length(which(is.na(x)))})
+    all.sums <- all.sums - tot.dif
+    all.ns <- all.ns - nrow(segm) + n.dif
+  }
+  jj <- proc.time()[3]; print(jj-kk)
+  cat("pruned",out.of((nsnp-length(winners)),nsnp),"SNPs\n")
+  return(winners)
+}
+   
+
+big.ld <- function(X,stats="R.squared",n.cores=1,filename="ldmat",tracker=F,limit.ram=FALSE) {
+  n.snp <- ncol(X)
+  filename <- paste0(filename,sample(10^6,1))
+  dir <- dirname(filename)
+  max.gb <- 4
+  if(all(dir==".")) { dir <- getwd() }
+  des <- paste(filename,"dsc",sep=".")
+  bck <- paste(filename,"bck",sep=".")
+  if(n.cores>1) { multi <- T } else { multi <- F }
+  bigLD <- big.matrix(nrow= n.snp,ncol= n.snp, backingfile=bck, dimnames=list(colnames(X),colnames(X)), backingpath=dir, descriptorfile=des)
+  split.to <- round(500*estimate.memory(bigLD)) # split into .1GB chunks, save RAM without creating groups too small to process
+ # if(n.cores>4) { split.to <- split.to * 4 } # divide more if using multicores
+  stepz <- round(seq(from=1,to=n.snp+1,length.out=round((split.to+1))))
+  if((tail(stepz,1)) != n.snp+1) { stepz <- c(stepz,n.snp+1) }
+  split.to <- length(stepz)-1
+  if(multi) {
+    job.count <- 0 
+    cc.collect <- numeric(n.cores)
+    runs <- lilColRange <- vector("list",n.cores)
+    for (cc in 1:split.to)
+    {
+      job.count <- job.count + 1
+      cc.collect[job.count] <- cc
+      # within submatrix cols
+      c1 <- stepz[cc]; c2 <- stepz[cc+1]-1  # check this in FN!
+      # do the copying
+      lilColRange[[cc]] <- c(c1:c2)
+      if(tracker) {      loop.tracker(cc,split.to) }
+      runs[[job.count]] <- parallel::mcparallel(
+        {
+          if(is.finite(sum(lilColRange[[cc]]))) {
+            ld(X,X[, lilColRange[[cc]]],stats=stats)
+          } else {  
+            NULL
+          }
+      })
+      ## after a run of n.cores jobs, consolidate
+      if(job.count>=n.cores | cc>=split.to) {
+        ## collect previous #'n.cores' runs 
+        list.set <- parallel::mccollect(runs[1:job.count])
+        for (dd in (which(cc.collect>0))) {
+          if(!is.null(list.set[[dd]])) {
+            bigLD[,lilColRange[[cc.collect[dd]]]] <- list.set[[dd]]
+          }
+        }
+        job.count <- 0; runs <- vector("list",n.cores); cc.collect <- numeric(n.cores)
+        if(limit.ram & (cc %% (max.gb*10) == 0)) {
+          # reset memory after every 'max.gb' 1GB chunks to prevent skyrocketing RAM use #
+          fl.suc <- bigmemory::flush(bigLD) ;  if(!fl.suc) { cat("flush failed\n") } ; gc()
+          if(T) {
+            RR <- describe(bigLD); rm(bigLD); bigLD <- attach.big.matrix(RR,path=dir)
+          }
+        }
+      }
+      ####
+    }
+  } else {
+    for (cc in 1:split.to)
+    {
+      # within submatrix cols
+      c1 <- stepz[cc]; c2 <- stepz[cc+1]-1  # check this in FN!
+      # do the copying
+      lilColRange <- c(c1:c2)
+      if(tracker) {      loop.tracker(cc,split.to) }
+      if(is.finite(sum(as.numeric(lilColRange)))) {
+        nxt.chunk <- ld(X,X[, lilColRange],stats=stats)
+        bigLD[,lilColRange] <- nxt.chunk
+      } else {
+        cat(" Warning: empty interval ignored\n")
+      }
+      if(limit.ram & (cc %% (max.gb*10) == 0)) {
+        # reset memory after every 'max.gb' 1GB chunks to prevent skyrocketing RAM use #
+        fl.suc <- bigmemory::flush(bigLD) ;  if(!fl.suc) { cat("flush failed\n") } ; gc()
+        if(T) {
+          RR <- describe(bigLD); rm(bigLD); bigLD <- attach.big.matrix(RR,path=dir)
+        }
+      }
+    }
+  }
+  return(bigLD)
+}
+
 # sml <- list.files("/chiswick/data/ncooper/iChipData/",pattern="temp.ichip")
 # sml <- as.list(sml)
 # sml <- sml[c(11,15:22,1:10,12:14,24,23)]
 # dd <- "/chiswick/data/ncooper/iChipData/"
 
 # dd <- ("/chiswick/data/ncooper/imputation/T1D/PQDATA/")
+# sml <- list.files(dd)
 # sml <- as.list(sml)
 # sml <- sml[c(18:19,26:40,1:17,20:24)]
 
@@ -1489,7 +1709,7 @@ bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missin
       if(!mn.zero) { mN <- 0 }
       if(!sd.hwe) { sD <- 1 }
       #########
-      split.to <- 10*round(estimate.memory(next.chr)) # split into .1GB chunks, save RAM without creating groups too small to process
+      split.to <- round(10*estimate.memory(next.chr)) # split into .1GB chunks, save RAM without creating groups too small to process
       #if(n.cores>4) { split.to <- split.to * 4 } # divide more if using multicores
       nr <- nrow(next.chr); nc <- ncol(next.chr)
       stepz <- round(seq(from=1,to=nc+1,length.out=round((split.to+1))))
@@ -1501,16 +1721,16 @@ bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missin
         c1 <- stepz[cc]; c2 <- stepz[cc+1]-1  # check this in FN!
         # do the copying
         lilColRange <- c(c1:c2)
-        if(is.finite(sum(lilColRange))) {
+        if(is.finite(sum(as.numeric(lilColRange)))) {
           #cat(range(lilColRange)); cat(dim(bigTrans)); cat(dim(bigMat))
           nxt.chunk <- raw[1:nr,lilColRange,drop=F]
-          nxt.chunk <- apply(nxt.chunk,2,as.numeric)
+          nxt.chunk <- t(apply(nxt.chunk,2,as.numeric))
           if(typ2=="snpSubGroups") {
 #            prv(stz[dd],enz[dd])
             #return(list(bigSnp=bigSnp,stz=stz,enz=enz,dd=dd,nr=nr,lilColRange=lilColRange,nxt.chunk=nxt.chunk,mN=mN,sD=sD))
-            bigSnp[1:nr,(stz[dd]:enz[dd])[lilColRange]] <- (nxt.chunk-mN[lilColRange])/sD[lilColRange]  
+            bigSnp[1:nr,(stz[dd]:enz[dd])[lilColRange]] <- t((nxt.chunk-mN[lilColRange])/sD[lilColRange]  )
           } else {
-            bigSnp[stz[dd]:enz[dd],lilColRange] <- (nxt.chunk-mN[lilColRange])/sD[lilColRange]
+            bigSnp[stz[dd]:enz[dd],lilColRange] <- t((nxt.chunk-mN[lilColRange])/sD[lilColRange])
           }
         } else {
           cat(" Warning: empty interval ignored\n")
@@ -1569,19 +1789,64 @@ SnpMatrix.to.sml.by.chr <- function(X,snp.info=NULL,dir=NULL,build=NULL,genomeOr
   return(sml)
 }
 
-# to PCA 1000 genomes
+# to PCA 1000 genomes for available iChip Snps
+# # assume already extracted 1000 genomes for ichip and aligned using annotSnpStats to our dataset (T1D-ichip)
 # (load("/chiswick/data/ncooper/imputation/THOUSAND/aligned1000g.RData"))
 # newsml <- SnpMatrix.to.sml.by.chr(asm.1000g.aligned)
-# ld.pruned <- smlapply(newsml,ld.prune.chr,thresh=0.1,n.cores=12)
+# ld.pruned <- smlapply(newsml,ld.prune.chr,thresh=0.1,n.cores=12) # this step is slow (several hours?)
 # pruned.1000g <- NULL
-# pruned.1000g <- asm.1000g.aligned[,unlist(ld.pruned)]
+# pruned.1000g <- asm.1000g.aligned[,names(unlist(ld.pruned))]
 # save(ld.pruned,pruned.1000g,file="pruned.list1000g.RData")
-# big1000 <- bigSnpMatrix(pruned.1000g,"big1000g")
-# result.quick <- big.PCA(big1000)
-# result.loadings <- big.PCA(big1000,return.loadings=TRUE)
-# save(result.quick,result.loadings,pruned.1000g,file=""pruned.list"PCA.1000g.RData")
+# (load("pruned.list1000g.RData"))
+# (load("/chiswick/data/ncooper/imputation/THOUSAND/sample.info.1000g.RData"))
+# big1000.A <- bigSnpMatrix(pruned.1000g,"big1000gA")
+# big1000.B <- bigSnpMatrix(pruned.1000g,"big1000gB",mn.zero=TRUE,sd.hwe=FALSE)
+# result.quick.A <- big.PCA(big.t(big1000.A),return.loadings=TRUE)
+# result.quick.B <- big.PCA(big.t(big1000.B),return.loadings=TRUE)
+# anc <- factor(sample.info$ancestry[match(rownames(result.quick.A$PCs),rownames(sample.info))])
+# pdf("PCA1000.A.pdf"); plot(result.quick.A$PCs[,"PC1"],result.quick.A$PCs[,"PC2"],col=get.distinct.cols(14)[as.numeric(anc)],ylim=c(-.05,.1))
+# legend("top",legend=paste(unique(anc)),col=get.distinct.cols(14)[as.numeric(unique(anc))],pch=19,ncol=4); dev.off()
+# pdf("PCA1000.B.pdf"); plot(result.quick.B$PCs[,"PC1"],result.quick.B$PCs[,"PC2"],col=get.distinct.cols(14)[as.numeric(anc)],ylim=c(-.05,.1))
+# legend("top",legend=paste(unique(anc)),col=get.distinct.cols(14)[as.numeric(unique(anc))],pch=19,ncol=4); dev.off()
+# use snpSel to get all the desired SNP data for the ancestry SNPs
+# # top5pc.A <- (which(abs(result.quick.A$loadings[,1])>.01234))
+# # divide 1 by 2 of vec: estimate.eig.vpcs(result.quick.A$Evalues,M=big.t(big1000.A))$variance.pcs[1:2]
+# top5pc.A <- rev(order(abs(result.quick.A$loadings[,1])+1.47*abs(result.quick.A$loadings[,2])))[1:10000]
+# # top5pc.B <- (which(abs(result.quick.B$loadings[,1])>.013295))
+# top5pc.B <- rev(order(abs(result.quick.A$loadings[,1])+1.27*abs(result.quick.A$loadings[,2])))[1:10000]
+# pca1.pred <- scale(big1000.A[,top5pc.A],center=T,scale=F) %*% result.quick.A$loadings[top5pc.A,1]
+# pca2.pred <- scale(big1000.A[,top5pc.A],center=T,scale=F) %*% result.quick.A$loadings[top5pc.A,2]
+# cor(pca1.pred,result.quick.A$PCs[,1],use="pairwise.complete")
+# # [1,] 0.9981955
+# cor(pca2.pred,result.quick.A$PCs[,2],use="pairwise.complete")
+# # [1,] 0.9992125
+# cor(pca2.pred,result.quick.A$PCs[,2],use="pairwise.complete")
+# pdf("pca1.pdf"); plot(pca1.pred,result.quick.A$PCs[,1]); dev.off()
+# top5pc.An <- colnames(big1000.A)[top5pc.A]
+# top5pc.Bn <- colnames(big1000.B)[top5pc.B]
+# save(top5pc.An,top5pc.Bn,result.quick.A,result.quick.B,anc,sample.info,pruned.1000g,file="pruned.list.PCA.1000g.RData")
+### GET all T1D data ###
+# dd <- ("/chiswick/data/ncooper/imputation/T1D/PQDATA/")
+# sml <- list.files(dd)
+# sml <- as.list(sml)
+# sml <- sml[c(18:19,26:40,1:17,20:24)]
+# SM <- snpSel(sml,snps=top5pc.An,dir=dd)
+# BSM.A <- bigSnpMatrix(SM,"bigPCAa",ref.data=pruned.1000g)
+# SM2 <- snpSel(sml,snps=top5pc.Bn,dir=dd)
+# BSM.B <- bigSnpMatrix(SM2,"bigPCAb",mn.zero=TRUE,sd.hwe=FALSE,ref.data=pruned.1000g)
+# pca.bsm.a.pred.1 <- scale(BSM.A[,top5pc.An],center=T,scale=F) %*% result.quick.A$loadings[top5pc.A,1]
+# pca.bsm.a.pred.2 <- scale(BSM.A[,top5pc.An],center=T,scale=F) %*% result.quick.A$loadings[top5pc.A,2]
+# pca.bsm.b.pred.1 <- scale(BSM.B[,top5pc.Bn],center=T,scale=F) %*% result.quick.B$loadings[top5pc.Bn,1]
+# pca.bsm.b.pred.2 <- scale(BSM.B[,top5pc.Bn],center=T,scale=F) %*% result.quick.B$loadings[top5pc.Bn,2]
+# pdf("PCAT1D.A.pdf"); plot(result.quick.A$PCs[,"PC1"],result.quick.A$PCs[,"PC2"],col=get.distinct.cols(14)[as.numeric(anc)],ylim=c(-.05,.1))
+# points(pca.bsm.a.pred.1,pca.bsm.a.pred.2,col="black")
+# legend("top",legend=paste(unique(anc)),col=get.distinct.cols(14)[as.numeric(unique(anc))],pch=19,ncol=4); dev.off()
+# pdf("PCAT1D.B.pdf"); plot(result.quick.B$PCs[,"PC1"],result.quick.B$PCs[,"PC2"],col=get.distinct.cols(14)[as.numeric(anc)],ylim=c(-.05,.1))
+# points(pca.bsm.b.pred.1,pca.bsm.b.pred.2,col="black")
+# legend("top",legend=paste(unique(anc)),col=get.distinct.cols(14)[as.numeric(unique(anc))],pch=19,ncol=4); dev.off()
 
-ld.prune.chr <- function(X,stats="R.squared",thresh=.50) {
+ld.prune.chr <- function(X,stats="R.squared",thresh=.1) {
+  if(estimate.memory(ncol(X)^2)>=1) { ld.prune.big(X,stats=stats,thresh=thresh) } 
   kk <- proc.time()[3]; mat <- ld(X,X,stats=stats[1]) ; jj <- proc.time()[3]; print(jj-kk)
   matt <- mat; matt[is.na(matt)] <- 0
   exc <- length(matt[matt>thresh])

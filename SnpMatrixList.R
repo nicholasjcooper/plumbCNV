@@ -115,7 +115,7 @@ sampSel <- function(snpMatLst,samples,dir=NULL) {
   newlist <- fun.snpMatLst(snpMatLst,fun=sampselfun,dir=dir,samples=samples)
   nulz <- sapply(newlist,is.null)
   newlist <- newlist[!nulz] # remove NULLs from this list or else rbind doesn't work properly
-  typ <- get.split.type(snpMatLst,dir=dd)
+  typ <- get.split.type(snpMatLst,dir=dir)
   if(typ=="snpSubGroups") {
     if(is(newlist[[1]])[1] %in% c("aSnpMatrix","aXSnpMatrix")) { fun <- "cbind3" } else { fun <- "cbind" }
   } else {
@@ -153,7 +153,7 @@ snpSel <- function(snpMatLst,snps,dir=NULL) {
   nulz <- sapply(newlist,is.null)
   newlist <- newlist[!nulz] # remove NULLs from this list or else cbind doesn't work properly
  # prv(newlist)
-  typ <- get.split.type(snpMatLst,dir=dd)
+  typ <- get.split.type(snpMatLst,dir=dir)
   if(typ=="snpSubGroups") {
     if(is(newlist[[1]])[1] %in% c("aSnpMatrix","aXSnpMatrix")) { fun <- "cbind3" } else { fun <- "cbind" }
   } else {

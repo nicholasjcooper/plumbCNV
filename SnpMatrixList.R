@@ -20,7 +20,6 @@
 #smlapply - 'lapply' function for SnpMatrixList, also works for normal SnpMatrix or aSnpMatrix or XSnpMatrix
 #sync.snpmat.with.info - for a snpMatLst, sync with snp.info and sample.info to exclude snps/samples not in the support files
 #sample.info.from.sml - internal, make a sample.info object using either just names, or using a snpMatLst too
-#parse.sexcheck - read a plink sexcheck file and derive the list of samples to exclude
 #doSampQC - run sample quality control on a SnpMatrix or snpMatLst
 #doSnpQC - run SNP quality control on a SnpMatrix or snpMatLst
 #apply.snp.thresholds - apply the thresholds from doSnpQC() to a dataset to get exclusion lists
@@ -34,6 +33,8 @@
 #snp.info.from.annot - create a full snp.info object from a list of aSnpMatrix objects
 #snp.from.annot - create a (partial) snp.info object from a single aSnpMatrix object
 #samp.from.annot - create a (partial) sample.info object from a single aSnpMatrix object 
+# annot.sep.support - Create aSnpMatrix from SnpMatrix plus SNP/sample support files
+# split.pq - split an aSnpMatrix into a long and short arm (arm.p and arm.q)
 ###############
 
 
@@ -658,22 +659,6 @@ sample.info.from.sml <- function(snpMatLst, subIDs.actual=NULL, dir=NULL, plink=
   return(sample.info)
 }
 
-
-# read a plink sexcheck file and derive the list of samples to exclude
-parse.sexcheck <- function(fn, excl=0.5, write=TRUE) {
-  sc <- read.table(fn,header=T)
-  sc <- sc[sc$STATUS!="OK",]
-  sc <- sc[!is.na(sc$F),]
-  somefails <- ((sc$PEDSEX==1 & sc$SNPSEX==2) | (sc$PEDSEX==2 & sc$SNPSEX==1))
-  morefails <- sc$F>excl
-  failers <- paste(sc[somefails | morefails,"IID"])
-  if(write & length(failers)>0) {
-    out.fn <- cat.path(dirname(fn),basename(fn),suf="fail",ext="txt")
-    writeLines(failers,con=out.fn)
-    cat("wrote samples failing sexcheck to",out.fn,"\n")
-  }
-  return(failers)
-}
 
 
 # run sample quality control on a SnpMatrix or snpMatLst
@@ -1649,7 +1634,7 @@ big.ld <- function(X,stats="R.squared",n.cores=1,filename="ldmat",tracker=F,limi
 # sml <- sml[c(18:19,26:40,1:17,20:24)]
 
 # convert a snpMatLst to a single SnpMatrix #
-bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missing=TRUE,
+bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missing=TRUE, ref.data=NULL,
                              filename="tempMatrix",tracker=TRUE, limit.ram=FALSE, mn.zero=TRUE, sd.hwe=TRUE) {
   typ <- snp.mat.list.type(snpMatLst,fail=TRUE) #disk or memory
   typ2 <- get.split.type(snpMatLst,dir=dir)  # singleEntry snpSubGroups sampleSubGroups
@@ -1704,8 +1689,12 @@ bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missin
       }
       #### means and SDs for standardizing ####
       if(mn.zero | sd.hwe) {
-        oo <- correct.by(next.chr); mN <- oo$mean; sD <- oo$sd
-      } 
+        if(!is.null(ref.data)) {
+          oo <- correct.by(ref.data[,colnames(next.chr)]); mN <- oo$mean; sD <- oo$sd
+        } else {
+          oo <- correct.by(next.chr); mN <- oo$mean; sD <- oo$sd
+        }
+      }
       if(!mn.zero) { mN <- 0 }
       if(!sd.hwe) { sD <- 1 }
       #########
@@ -1880,4 +1869,205 @@ ld.prune.chr <- function(X,stats="R.squared",thresh=.1) {
   jj <- proc.time()[3]; print(jj-kk)
   cat("pruned",out.of((nsnp-length(winners)),nsnp),"SNPs\n")
   return(winners)
+}
+
+
+
+
+# split an aSnpMatrix into a long and short arm (arm.p and arm.q)
+split.pq <- function(aSnpMat,build=37,pqvec=FALSE,verbose=TRUE) {
+  si <- snp.from.annot(aSnpMat)
+  if(!is(si)[1]=="RangedData") { si <- as(si,"RangedData") }
+  if(!is(si)[1]=="RangedData") { stop("couldn't extract snp.info from aSnpMat") }
+  cent <- get.centromere.locs(build=build)
+  cnt.ch <- chr2(cent)
+  chrz <- chrNames2(si)
+  chrz2 <- gsub("chr","",paste(chrz),ignore.case = TRUE)
+  arm <- rep("p",nrow(si))
+  for(cc in 1:length(chrz)) {
+    ii <- which(cnt.ch==chrz2[cc])
+    if(length(ii)>0) { 
+      if(length(ii)>1) {
+        warning("more than one centromere entry for a single chromosome - import failure likely")
+      }
+      nxt.chr <- chr.sel(si,paste(chrz[cc]))
+      cent.loc <- start(cent[ii[1],])
+      if(verbose) { cat("centromere location:",cent.loc,"\n") }
+      posz <- start(nxt.chr)
+      indx <- match(rownames(nxt.chr),rownames(si))
+      #prv(cent.loc,posz)
+      arm[indx][posz > cent.loc] <- "q"
+    } else {
+      if(!chrz2[cc] %in% c("XY","MT","M")) {
+        warning("centromere not found for chromosome labelled:",chrz2[cc])
+      }
+    }
+  }
+  #bb <- Band(si,build=37)
+  #arm <- rep("p",nrow(si))
+  #arm[grep("q",bb)] <- "q"
+  if(pqvec) { return(arm) }
+  if(length(unique(arm))==1) { warning("only arm values of ",unique(arm)," were found"); return(aSnpMat) }
+  mat1 <- aSnpMat[,arm=="p"]
+  mat2 <- aSnpMat[,arm!="p"]
+  if(verbose) { cat("split aSnpMatrix into",ncol(mat1),"on arm 'p' and",ncol(mat2),"on arm 'q'\n")  }
+  out <- list(arm.p=mat1,arm.q=mat2)
+  return(out)
+}
+
+#' Create aSnpMatrix from SnpMatrix plus SNP/sample support files
+#' 
+#' @param snpMat a SnpMatrix or XSnpMatrix
+#' @param snp.info annotation with rownames as snp labels, then chromosome, position and allele 
+#' codes, can be RangedData, GRanges, ChipInfo or data.frame type
+#' @param sample.info data.frame with rownames of sample ids, may also contain 'sex' and some
+#' phenotype variable, such as 'pheno' or 'affected' or 'case' (autodetected), may also contain
+#' pedigree information, such as a plink .fam/ped file
+#' @param snp.excl text filename or character vector containing SNP ids to exclude
+#' @param samp.excl text filename or character vector containing sample ids to exclude
+#' @export
+#' @return returns an annotSnpStats::aSnpMatrix object with @samples and @snps info taken
+#' from the inputted support files. Will only include samples and SNPs occuring in both
+#' the dataset and the support files.
+#' @examples
+#' ## my own example for now, only works @DIL ##
+#' t1.dr <- "/chiswick/data/ncooper/imputation/T1D/"
+#' setwd(t1.dr)
+#' smp <- reader("/chiswick/data/ncooper/iChipData/sample.info.RData")
+#' snp.excl <- "/chiswick/data/ncooper/imputation/T1D/snpsExcluded.txt"
+#' smp.excl <- "/chiswick/data/ncooper/imputation/T1D/sampsExcluded.txt"
+#' print(load("CHR20.RData"))
+#' x <- gt.for.impute
+#' si <- sup.for.impute
+#' aSnpMat <- annot.sep.support(x,si,smp, snp.excl=snp.excl, samp.excl=smp.excl)
+annot.sep.support <- function(snpMat, snp.info, sample.info, snp.excl=NULL, 
+                              samp.excl=NULL, warn.int=TRUE, genome.order=TRUE, verbose=TRUE) {
+  #### check for valid input types ####
+  if(!is(snpMat)[1] %in% c("XSnpMatrix","SnpMatrix")) { 
+    if(snp.mat.list.type(snpMat)!="error") {
+      snpMat <- snpMatLst.collate(snpMat)
+    } else {
+      stop("snpMat must be of type 'SnpMatrix' or 'XSnpMatrix' or a 'snpMatrixList'") 
+    }
+  }
+  if(is(snp.info)[1] %in% c("RangedData","GRanges","ChipInfo")) { 
+    snp.info <- as(snp.info,"GRanges") 
+    ii <- grep("elementMetadata.",colnames(mcols(snp.info)))
+    if(length(ii)>0) {
+      colnames(mcols(snp.info)) <- gsub("elementMetadata.","",colnames(mcols(snp.info)))
+    }
+  } else { 
+    snp.info <- force.frame(snp.info)
+    snp.info <- column.salvage(snp.info,"pos",c("Start","Pos","pos","POS","Pos37","pos37","Pos36","pos36","position320"),ignore.case=FALSE)
+    snp.info <- column.salvage(snp.info,"chr",c("chr","chromosome","chrom","chromo","space","seqnames"),ignore.case=TRUE)
+    #snp.info <- column.salvage(snp.info,"end",c("end"),ignore.case=TRUE)
+    print(head(snp.info))
+    snp.info <- data.frame.to.ranged(snp.info,GRanges=TRUE)
+  }
+  if(!is(snp.info)[1] %in% c("GRanges")) { stop("snp.info must be coercible to a data.frame") }
+  if(genome.order) { snp.info <- toGenomeOrder(snp.info) }
+  sample.info <- force.frame(sample.info)
+  if(!is(sample.info)[1] %in% c("data.frame")) { stop("sample.info must be coercible to a data.frame") }
+  ###############################
+  # find the right columns in the sample file
+  sample.info <- column.salvage(sample.info,"affected",c("affected","phenotype","pheno","case","cases","phenot","phen","aff","ph","controls","ctrls","ctrl","control"),ignore.case=TRUE)
+  # extract optional fields
+  suppressWarnings({
+    sample.info <- column.salvage(sample.info,"sex",c("sex","gender","mf"),ignore.case=TRUE);
+    sample.info <- column.salvage(sample.info,"father",c("father","paternal","pat"),ignore.case=TRUE);
+    sample.info <- column.salvage(sample.info,"mother",c("mother","maternal","mat"),ignore.case=TRUE);
+    sample.info <- column.salvage(sample.info,"pedigree",c("pedigree","family","fam"),ignore.case=TRUE);
+    sample.info <- column.salvage(sample.info,"id",c("id","sampleid","caseid","member"),ignore.case=TRUE)
+    sample.info <- column.salvage(sample.info,"plate",c("plate","array.plate","plateid","plate.id"),ignore.case=TRUE)
+  })
+  if(!is.null(snp.excl)) { snp.excl <- force.vec(snp.excl) }
+  if(!is.null(samp.excl)) { samp.excl <- force.vec(samp.excl) }
+  ## now can assume valid input parameters have been checked ##
+  samps.in.dat <- rownames(snpMat)
+  snps.in.dat <- colnames(snpMat)
+  samps.in.support <- rownames(sample.info)
+  snps.in.support <- rownames(snp.info)
+  if(warn.int) {
+    # warn when sample/snp support doesn't perfectly match the SnpMatrix row/colnames #
+    if(!all(samps.in.dat %in% samps.in.support)) { warning("sample list in support differs from data, will take intersection")}
+    if(!all(snps.in.dat %in% snps.in.support)) { warning("SNP list in support differs from data, will take intersection")}
+  }
+  final.samps <- samps.in.dat[(samps.in.dat %in% samps.in.support) & (!samps.in.dat %in% samp.excl)]
+  final.snps <- snps.in.dat[(snps.in.dat %in% snps.in.support) & (!snps.in.dat %in% snp.excl)]
+  if(length(final.snps)<1) { warning("after filtering, no SNPs remain") ; return(NULL) }
+  if(length(final.samps)<1) { warning("after filtering, no samples remain") ; return(NULL) }
+  if(genome.order) { snp.ord <- rownames(snp.info); final.snps <- snp.ord[snp.ord %in% final.snps] }
+  pre <- Dim(snpMat)
+  snpMat <- snpMat[final.samps,final.snps]
+  post <- Dim(snpMat)
+  if(verbose) { cat("snpMat original size: ",comma(pre),"; new size:",comma(post),"\n") }
+  pre <- Dim(sample.info) ; sample.info <- sample.info[final.samps,] ;  post <- Dim(sample.info)
+  if(verbose) { cat("sample.info original size: ",comma(pre),"; new size:",comma(post),"\n") }
+  #prv(snp.info)
+  pre <- Dim(snp.info) ; snp.info <- snp.info[final.snps,] ;  post <- Dim(snp.info)
+  if(verbose) { cat("snp.info original size: ",comma(pre),"; new size:",comma(post),"\n") }
+  #################################
+  ##### CREATE THE @SNPS SLOT #####
+  # find alleles, and other support in the snp.info object
+  df.info <- ranged.to.data.frame(snp.info,include.cols=TRUE)
+  #
+  df.info <- column.salvage(df.info,"allele.1",c("allele.1","allele_1","allele-1","a1","allele1",
+                                                 "allele-A","alleleA","allele.a","allele_a","forward","fwd","allele.f","allele.fwd"),ignore.case=TRUE)
+  df.info <- column.salvage(df.info,"allele.2",c("allele.2","allele_2","allele-2","a2","allele2",
+                                                 "allele-B","alleleB","allele.b","allele_b","backward","bk","bck","allele.bck"),ignore.case=TRUE)
+  # extract optional fields
+  suppressWarnings({
+    df.info <- column.salvage(df.info,"cM",c("CM","distance","map"),ignore.case=TRUE);
+    df.info <- column.salvage(df.info,"snp.name",c("snp.name","snpid","snp.id","dbSNP","id","label","rs.id","rsid"),ignore.case=TRUE)
+  })
+  snp.rn <- rownames(snp.info)
+  snp.ch <- chr2(snp.info)
+  if("snp.name" %in% colnames(df.info)) { snp.nm <- df.info[,"snp.name"] } else { snp.nm <- snp.rn }
+  if("cM" %in% colnames(df.info)) { snp.cm <- df.info[,"cM"] } else { snp.cm <- rep(NA,length(snp.rn)) }
+  snp.ps <- start(snp.info)
+  if("allele.1" %in% colnames(df.info)) { snp.a1 <- df.info[,"allele.1"] } else { snp.a1 <- rep(NA,length(snp.rn)) }
+  if("allele.2" %in% colnames(df.info)) { snp.a2 <- df.info[,"allele.2"] } else { snp.a2 <- rep(NA,length(snp.rn)) }
+  if(!all(length(snp.rn)==c(length(snp.ch),length(snp.nm),length(snp.cm),length(snp.ps),length(snp.a1),length(snp.a2)))) {
+    stop("Import of snp.info failed, columns had different lengths") # this should be almost impossible to happen HERE
+  } else {
+    if(verbose) { cat("@snps slot created successfully\n") }
+  }
+  snps.slot <- data.frame(chromosome=snp.ch,snp.name=snp.nm,cM=snp.cm,position=snp.ps,allele.1=snp.a1,allele.2=snp.a2)
+  rownames(snps.slot) <- snp.rn
+  allele.slot <- c("allele.1","allele.2")
+  #################################
+  #### CREATE THE @SAMPLES SLOT ###
+  smp.rn <- rownames(sample.info)
+  if("pedigree" %in% colnames(sample.info)) { smp.pd <- sample.info[,"pedigree"] } else { smp.pd <- smp.rn }
+  if("member" %in% colnames(sample.info)) { smp.mb <- sample.info[,"member"] } else { smp.mb <- smp.rn }
+  if("father" %in% colnames(sample.info)) { smp.ft <- sample.info[,"father"] } else { smp.ft <- rep(NA,length(smp.rn)) }
+  if("mother" %in% colnames(sample.info)) { smp.mt <- sample.info[,"mother"] } else { smp.mt <- rep(NA,length(smp.rn)) }
+  if("sex" %in% colnames(sample.info)) { smp.sx <- sample.info[,"sex"] } else { smp.sx <- rep(NA,length(smp.rn)) }
+  if("plate" %in% colnames(sample.info)) { smp.pl <- sample.info[,"plate"] } else { smp.pl <- rep(NA,length(smp.rn)) }
+  smp.ph <- sample.info[,"affected"]
+  if(!all(length(smp.rn)==c(length(smp.pd),length(smp.mb),length(smp.ft),length(smp.mt),length(smp.sx),length(smp.ph),length(smp.pl)))) {
+    stop("Import of sample.info failed, columns had different lengths") # this should be almost impossible to happen HERE
+  } else {
+    if(verbose) { cat("@samples slot created successfully\n") }
+  }
+  samps.slot <- data.frame(pedigree=smp.pd,member=smp.mb,father=smp.ft,mother=smp.mt,sex=smp.sx,affected=smp.ph) #,plate=snp.pl)
+  rownames(samps.slot) <- smp.rn
+  pheno.slot <- c("affected")
+  #################################
+  
+  ## aSnpMatrix format SPECIFICATION: ##
+  #@.Data a SnpMatrix
+  #@snps  
+  #              chromosome     snp.name cM position allele.1 allele.2
+  # imm_1_898835          1 imm_1_898835 NA   898835     <NA>        A
+  #@samples
+  #          pedigree             member father mother sex affected
+  # 2447     2447 120434_A01_BLOOD320736     NA     NA   1        1
+  #@phenotype character() [phenotype colname]
+  #@alleles = c("allele.1", "allele.2") [allele colnames]
+  #######################################
+  aSnpMat <- new("aSnpMatrix", .Data = snpMat, snps = snps.slot, 
+                 samples = samps.slot, alleles = allele.slot, 
+                 phenotype = pheno.slot)
+  return(aSnpMat)
 }

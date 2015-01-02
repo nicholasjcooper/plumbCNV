@@ -14,7 +14,7 @@ To use this now, you must install by copying the files to a directory on your ma
 Running instructions
 ====================
 
-At the moment you need to source() the individual function files: FunctionsCNVAnalysis.R, geneticFunctions.R, validation.functions.R, iFunctions.R and tdtFunctions.R so that all required functions are loaded into the session (if you modify the path in the header of FunctionsCNVAnalysis.R, the other scripts should be sourced automatically when this file is sourced). Package installation may or may not happen automatically - try 'load.all.libs()' and make sure everything works, and ensure that packages are up to date, particularly for the bioconductor packages, especially for the human genome BSgenome.Hsapiens.UCSC.hg18/hg19 reference which has changed since july 2014.
+At the moment you need to source() the individual function files: FunctionsCNVAnalysis.R, generalCNVFunctions.R, validation.functions.R, iFunctions.R, qcScripts.R, SnpMatrixList.R and tdtFunctions.R so that all required functions are loaded into the session (if you modify the path in the header of FunctionsCNVAnalysis.R, the other scripts should be sourced automatically when this file is sourced). Package installation may or may not happen automatically - try 'load.all.libs()' and make sure everything works, and ensure that packages are up to date, particularly for the bioconductor packages, especially for the human genome BSgenome.Hsapiens.UCSC.hg18/hg19 reference which has changed since july 2014.
 
 To prepare for running, work your way through the instructions below. Feel free to contact me if you can't find your answer in this document [nick.cooper@cimr.cam.ac.uk]. Once it's all in place it should be quite easy to use, you just need to use one function 'plumbCNV()' which does everything really; it takes the input files as parameters, as well as various thresholds.
 
@@ -77,7 +77,7 @@ PERFORMANCE AND TIMINGS
 -----------------------
 
 This pipeline is build to handle very large microarray datasets. Initial testing has been done on 16,000 samples for a 200K SNP array. There is no reason foreseeable why 200,000 samples for a million SNPs would not work using the same code, as everything is scalable and NOT linearly dependent on RAM (it is linearly dependent in hard-disk space). 
-4GB of RAM is a minimum requirement (use low.ram=TRUE) and things will run more quickly the more memory you have. 20GB or more is recommended for the best performance. Terabytes of Hard Disk space may be required for large datasets. The code is strongly parallel, and running with multicores is ideal. Most of the multicore operation assumes that the cores are immediately accessible (for instance via the R-package 'multicore'). Use of GRIDs/Clusters is supported for limited operations within the pipeline, mainly to run PennCNV. To utilize this functionality you may need to follow the instructions for CLUSTERS/GRIDs just below. Most of my running of the pipeline at the DIL lab has used specs like:
+4GB of RAM is a minimum requirement (with less than 8GB, use low.ram=TRUE) and things will run more quickly the more memory you have. 20GB or more is recommended for the best performance. Terabytes of Hard Disk space may be required for large datasets. The code is strongly parallel, and running with multiple cores is ideal. Most of the multicore operation assumes that the cores are immediately accessible (for instance via the R-package 'multicore'). Use of GRIDs/Clusters is supported for limited operations within the pipeline, mainly to run PennCNV. To utilize this functionality you may need to follow the instructions for CLUSTERS/GRIDs just below. Most of my running of the pipeline at the DIL lab has used specs like:
 
 Linux 64bit server
 * Largest dataset: 16,000 samples x 200K SNPs
@@ -102,7 +102,7 @@ my.slurm <- function(file.name,output.dir="",id="") {
 
 You just need to make sure that the function has the same arguments as the original function 'q.cmd' and that the output makes a call to the cluster that results in the output file being written to 'output.dir'.
 
-Alternatively you can set q.cores=0 to avoid using the cluster, and PennCNV will still be run in parallel using however many cores you have available. Another alternative is setting the 2 arguments: run.manual=TRUE,print.cmds=TRUE; which will print the bash/putty penn cnv commands to the console and allow you to run the CNV calling manually using whatever method you like. Although this option is largely untested.
+Alternatively you can set q.cores=0 to avoid using the cluster, and PennCNV will still be run in parallel using however many cores you have available. Another alternative is setting the 2 arguments: run.manual=TRUE, print.cmds=TRUE; which will print the bash/putty penn cnv commands to the console and allow you to run the CNV calling manually using whatever method you like. Although this latter option is largely untested.
 
 
 SYSTEM LIMITATIONS AND REQUIREMENTS
@@ -110,7 +110,7 @@ SYSTEM LIMITATIONS AND REQUIREMENTS
 
 * this pipeline will not work in MS Windows (except perhaps via putty to a linux server), it requires multiple linux commands installed. It WILL work on MAC OS X and Linux.
 
-* make sure PennCNV is installed for 64bit if your machine is 64-bit (default download is currently 32-bit)
+* make sure PennCNV is installed for 64bit if your machine is 64-bit (default PennCNV download is currently 32-bit)
 
 * if any single raw data files contain more than roughly 1,000,000,000 samples x snps, you may need to use the option to run SNP-QC in plink, as the SnpMatrix object is limited by the maximum permitted size of R-objects. Alternatively you can split the raw input files into as many subsets as you like and still analyse them as if they are one file, see instructions above
 
@@ -349,7 +349,7 @@ Trouble-shooting: Problems encountered by others
 
 * if your alleles are not coded in the genome studio file as A,C,G,T, make sure you enter a value for allele.codes=c() in the main function
 
-* plumbCNV is designed for reasonably large datasets, if you are using less than 100 samples or less than 10,000 SNPs you may encounter unexpected behaviour, as there has been little testing of these sorts of datasets.
+* plumbCNV is designed for reasonably large datasets, if you are using less than 100 samples or less than 10,000 SNPs you may encounter unexpected behaviour, as there has been little testing of these sizes of datasets.
 
 
 Description and Examples of output

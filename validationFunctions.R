@@ -407,7 +407,7 @@ plot.a.CNVR <- function(thisCNVR,dir,genes=T) {
   }
   legend("top",legend=c("T1D","Controls"),col=c("red","blue"),pch="-",bty="n",ncol=2,pt.cex=2)
   if(genes) {
-    gn <- plot.gene.annot(chr=ccc[1], pos=xl*10^6, x.scl=10^6, y.ofs=cc*1.15, width=cc/5, txt=T, chr.pos.offset=0,
+    gn <- plotGeneAnnot(chr=ccc[1], pos=xl*10^6, x.scl=10^6, y.ofs=cc*1.15, width=cc/5, txt=T, chr.pos.offset=0,
                           build="hg18", dir=dir, box.col="green", txt.col="black", join.col="red")
     return(gn)
   }
@@ -453,7 +453,7 @@ plot.lrr.CNVR <- function(thisCNVR,dir,genes=T,BAF=F,type="l",DEL=T,cex=1) {
   legend("top",legend=c("T1D","Controls"),col=c("red","blue"),pch="-",bty="n",ncol=2,pt.cex=2)
   if(genes) {
     if(BAF) { y.ofsx=max(yl)*0.8; wd<-max(yl)/5 } else { y.ofsx=.5*max(yl); wd<-diff(yl)/5 }
-    gn <- plot.gene.annot(chr=ccc[1], pos=xl*10^6, x.scl=10^6, y.ofs=y.ofsx, width=wd, txt=T, chr.pos.offset=0,
+    gn <- plotGeneAnnot(chr=ccc[1], pos=xl*10^6, x.scl=10^6, y.ofs=y.ofsx, width=wd, txt=T, chr.pos.offset=0,
                           build="hg18", dir=dir, box.col="green", txt.col="black", join.col="red")
     return(gn)
   }
@@ -869,7 +869,7 @@ get.correspondence <- function(all.runs.d,plots=F) {
   length.tab <- length.tab[order(length.tab[,2]),]
   length.tab <- length.tab[order(length.tab[,1]),]
   rownames(length.tab) <- NULL
-  range.tab <- data.frame.to.ranged(as.data.frame(length.tab),stringsAsFactors=FALSE)
+  range.tab <- data.frame.to.ranges(as.data.frame(length.tab),stringsAsFactors=FALSE)
   nr <- length(z1); tc <- table(all.runs.d$RUN); nc <- length(tc)
   mm <- matrix(nrow=nr,ncol=nc); colnames(mm) <- names(tc); rownames(mm) <- names(rnz)
   colvec <- 1:ncol(mm)
@@ -1286,7 +1286,7 @@ analyse.age.effect <- function(QPA,stat="percent.fail.bonf",scl=1000000,use.cor=
     loess.scatter(poz,statz[[cc]],main=paste("Chromosome",chrz[cc]),type="l",
                   xlab=scl.lab,xlim=xl,ylab=paste(stat,colm,"value"))
     # add telomere and centromere to plot
-    plot.ranges(rbind(tlm[chrz[cc]],ctm[chrz[cc]]),skip.plot.new=T,
+    plotRanges(rbind(tlm[chrz[cc]],ctm[chrz[cc]]),skip.plot.new=T,
                 scl=scl.lab,ylim=c(0,.5),lty="dotted",full.vertical=TRUE)
   }
   dev.off()
@@ -1479,11 +1479,11 @@ if(F) {
   bigLRR <- getBigMat(getSlot(DT,"big.qc"),dir$big)
   snp.info <- read.snp.info(dir)
   sample.info <- read.sample.info(dir)
-  # cnv <- big.extract.snp.ranges(range.snp(snp.info,nxt),samples=nxt$id,bigPCC)
+  # cnv <- big.extract.snp.ranges(rangeSnp(snp.info,nxt),samples=nxt$id,bigPCC)
   bigD <- bigLRR
   
-  #range.snp(snp.info,nxt)
-  st.en <- range.snp(snp.info,nxt)[19,]
+  #rangeSnp(snp.info,nxt)
+  st.en <- rangeSnp(snp.info,nxt)[19,]
   #"rs7284771","rs2283798" biggest 450k
   #"rs8140331","rs7284345" common 7k
   #"rs7284771","rs7284345" common big 300k

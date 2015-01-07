@@ -2937,7 +2937,7 @@ bw.plot.lrr <- function (samp.chr.means, SX=NULL, snp.info=NULL, samp.chr.sds=NU
  if(is.null(SX)) {  SX <- ((chrStarts[1:nC]+(chrLens[1:nC]/2))/scl) }
  YY <- samp.chr.means
  if(length(YY)!=nC) { warning("number of chromosomes in data doesn't match snp.info") }
- chr.select <- 1:nC
+ chrSelect <- 1:nC
  plot(SX, grpAv, cex=1.5,
       xlab = "Genome Position (Megabases)", ylab="Log R Ratio", 
       ,type="l", lty="dashed", col="black", ...)
@@ -2987,7 +2987,7 @@ plot.chr.ab.samples <- function (dir,bigMat2,chr.stat,chr.ab.samples.obj,snp.inf
   # set default to select all chromosomes for plotting
   chr.set <- chrNums(snp.info); nC <- length(chr.set)
   if(length(RR)!=nC) { warning("number of chromosomes in data doesn't match snp.info") }
-  chr.select <- 1:nC
+  chrSelect <- 1:nC
   if(colPlot) {
     if(!"gindx" %in% colnames(snp.info)) { 
       colPlot <- F
@@ -3017,7 +3017,7 @@ plot.chr.ab.samples <- function (dir,bigMat2,chr.stat,chr.ab.samples.obj,snp.inf
                                whole.genome=!crel, c.pre.n=c.pre.n, c.post.n=c.post.n, m.smooth=medSmooth,
                                ylim=limz, dir=dir,
                                main = titl, xlab = "Genome Position (Megabases)", ylab="Log-R Ratio")
-      x.coords <- out.list$x.coords; chr.select <- out.list$chr.select
+      x.coords <- out.list$x.coords; chrSelect <- out.list$chrSelect
       legend("topleft",legend=c("LRR-Mean by chromosome",
                                 "Raw LRR data [coloured by chromosome]"),cex=.7,
              lty=c("solid",NA),pch=c(NA,"."),col=c("black","grey"),bty="n")
@@ -3031,7 +3031,7 @@ plot.chr.ab.samples <- function (dir,bigMat2,chr.stat,chr.ab.samples.obj,snp.inf
                               lty=c("solid","dashed"),col=c("black","grey"),bty="n")
     }
     # add chromosome labels with bad ones coloured red
-    null.result <- add.chr.top.axis(chr.select, badChrN= chrN[[badcheckz[cc]]], x.coords, nC=nC)
+    null.result <- add.chr.top.axis(chrSelect, badChrN= chrN[[badcheckz[cc]]], x.coords, nC=nC)
     if(num.plots>1) { loop.tracker(cc,num.plots) }
   }
   dev.off()
@@ -7357,7 +7357,7 @@ get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info
   if(nrow(ranged)<1) { warning("passed range of length zero") ; return(NULL) }
   rownames(ranged) <- rN <- paste("CNV",1:nrow(ranged),sep="")
   if(!is.na(nsnp) & is(snp.info)[1]=="RangedData") {
-    fl <- exp.window.nsnp(ranged,snp.info,nsnp)
+    fl <- expand.nsnp(ranged,snp.info,nsnp)
     fl2 <- get.ratio.set(ranged,ratio=ratio,bp=bp)
     fl <- apply(fl,2,as.numeric)
     fl2 <- apply(fl2,2,as.numeric)
@@ -7379,7 +7379,7 @@ get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info
     if(any(fl[,1]>fl[,2])) { print(head(fl[fl[,1]>fl[,2],])) }
     left <- RangedData(ranges=IRanges(start=fl[,1],end=fl[,2],names=rownames(ranged)),space=chr2(ranged),id=idz)
     #rownames(left) <- rownames(ranged)
-    flanking_1 <- range.snp(toGenomeOrder2(left,strict=T),snp.info=snp.info)
+    flanking_1 <- rangeSnp(toGenomeOrder2(left,strict=T),snp.info=snp.info)
     if(nrow(flanking_1)!=length(idz)) { stop("unequal lengths, or id column missing from ranged") }
     if(!is.null(rownames(flanking_1))) { flanking_1 <- flanking_1[rN,] } # ensures same order
   }
@@ -7388,7 +7388,7 @@ get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info
     if(any(fl[,3]>fl[,4])) { print(head(fl[fl[,3]>fl[,4],])) }
     right <- RangedData(ranges=IRanges(start=fl[,3],end=fl[,4],names=rownames(ranged)),space=chr2(ranged),id=idz)
     #    rownames(right) <- rownames(ranged)
-    flanking_2 <- range.snp(toGenomeOrder2(right,strict=T),snp.info=snp.info)
+    flanking_2 <- rangeSnp(toGenomeOrder2(right,strict=T),snp.info=snp.info)
     if(nrow(flanking_2)!=length(idz)) { stop("unequal lengths, or id column missing from ranged") }
     if(!is.null(rownames(flanking_2))) { flanking_2 <- flanking_2[rN,] } # ensures same order
   }
@@ -7659,8 +7659,8 @@ calc.quality.stats <- function(DEL, bigBAF, bigPCC, snp.info, pr.acc=0.5,
   ## get the raw data
   cat("\nDeriving CNV quality scores\n")
   cat(" extracting data for CNVs and adjacent regions\n")
-  cnv <- big.extract.snp.ranges(range.snp(DEL,snp.info=snp.info),samples=DEL$id,bigPCC)
-  cnvbaf <- big.extract.snp.ranges(range.snp(DEL,snp.info=snp.info),samples=DEL$id,bigBAF,snp.info=snp.info)
+  cnv <- big.extract.snp.ranges(rangeSnp(DEL,snp.info=snp.info),samples=DEL$id,bigPCC)
+  cnvbaf <- big.extract.snp.ranges(rangeSnp(DEL,snp.info=snp.info),samples=DEL$id,bigBAF,snp.info=snp.info)
   if(do.chr) {
     #skipping chromosome QS reduces need to grab large chunks of data, reduces RAM req'mnt
     chrN <- chrIndices2(snp.info)
@@ -9286,7 +9286,7 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
   ## plot all samples in samples
   if(all(cnvPlotFileName!="")) { cnvPlotFileName <- paste(dir$res,cnvPlotFileName,sep="") }
   # set default to select all chromosomes for plotting
-  chr.select <- 1:length(chr.set) # should be overwritten after first plot
+  chrSelect <- 1:length(chr.set) # should be overwritten after first plot
   # if smoothing option in use then adjust y axis limits accordingly
   if (medSmooth) { limz <- c(-1,1) } else { limz <- c(-2,2) }
   blimz <- c(0,1)
@@ -9339,14 +9339,14 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
         legend("bottomleft",legend="Pre-PC LRR",pch=19,col="grey",cex=0.8,bty="n")
         legend("bottomright",legend="Post-PC LRR",pch=19,col=col1,cex=0.8,bty="n")
       }
-      x.coords <- out.list$x.coords; chr.select <- out.list$chr.select  
+      x.coords <- out.list$x.coords; chrSelect <- out.list$chrSelect  
       # legend("topleft",legend=c("Raw LRR data [coloured by chromosome]"),cex=.7,
       #         pch=c(21),col=c("grey"),bty="n")
       chrn <- chrN[[samples[cc]]]; 
       if(length(chrn)>1) { 
         chrn <- "number"
         # add chr labels with target coloured red
-        null.result <- add.chr.top.axis(chr.select, badChrN=NULL, x.coords, nC=length(chr.set), sub=F)
+        null.result <- add.chr.top.axis(chrSelect, badChrN=NULL, x.coords, nC=length(chr.set), sub=F)
       }
       if(auto.lab) { mtext(paste("Chromosome",chrn),side=3,line=0.5,cex=.9) }
       if(geneOverlay) {
@@ -9354,7 +9354,7 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
         if(zoom) {
           x.scl <- if(scl==10^6) { "mb" } else { if(scl==10^9 ) { "gb" } else { if(scl==10^3) { "kb"} else { "b" } } } 
           #print(scl); print(x.scl)
-          plot.gene.annot(gs=dat, chr=Chr[1], pos=Pos/scl, scl=x.scl, y.ofs=(as.numeric(medSmooth)*.5)-1, width=.5, txt=T,
+          plotGeneAnnot(gs=dat, chr=Chr[1], pos=Pos/scl, scl=x.scl, y.ofs=(as.numeric(medSmooth)*.5)-1, width=.5, txt=T,
                           build=build, box.col=gene.col, txt.col="black", join.col="red", dir=dir)
         } else {
           warning("no gene overlay option when plotting more than 1 chromosome")
@@ -9410,9 +9410,9 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
                                c.pre.n=c.pre.n, c.post.n=c.post.n, m.smooth=F, build=build, trunc=limz,
                                ylim=blimz, xlim=c.xlim, rng.mb=rng.mb, main=titl, xlab=xl, ylab="B Allele Frequency")
       
-      x.coords <- out.list$x.coords; chr.select <- out.list$chr.select
+      x.coords <- out.list$x.coords; chrSelect <- out.list$chrSelect
       # add chromosome labels with bad ones coloured red
-      if (!LRR & length(Chr)>1) { null.result <- add.chr.top.axis(chr.select, badChrN= NULL, x.coords, nC=length(chr.set), sub=F) }
+      if (!LRR & length(Chr)>1) { null.result <- add.chr.top.axis(chrSelect, badChrN= NULL, x.coords, nC=length(chr.set), sub=F) }
       #legend("topleft",legend=c("Raw BAF data [coloured by chromosome]"),cex=.7,
       #           pch=c(21),col=c("grey"),bty="n") 
       if(tag.cnvs & is(Cnv)[1]!="RangedData") {
@@ -9505,7 +9505,7 @@ get.dat.for.ranges <- function(ranges,dir,pcCor=T,BAF=F,snp.names=T,snp.pos=F,ge
   bigMat <- get.big.matrix(fn,dir$big)
   snp.info <- read.snp.info(dir)
   snp.info <- snp.info[snp.info$QCfail==0,]
-  first.last.snps <- range.snp(ranges,snp.info=snp.info)
+  first.last.snps <- rangeSnp(ranges,snp.info=snp.info)
   inf <- x.y.for.snp.range(first.last.snps,bigMat,snp.info,genome=genome,unord=BAF)
   besr <- big.extract.snp.ranges(first.last.snps,ranges$id,bigMat,snp.info=snp.info)
   if(snp.pos) { besr.x <- besr }
@@ -9607,14 +9607,14 @@ col.plot.lrr <- function (ID, bigMat, snp.info=NULL, centre.chr=1:22, rng.mb=NA,
   # set indices if only plotting a limited range of genome, eg only 2 adjacent chrs, etc
   if (plotAdj) {
     ii <- range(as.integer(centre.chr))
-    chr.select <- max(1,(ii[1]-c.pre.n)):min((ii[2]+c.post.n+1),nC); #print(ii); print(chr.select)
-    rng <- chrStarts[range(chr.select)]/scl
+    chrSelect <- max(1,(ii[1]-c.pre.n)):min((ii[2]+c.post.n+1),nC); #print(ii); print(chrSelect)
+    rng <- chrStarts[range(chrSelect)]/scl
     rng[1] <- floor(rng[1]); rng[2] <- ceiling(rng[2])
     #print(rng)
     select <- c( head(which(XX>rng[1]),1): tail(which(XX<rng[2]),1) ) 
   } else {
     select <- c(1:length(LRR.mat)) 
-    if(whole.genome) { chr.select <- 1:nC } else { chr.select <- targ.chr.ref }
+    if(whole.genome) { chrSelect <- 1:nC } else { chrSelect <- targ.chr.ref }
   }
   if(!"color" %in% colnames(snp.info)) {
     snp.info <- add.color.to.snp.info(snp.info=snp.info,scheme=scheme,col1=col1,col2=col2,hilite=targ.chr.ref)
@@ -9684,10 +9684,10 @@ col.plot.lrr <- function (ID, bigMat, snp.info=NULL, centre.chr=1:22, rng.mb=NA,
     if(length(yy)>0) {  points(xx,yy,col=ccc,pch=mypch,cex=mycex,...)  }
   }
   # add lines between the means of each chromosome
-  if (!is.null(samp.chr.means) & length(chr.select)>1 & whole.genome) {
-    lines(chr.x.labs[chr.select],samp.chr.means[chr.select]) }
-  out <- list(chr.x.labs,chr.select,select,offset)
-  names(out) <- c("x.coords","chr.select","select","offset")
+  if (!is.null(samp.chr.means) & length(chrSelect)>1 & whole.genome) {
+    lines(chr.x.labs[chrSelect],samp.chr.means[chrSelect]) }
+  out <- list(chr.x.labs,chrSelect,select,offset)
+  names(out) <- c("x.coords","chrSelect","select","offset")
   return(out)
 }
 

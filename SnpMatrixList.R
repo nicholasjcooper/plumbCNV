@@ -329,10 +329,10 @@ sml.1000 <- chr.list
 
 
 get.ichip.1000 <- function(support,build=37) {
-  sup <- data.frame.to.ranged(support,chr="chromosome",start="position",end="position",build=build)
-  keepers <- subsetByOverlaps(sup,get.support(build=build))
-  ii <- match(start(keepers),start(get.support()))
-  keepers[["ichip"]] <- rownames(get.support())[ii]
+  sup <- data.frame.to.ranges(support,chr="chromosome",start="position",end="position",build=build)
+  keepers <- subsetByOverlaps(sup,chip.support(build=build))
+  ii <- match(start(keepers),start(chip.support()))
+  keepers[["ichip"]] <- rownames(chip.support())[ii]
   return(keepers)
 }                                                                                                                                                                               
                                                                                                                                                                                     
@@ -1315,7 +1315,7 @@ snp.from.annot <- function(aSnpMat) {
   cn <- colnames(df)
   chr.col <- which(tolower(substr(cn,1,2)) %in% "ch")
   pos.col <- which(tolower(substr(cn,1,2)) %in% "po")
-  DF <- data.frame.to.ranged(df,start=cn[pos.col],end=cn[pos.col],chr=cn[chr.col],GRanges=FALSE)
+  DF <- data.frame.to.ranges(df,start=cn[pos.col],end=cn[pos.col],chr=cn[chr.col],GRanges=FALSE)
   DF[["QCfail"]] <- rep(0,nrow(DF))
   return(DF)
 }
@@ -1752,8 +1752,8 @@ SnpMatrix.to.sml.by.chr <- function(X,snp.info=NULL,dir=NULL,build=NULL,genomeOr
   typ <- is(X)[1]
   if(!typ %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) { stop("X must be a SnpMatrix or equivalent") }
   if(is.null(snp.info) & (typ %in% c("aSnpMatrix","aXSnpMatrix")))  { snp.info <- snp.from.annot(X) }
-  if(is.null(snp.info)) { snp.info <- get.support(build=build) }
-  if(any(!colnames(X) %in% rownames(snp.info))) { stop("all SNPs from X must have support in the aSnpMatrix, snp.info, or the result of get.support(build=build)")}
+  if(is.null(snp.info)) { snp.info <- chip.support(build=build) }
+  if(any(!colnames(X) %in% rownames(snp.info))) { stop("all SNPs from X must have support in the aSnpMatrix, snp.info, or the result of chip.support(build=build)")}
   snp.info <- snp.info[colnames(X),]
   if(genomeOrder) {
     snp.info <- toGenomeOrder(snp.info)
@@ -1890,7 +1890,7 @@ split.pq <- function(aSnpMat,build=37,pqvec=FALSE,verbose=TRUE) {
       if(length(ii)>1) {
         warning("more than one centromere entry for a single chromosome - import failure likely")
       }
-      nxt.chr <- chr.sel(si,paste(chrz[cc]))
+      nxt.chr <- chrSel(si,paste(chrz[cc]))
       cent.loc <- start(cent[ii[1],])
       if(verbose) { cat("centromere location:",cent.loc,"\n") }
       posz <- start(nxt.chr)
@@ -1962,7 +1962,7 @@ annot.sep.support <- function(snpMat, snp.info, sample.info, snp.excl=NULL,
     snp.info <- column.salvage(snp.info,"chr",c("chr","chromosome","chrom","chromo","space","seqnames"),ignore.case=TRUE)
     #snp.info <- column.salvage(snp.info,"end",c("end"),ignore.case=TRUE)
     print(head(snp.info))
-    snp.info <- data.frame.to.ranged(snp.info,GRanges=TRUE)
+    snp.info <- data.frame.to.ranges(snp.info,GRanges=TRUE)
   }
   if(!is(snp.info)[1] %in% c("GRanges")) { stop("snp.info must be coercible to a data.frame") }
   if(genome.order) { snp.info <- toGenomeOrder(snp.info) }
@@ -2009,7 +2009,7 @@ annot.sep.support <- function(snpMat, snp.info, sample.info, snp.excl=NULL,
   #################################
   ##### CREATE THE @SNPS SLOT #####
   # find alleles, and other support in the snp.info object
-  df.info <- ranged.to.data.frame(snp.info,include.cols=TRUE)
+  df.info <- ranges.to.data.frame(snp.info,include.cols=TRUE)
   #
   df.info <- column.salvage(df.info,"allele.1",c("allele.1","allele_1","allele-1","a1","allele1",
                                                  "allele-A","alleleA","allele.a","allele_a","forward","fwd","allele.f","allele.fwd"),ignore.case=TRUE)

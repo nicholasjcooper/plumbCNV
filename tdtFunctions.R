@@ -63,9 +63,9 @@ specific.denovo.analysis <- function(dir,suffix=54,DEL=TRUE,decline=0.5,rm.dups=
                 ss <- sum.dup[nmz,c(1:4,8,16:19)] 
               }
               if(rm.dups) {
-                DD <- data.frame.to.ranged(ss)
+                DD <- data.frame.to.ranges(ss)
                 DD <- remove.duplicated.id.ranges(DD,"genes")
-                ss <- ranged.to.data.frame(DD,TRUE)
+                ss <- ranges.to.data.frame(DD,TRUE)
                 nmz <- rownames(mm)
                 nmz <- nmz[nmz %in% rownames(ss)]
                 mm <- mm[nmz,]
@@ -258,9 +258,9 @@ length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2,q.thr=NA,
   LLB <- c(LL[-1],250000000)
   ## filter 'declines'
   if(rm.dups) {
-    DD <- data.frame.to.ranged(sum.del)
+    DD <- data.frame.to.ranges(sum.del)
     DD <- remove.duplicated.id.ranges(DD,"genes")
-    sum.del <- ranged.to.data.frame(DD,TRUE)
+    sum.del <- ranges.to.data.frame(DD,TRUE)
   }
   if(all(!is.na(dec.thr))) {
     sum.del <- sum.del[!is.na(sum.del$decline),]
@@ -269,7 +269,7 @@ length.analysis.fam <- function(suffix,DEL=TRUE,dec.thr=.2,q.thr=NA,
   if(all(!is.na(q.thr))) {
     #sum.del <- sum.del[sum.del$score>q.thr,]
   }
-  if(T1D | GENE) {  sd <- data.frame.to.ranged(sum.del[,1:3]) }
+  if(T1D | GENE) {  sd <- data.frame.to.ranges(sum.del[,1:3]) }
   #return(sd) # remove this line
   #iioo <- get.t1d.subset(sd,invert=invert.t1d)
   #iioo2 <- get.genic.subset(sd)
@@ -509,13 +509,13 @@ full.analysis.of.withandwithout <- function(trios=c(52,54,50,47,5522),no.trios=c
     }
     if(rm.dups) {
       sum.del <- reader(fn.t)$sum.del ; sum.dup <- reader(fn.t)$sum.dup
-      sum.del <- remove.duplicated.id.ranges(data.frame.to.ranged(sum.del))
-      sum.dup <- remove.duplicated.id.ranges(data.frame.to.ranged(sum.dup))
+      sum.del <- remove.duplicated.id.ranges(data.frame.to.ranges(sum.del))
+      sum.dup <- remove.duplicated.id.ranges(data.frame.to.ranges(sum.dup))
       val.dls.t <- rownames(sum.del)
       val.dps.t <- rownames(sum.dup)
       sum.del <- reader(fn.nt)$sum.del ; sum.dup <- reader(fn.nt)$sum.dup
-      sum.del <- remove.duplicated.id.ranges(data.frame.to.ranged(sum.del))
-      sum.dup <- remove.duplicated.id.ranges(data.frame.to.ranged(sum.dup))
+      sum.del <- remove.duplicated.id.ranges(data.frame.to.ranges(sum.del))
+      sum.dup <- remove.duplicated.id.ranges(data.frame.to.ranges(sum.dup))
       val.dls.nt <- rownames(sum.del)
       val.dps.nt <- rownames(sum.dup)
     } else { val.dls.t <- val.dps.t <- val.dls.nt <- val.dps.nt <- NULL }
@@ -692,15 +692,15 @@ core.tdt <- function(dir,cnvrs,cnvs,ped,double.table,DEL=TRUE,rm.dups=TRUE) {
   ii <- tdt.snp(data=ped,snp.data=tdt3)
   tt <- p.value(ii,1)
   cnvrs[["tdt"]][match(names(tt),rownames(cnvrs))] <- tt
-  sum.del <- ranged.to.data.frame(cnvrs,T)[order(cnvrs[[5]]),]
+  sum.del <- ranges.to.data.frame(cnvrs,T)[order(cnvrs[[5]]),]
   colnames(sum.del)[c(7,9)] <- c("p.fet","p.tdt")                              
   ## remove NAs..
   sum.del2 <- sum.del[!is.na(sum.del$p.tdt),]
   sum.del2[["genes"]] <- substr(sum.del2[["genes"]],1,10);
   if(rm.dups) {
-    DD <- data.frame.to.ranged(sum.del)
+    DD <- data.frame.to.ranges(sum.del)
     DD <- remove.duplicated.id.ranges(DD,"genes")
-    sum.del <- ranged.to.data.frame(DD,TRUE)
+    sum.del <- ranges.to.data.frame(DD,TRUE)
   }
   return(list(cnvrs=cnvrs,sum.del=sum.del,tdt3=tdt3,ped=ped))
 }

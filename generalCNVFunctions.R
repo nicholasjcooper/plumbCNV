@@ -890,7 +890,7 @@ chip.coverage2 <- function(snp.info,targ.int=100000,min.snps=10,by.chr=F,pad.mis
     return(cov/(total.ref))
   } else {
     covered <- calc.cov2(snp.info, targ.int, min.snps)
-    not.covered <- invert.granges(as(covered,"GRanges"),pad.missing.autosomes=pad.missing.autosomes,build=build)
+    not.covered <- invGRanges(as(covered,"GRanges"),pad.missing.autosomes=pad.missing.autosomes,build=build)
   }
   if(ranges) { return(covered) }
   if(!by.chr) {
@@ -1009,7 +1009,7 @@ get.genome <- function(build=NULL,num.names=TRUE) {
 #dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
 #hh550 <- reader("~/Downloads/hh550.map")
 #colnames(hh550) <- c("chr","pos")
-#hh550 <- data.frame.to.ranged(hh550)
+#hh550 <- data.frame.to.ranges(hh550)
 #hh550 <- toGenomeOrder2(subsetByOverlaps(hh550, get.genome(build=36))) # make sure no illegal SNP positions!
 #ichip.regions <- reader("/chiswick/data/ncooper/imputation/COMMON/iChipFineMappingRegionsB36.RData")
 #snp.info <- read.snp.info(dir)
@@ -1090,9 +1090,9 @@ get.dgv.ranges <- function(dir=NULL,build="hg18",bioC=TRUE,text=FALSE,shortenID=
   if(bioC | text) {
     must.use.package(c("genoset","IRanges"),bioC=T)
     if(compact) { to.cut <- colnames(tt)[!colnames(tt) %in% colnm.core] } else { to.cut <- NULL }
-    outData <- data.frame.to.ranged(tt,ids=colnm.core[1],start=colnm.core[2],end=colnm.core[3],
+    outData <- data.frame.to.ranges(tt,ids=colnm.core[1],start=colnm.core[2],end=colnm.core[3],
                                     width=NULL,chr=colnm.core[4],build=build, exclude=to.cut)
-    if(text) { outData <- Ranges.to.txt(outData) }
+    if(text) { outData <- ranges.to.txt(outData) }
   } else {
     outData <- tt 
   }

@@ -1,3 +1,9 @@
+###NAMESPACE ADDITIONS###
+#' @importMethodsFrom "snpStats"  effect.sign
+#' @importFrom "snpStats"  row.summary  col.summary  read.pedfile  snp.imputation  impute.snps  single.snp.tests
+#' @importClassesFrom "snpStats"  SnpMatrix  XSnpMatrix  SingleSnpTests  SingleSnpTestsScore
+
+
 ## eventually turn this into a class 'snpMatrixList'
 
 ## FUNCTIONS ##
@@ -37,6 +43,414 @@
 # split.pq - split an aSnpMatrix into a long and short arm (arm.p and arm.q)
 ###############
 
+### INTERNALS ####
+
+
+finitize <- function(X) {
+  if(is.data.frame(X)) { X <- as.matrix(X) }
+  return(X[is.finite(X)])
+}
+
+minna <- function(...) {
+  if(length(list(...))==1) { 
+    min(finitize(...),na.rm=TRUE)
+  } else {
+    min(...,na.rm=TRUE)
+  }
+}
+
+maxna <- function(...) {
+  if(length(list(...))==1) { 
+    max(finitize(...),na.rm=TRUE)
+  } else {
+    max(...,na.rm=TRUE)
+  }
+}
+
+meanna <- function(...) {
+  if(length(list(...))==1) { 
+    mean(finitize(...),na.rm=TRUE)
+  } else {
+    mean(...,na.rm=TRUE)
+  }
+}
+
+medianna <- function(...) {
+  if(length(list(...))==1) { 
+    median(finitize(...),na.rm=TRUE)
+  } else {
+    median(...,na.rm=TRUE)
+  }
+}
+
+sdna <- function(...) {
+  if(length(list(...))==1) { 
+    sd(finitize(...),na.rm=TRUE)
+  } else {
+    sd(...,na.rm=TRUE)
+  }
+}
+
+sumna <- function(...) {
+  if(length(list(...))==1) { 
+    sum(finitize(...),na.rm=TRUE)
+  } else {
+    sum(...,na.rm=TRUE)
+  }
+}
+
+sortna <- function(...) {
+  sort(..., na.last=TRUE)
+}
+
+
+#internal
+comma <- function(...) {
+  paste(...,collapse=",")
+}
+
+
+##' log sum function @author Claudia Giambartolomei - internal
+logsum <- function(x) {
+  my.max <- max(x)                              ##take out the maximum value in log form
+  my.res <- my.max + log(sum(exp(x - my.max )))
+  return(my.res)
+}
+
+
+
+## functions from Chris W - adapted
+
+# internal
+# create a factor that can split a group of 'size' entries into categories size 'by'
+# merge last two groups if final group size is less than min.pc of 'by'
+# if fac.out is false, return start/end ranges rather than a grouping factor
+# (Nick)
+make.split <- function(size,by,fac.out=T,min.pc=0.5) {
+  stepz <- round(seq(from=1,to=(size+1),by=by))
+  if((tail(stepz,1)) != (size+1)) { stepz <- c(stepz,(size+1)) }
+  split.to <- length(stepz)-1
+  out1 <- cbind(stepz[1:split.to],(stepz[2:(split.to+1)]-1))
+  repz <- 1+apply(out1,1,diff)
+  out <- rep(1:split.to,repz)
+  lrg <- max(out)
+  if(!length(which(out==lrg))>(by*min.pc)) {
+    out[out==lrg] <- lrg-1
+  }
+  if(!fac.out) {
+    out <- cbind(start(Rle(out)),end(Rle(out)))
+  }
+  return(out)
+}
+
+
+
+# internal
+# snpStats imputation only works if there are correlated SNPs with non-missing values
+# that can be used to interpolate missing SNPs. If any correlated SNPs are missing
+# 'impute.missing' will leave these blank. This function mops up the remainder
+# by randomly inserting values consistent with the minor allele frequency of each SNP
+# (Nick)
+randomize.missing2 <- function(X,verbose=FALSE) {
+  miss1 <- function(x) { 
+    TX <- table(c(round(x),0,1,2))-c(1,1,1) # to force zero counts to be in the table
+    naz <- which(is.na(x))
+    if(length(naz)>0 & length(TX)>0) {
+      x[naz] <- sample(as.numeric(names(TX)),size=length(naz),
+                       replace=T,prob=as.numeric(TX))
+    }
+    return(x)
+  }
+  # randomly generate replacements for missing values using current distribution for each column of X
+  if(is.null(dim(X))) { warning("not a matrix/data.frame") ; return(X) }
+  count.miss <- function(x) { length(which(is.na(x))) }
+  nmiss <- apply(X,2,count.miss)
+  FF <- nrow(X)
+  select <- nmiss>0
+  if(length(which(select))<1) { return(X) }
+  if(verbose) { cat(sum(nmiss),"missing values replaced with random alleles\n") }
+  if(length(which(select))==1) { X[,select] <- miss1(X[,select]); return(X) }
+  X[,select] <- apply(X[,select],2,miss1)
+  return(X)
+}
+
+
+# internal, function generate a random MAF, then random SNP
+rsnp <- function(n,A.freq.fun=runif,cr=.95, A.freq=NA) { 
+  if(is.na(A.freq)) {  m <- A.freq.fun(1) } else { m <- A.freq }
+  x <- sample(0:3, n, replace=T, prob=c(1-cr,cr*(m^2),cr*(2*(1-m)*m),cr*((1-m)^2)))
+  return(x) 
+}
+
+
+# internal
+rsnpid <- function(n) { 
+  id.len <- sample(c(3:8),n,replace=T,prob=c(0.01, 0.01, 0.01, 0.10, 0.50, 0.37))
+  each.id <- function(l) { sapply(l,function(n) { paste(replicate(n,sample(1:9,1)),collapse="",sep="") }) }
+  sufz <- each.id(id.len)
+  ids <- paste0("rs",sufz)
+  return(ids)
+}
+
+# internal
+ldfun <- function(n) { x <- runif(n); r2 <- runif(n); x[x<.6 & r2>.1] <- x[x<.6 & r2>.1]+.4 ; return(x) }
+
+# internal
+rsampid <- function(n,pref="ID0") { paste0(pref,pad.left(1:n,"0")) }
+
+# internal
+snpify.cont <- function(x,call.rate=.95,A.freq.fun=runif) { 
+  if(length(x)<2) { stop("x must be longer than 1 element") }
+  if(length(x)<5) { warning("for good simulation x should be fairly large, e.g, at least 10, better >100") }
+  n <- length(x)
+  if(all(x %in% 0:3)) { return(x) } # these are already snp-coded
+  rr <- rank(x)
+  sim1 <- rsnp(n,A.freq.fun=A.freq.fun,cr=call.rate) # A.freq=NA
+  x[rr] <- sort(sim1)
+  return(x)
+}
+
+# internal
+get.biggest <- function(r2.mat) {
+  mm <- max(r2.mat,na.rm=T)
+  coord <- which(r2.mat==mm,arr.ind=T)
+  if(!is.null(dim(coord))){ coord <- coord[1,] }
+  return(coord)
+}
+
+# internal
+get.top.n <- function(mat,n=10) {
+  cr <- cor(mat,use="pairwise.complete")^2
+  diag(cr) <- 0
+  nn <- NULL
+  while(length(nn)<n) { 
+    coord <- get.biggest(r2.mat=cr)
+    nn <- unique(c(nn,coord))
+    cr[coord[1],coord[2]] <- NA
+    cr[coord[2],coord[1]] <- NA
+    #cr[,coord[1]] <- NA; cr[coord[1],] <- NA
+    #cr[,coord[2]] <- NA; cr[coord[2],] <- NA
+  }
+  nn <- nn[1:n]
+  new.mat <- mat[,nn]
+  return(new.mat)
+}
+
+# internal
+# allows an sapply style function to only work on valid values
+clean.fn <- function(x,fail=NA,fn=function(x) { x }) {
+  if(!is.null(x)) { 
+    x <- x[!is.na(x)]; x <- x[(x!="")]; return(fn(x)) 
+  } else {  return(fail) } 
+}
+
+
+
+#Internal: Read in a plink formatted pedigree/family file
+# This function will import a PLINK style
+# ped file and return a data.frame object in the same form
+read.ped.file <- function(fn,keepsix=TRUE) {
+  rr1 <- reader(fn,header=TRUE)
+  if(ncol(rr1)<6) { warning("invalid ped/fam file, should have at least 6 columns"); return(NULL) }
+  if(any(colnames(rr1) %in% c("X0","X1","X2"))) { rr1 <- reader(fn,header=FALSE) }
+  colnames(rr1) <- gsub("X.","",colnames(rr1))
+  if(any(colnames(rr1)[1] %in% unique(rr1[,1]))) { rr1 <- reader(fn,header=FALSE) }
+  colnames(rr1)[1:6] <- c("family","sample","father","mother","sex","phenotype")
+  if(keepsix) { rr1 <- rr1[,1:6] }
+  return(rr1)
+}
+
+
+
+
+# internal function
+validate.dir.for <- function(dir,elements,warn=F) {
+  # in case the 'dir' input list object is not the standardised list form, convert
+  # allows flexible use of list or regular directory specifications in plumbCNV functions
+  if(is.null(dir)) { cat("directory empty\n"); return(NULL) }
+  if(!is.list(dir)) {
+    if(warn) { cat(elements[cc],"'dir' object wasn't a list\n")}
+    dir <- as.list(dir); names(dir)[1:length(dir)] <- elements[1:length(dir)] 
+  }
+  for (cc in 1:length(elements)) {
+    if(!elements[cc] %in% names(dir)) { 
+      dir[[paste(elements[cc])]] <- "" ;
+      if(warn) { stop(paste("dir$",elements[cc]," was empty.. set to current\n",sep="")) } 
+    }
+  }
+  return(dir)
+}
+
+## internal function for the 'lambdas' function below
+get.allele.counts <- function(myData,cc1000=FALSE) {
+  ii <-  col.summary(myData)
+  ii[["majmin"]] <- c("minor","major")[as.numeric(round(ii$RAF,3)!=round(ii$MAF,3))+1]
+  if(cc1000) { ii$Calls <- rep(1000,nrow(ii)) }
+  aa <- aA <- AA <- rep(0,nrow(ii))
+  aa[which(ii$majmin=="minor")] <- (ii$P.BB*ii$Calls)[which(ii$majmin=="minor")]
+  aa[which(ii$majmin=="major")] <- (ii$P.AA*ii$Calls)[which(ii$majmin=="major")]
+  AA[which(ii$majmin=="minor")] <- (ii$P.AA*ii$Calls)[which(ii$majmin=="minor")] 
+  AA[which(ii$majmin=="major")] <- (ii$P.BB*ii$Calls)[which(ii$majmin=="major")]
+  aA <- ii$P.AB*ii$Calls
+  ii[["aa"]] <- aa
+  ii[["aA"]] <- aA
+  ii[["AA"]] <- AA
+  colnames(ii)[1] <- "TOTAL"
+  return(ii[c("aa","aA","AA","TOTAL")])
+}
+
+
+# internal functions for lambdas #
+Y_2 <- function(r1,r2,n1,n2,N,R) { (N*((N*(r1+(2*r2)))-(R*(n1+(2*n2))))^2) / ((R*(N-R))*((N*(n1+(4*n2)))-(n1+(2*n2))^2)) }
+X_2 <- function(r1,r2,n1,n2,N,R) { (2*N*((2*N*(r1+(2*r2)))-(R*(n1+(2*n2))))^2) / ((4*R*(N-R))*((2*N*(n1+(2*n2)))-(n1+(2*n2))^2)) }
+Likelihood_Lj <- function(c,Lnm) { rchisq(c/Lnm,df=1)/Lnm } # likelihood for one marker
+LLikelihood_L <- function(Cj,LNMj) {
+  # total likelihood across all K markers  : http://www.nature.com/ng/journal/v36/n4/full/ng1333.html
+  tot <- 0
+  for (cc in 1:length(Cj)) { 
+    tot <- tot + log(Likelihood_Lj(Cj[cc],LNMj[cc])) 
+  }
+  return(tot) 
+}
+
+
+
+
+##### MAIN FUNCTIONS ######
+
+# used for when chip has duplicate positions for which you only want to keep 1 of each, and you 
+# have a continuous criteria to maximise, e.g, call rate that you can use to decide between them
+choose.dups.to.drop <- function(snp.info, snp.excl=NULL, ind.fn="../iChipDupPairs.RData", col.name="call.rate") {
+  dup.mat <- reader(ind.fn)
+  if(!is.null(snp.excl)) {
+    dup.mat <- apply(dup.mat,1,function(x) { x[which(x %in% snp.excl)] <- NA; return(x) })
+  }
+  dup.mat <- narm(t(dup.mat))
+  
+  cal.mat <- matrix(numeric(),nrow=nrow(dup.mat),ncol=ncol(dup.mat))
+  if(!any(colnames(snp.info) %in% col.name)){ stop("column name ",col.name," was not found in snp.info") }
+  ind1 <- match(dup.mat[,1],rownames(snp.info))
+  ind2 <- match(dup.mat[,2],rownames(snp.info))
+  notfound <- c((dup.mat[,1][which(is.na(ind1))]),(dup.mat[,2][which(is.na(ind2))]))
+  if(any(is.na(ind1)) | any(is.na(ind2))) { stop("some snps: ",comma(notfound)," in the duplicate matrix were not in the snp.info, add 'snp.excl' entries for such") }
+  cal.mat[,1] <- snp.info[ind1,][[col.name]]
+  cal.mat[,2] <- snp.info[ind2,][[col.name]]
+  j <- apply(cal.mat,1,function(x) { head(which(x==min(x,na.rm=T)),1) })
+  i <- 1:nrow(cal.mat)
+  DUPPOS.EXCL <- dup.mat[cbind(i,j)]
+  return(DUPPOS.EXCL)
+}
+
+
+
+# you want to include certain SNPs missing from a datafile as columns explicitly set to all missing (00)
+add.missing.snps <- function(X, snpSup) {
+  all.snps <- rownames(snpSup)
+  to.add <- all.snps[!all.snps %in% colnames(X)]
+  add.m <- matrix(raw(),nrow=nrow(X),ncol=length(to.add))
+  rownames(add.m) <- rownames(X)
+  colnames(add.m) <- to.add
+  add.sm <- as(add.m,"SnpMatrix")
+  add.asm <- new("aSnpMatrix",.Data=add.sm, snps=snpSup[to.add,],
+                 samples=X@samples,phenotype=X@phenotype,alleles=X@alleles)
+  m2 <- cbind2(X,add.asm)
+  m2 <- m2[,all.snps] #reorder
+  return(m2)
+}
+
+
+# a list of SnpMatrix objects with different samples but mostly the same SNPs, but different omitted, this helps
+# synchronise them by inserting missing vectors of snps not missing in at least one dataset
+# into the datasets where they are not present
+sync.asnp.mats <- function(myMat) {
+  nn <- length(myMat)
+  sMat <- vector("list",nn)
+  for (cc in 1:nn) {
+    sMat[[cc]] <- myMat[[cc]]@snps
+  }
+  snpso <- do.call(rbind,args=sMat)
+  snpso <- snpso[!duplicated(snpso$snp.name),]
+  for (cc in 1:nn) {
+    myMat[[cc]] <- add.missing.snps(myMat[[cc]],snpso)
+  }
+  return(myMat)
+}
+
+
+## for an aSnpMatrix, extract all snps from a given chromosome
+get.chr <- function(x,chr) {
+  select <- which(x@snps$chromosome==chr)
+  if(length(select)>0) {
+    return(x[,select])
+  } else {
+    return(NULL)
+  }
+}
+
+## from a list of SnpMatrix objects with all SNPs but different samples,
+# extract all samples for a given chromosome
+Get.chr <- function(X,CHR) {
+  print(CHR) # abysmal memory usage - big fail!
+  each.chr <- lapply(X,get.chr,chr=CHR)
+  comb.chr <- do.call("rbind3",args=each.chr)
+  return(comb.chr)
+}
+
+
+
+#' Flip the strand for allele codes
+#' 
+#' When strands are being converted sometimes strand flipping is necessary,
+#' whereby C goes to G, A goes to T, etc. This function takes care of this
+#' in the most intuitive way possible, and can also handle IUPAC ambiguity 
+#' codes, and separators within the text.
+#' @param acgt character, allele codes, a series of letters, may include
+#' IUPAC ambiguity codes, "R","Y","M","K","S","W","H","B","V","D","N", in
+#' addition to the standard A, C, G, T codes. Can also involve a separator
+#' in the text, e.g, C/T, A/T, etc, as long as the seperator being used
+#' is passed to the 'sep' parameter.
+#' @param sep optional separator (ignore if entering single letters), that
+#' goes between pairs of alleles. The function will work if more that 2
+#' alleles are used as long as multiple separators are used
+#' @export
+#' @return returns a result in the same character format as that entered,
+#' including the same separator if any, but with the strands flipped
+#' @examples
+#' flip.strand(c("A","C","G","M"))
+#' flip.strand(c("A/C","C/T","G/A","M/B"))
+#' flip.strand(c("A|C|T|G","C|T","G|A|C","M|B"),sep="|")
+flip.strand <- function(acgt,sep="/") {
+  new <- paste(acgt)
+  nn <- length(acgt)
+  sepz <- grep(sep,acgt,fixed=TRUE)
+  if(length(sepz)> 0.5*nn) {
+    two.sets <- strsplit(acgt,split=sep,fixed=TRUE)
+    lenz <- sapply(two.sets, length)
+    #if(any(lenz>2)) {
+    # warning("A maximum of 2 allele codes should be entered with a separator, e.g, A/C",
+    #          ". If more types are possible, use IUPAC ambiguity codes") }
+    result <- sapply(lapply(two.sets, flip.strand),paste,sep="",collapse=sep)
+    return(result)
+  } else {
+    if(length(which(nchar(acgt)>1)) > 0.5*nn) { 
+      warning("allele codes should only be 1 character long, the majority of 'acgt' entries were longer than this")
+    } else {
+      ## valid, and continue
+    }
+  }
+  if(is(new)[1]!="character") { stop("invalid input, needs to be coercible to characters") }
+  # define recoding characters, including uncertain codes #
+  pre <- c("A","T","G","C","R","Y","M","K","S","W","H","B","V","D","N")
+  post <- c("T","A","C","G","Y","R","K","M","S","W","D","V","B","H","N")
+  pre <- c(toupper(pre),tolower(pre)) # create upper and lower case versions
+  post <- c(toupper(post),tolower(post)) # create upper and lower case versions
+  if(!any(acgt %in% pre)) { warning("no characters in 'acgt' were valid allele codes") }
+  if(length(pre)!=length(post)) { stop("internal function error, lists invalid, please report bug") }
+  for (cc in 1:length(pre)) {
+    new[acgt==pre[cc]] <- post[cc]
+  }
+  return(new)
+}
 
 # cbind for more than 2 [a]SnpMatrix objects at once
 cbind3 <- function(...,silent=TRUE) {
@@ -1292,30 +1706,39 @@ sample.info.from.annot <- function(aSnpMatLst,dir=getwd()) {
 }
 
 # create a full snp.info object from a list of aSnpMatrix objects
-snp.info.from.annot <- function(aSnpMatLst,dir=getwd()) {
+snp.info.from.annot <- function(aSnpMatLst,dir=getwd(),alleles=FALSE) {
   if(!is.aSnpMatrix(aSnpMatLst,dir=dir)) { stop("not an aSnpMatrix object") }
   if(is.list(aSnpMatLst)) {
     typ <- get.split.type(aSnpMatLst,dir=dir)
     if(typ=="snpSubGroups") {
-      outlist <- smlapply(aSnpMatLst,FUN=snp.from.annot,dir=dir)
+      outlist <- smlapply(aSnpMatLst,FUN=snp.from.annot,dir=dir,alleles=alleles)
       out <- do.call("rbind",args=outlist)
       return(out)
     } else {
-      return(snp.from.annot(snpMatLst.collate(aSnpMatLst[1],dir=dir)))
+      return(snp.from.annot(snpMatLst.collate(aSnpMatLst[1],alleles=alleles)))
     }
   } else {
-    return(snp.from.annot(aSnpMatLst))
+    return(snp.from.annot(aSnpMatLst,alleles=alleles))
   }
 }
 
 # create a (partial) snp.info object from a single aSnpMatrix object
-snp.from.annot <- function(aSnpMat) {
+snp.from.annot <- function(aSnpMat,alleles=FALSE) {
   if(!is(aSnpMat)[1]=="aSnpMatrix") { stop("aSnpMat must be of type 'aSnpMatrix'") }
   df <- aSnpMat@snps
   cn <- colnames(df)
   chr.col <- which(tolower(substr(cn,1,2)) %in% "ch")
   pos.col <- which(tolower(substr(cn,1,2)) %in% "po")
   DF <- data.frame.to.ranges(df,start=cn[pos.col],end=cn[pos.col],chr=cn[chr.col],GRanges=FALSE)
+  if(alleles) {
+    al <- paste(aSnpMat@alleles)
+    if(all(nchar(al)>0) & length(al)>1) {
+      DF[["A1"]] <- df[[al[1]]]
+      DF[["A2"]] <- df[[al[2]]]
+    } else {
+      warning("alleles option was set TRUE but did not find anything in aSnpMat@alleles")
+    }
+  }
   DF[["QCfail"]] <- rep(0,nrow(DF))
   return(DF)
 }
@@ -1334,6 +1757,57 @@ samp.from.annot <- function(aSnpMat) {
   return(df)
 }
 
+
+
+#' Create an ChipInfo support object from an aSnpMatrix object
+#' 
+#' This function links the annotSnpStats package to the humarray
+#' package.
+#' The package annotSnpStats simplifies and makes robust annotation 
+#' that assists with several aspects of conducting a GWAS analysis in R. 
+#' This function allows addition of full humarray package annotation
+#' based on the working annotSnpStats aSnpMatrix object (or list thereof).
+#' @param X an aSnpMatrix, or list of aSnpMatrix objects
+#' @param incorporate logical, if TRUE, then attempt to save the resulting
+#' object and set the getOption('chip.info') value to this new file. If
+#' FALSE, simply return the ChipInfo object produced.
+#' @param location the path to save the derived object. Can be a file or
+#' a directory (in which case a filename will be generated using today's date).
+#' If NULL, a file will be saved in the tempdir() (temporary R session folder).
+#' @return returns a ChipInfo object based on the aSnpMatrix@snps slot, or
+#' if incorporate = TRUE, then saves this to a file and points humarray to 
+#' this location for use as the default annotation for the current session.
+#' @export
+#' @examples
+#' #ownexample
+#' data(...)
+#' ci <- aSnpMatrix.to.ChipInfo(...)
+#' prv(ci)
+aSnpMatrix.to.ChipInfo <- function(X,incorporate=FALSE,location=NULL) {
+  #if(!is(X)[1] %in% c("aSnpMatrix","aXSnpMatrix")) { stop("X must be an aSnpMatrix object (package: annotSnpStats)") }
+  snp.info <- snp.info.from.annot(X,alleles=TRUE)
+  ci <- as(snp.info,"ChipInfo")
+  if(incorporate) {
+    if(is.character(location)) {
+      if(get.ext(location)=="") & file.exists(location)) {
+        # assume a directory was passed, so need to add filename
+        location <- cat.path(location,"aSnpMatChipInfo",suf=simple.date(),ext="RData")
+      }
+    } else {
+      location <- cat.path(tempdir(),"aSnpMatChipInfo",suf=simple.date(),ext="RData")
+    }
+success <- T
+success <- tryCatch(save(ci ,file=location),error=function(e) { F } )
+if(!is.logical(success)) { success <- T }
+if(success) {
+  options(chip.info=location)
+} else {
+  stop("'location' for the chip.support() object was invalid, save() failed")
+}
+  } else {
+    return(ci)
+  }
+}
 
 
 # remove snps missing from either of 2 snp matrices
@@ -1747,6 +2221,9 @@ bigSnpMatrixList <- function(snpMatLst, verbose=TRUE, dir=getwd(),replace.missin
 #  return(out)
 #}
 
+## HERE!! ##
+
+
 # convert a SnpMatrix to a SnpMatrixList split by chromosomes.. can be a file based one too
 SnpMatrix.to.sml.by.chr <- function(X,snp.info=NULL,dir=NULL,build=NULL,genomeOrder=TRUE) {
   typ <- is(X)[1]
@@ -1834,6 +2311,32 @@ SnpMatrix.to.sml.by.chr <- function(X,snp.info=NULL,dir=NULL,build=NULL,genomeOr
 # points(pca.bsm.b.pred.1,pca.bsm.b.pred.2,col="black")
 # legend("top",legend=paste(unique(anc)),col=get.distinct.cols(14)[as.numeric(unique(anc))],pch=19,ncol=4); dev.off()
 
+
+
+#' Linkage disequilibrium reduction of a SNP-set
+#' 
+#' For purposes of data reduction, or principle components
+#' analysis for detecting ancestry, it is common practice to 'LD prune'
+#' a microarray genotype SNP dataset from a larger to a smaller set.
+#' The method involves calculating the matrix of linkage disequilibrium
+#' weights and then selecting the strongest signals, removing the correlates
+#' of each.
+#' @param X X should be a SnpMatrix, aSnpMatrix, aSnpMatrixList or bigSnpMatrix object
+#' @param stats select which kind of LD calculate to use, see arguments for the SnpStats function 
+#' 'ld()'. Values can be: 'R.squared', 'D.prime', or 'R'
+#' @param thresh numeric, correlation/statistical threshold to use as a cutoff, above which
+#' all correlates of the strongest signal in each region will be discarded/
+#' @return vector of integer indexes of the set of SNPs in X to keep, based on the LD statistic
+#' and threshold selected
+#' @export
+#' @examples
+#' # ownexample
+#' data(...)
+#' res <- ld.prune.chr(chrSel(...))
+#' small.dat <- ...[,res]
+#' LD <- ld(small.dat,stats="R.squared")
+#' prv(LD)
+#' summary(as.vector(LD))
 ld.prune.chr <- function(X,stats="R.squared",thresh=.1) {
   if(estimate.memory(ncol(X)^2)>=1) { ld.prune.big(X,stats=stats,thresh=thresh) } 
   kk <- proc.time()[3]; mat <- ld(X,X,stats=stats[1]) ; jj <- proc.time()[3]; print(jj-kk)
@@ -1874,7 +2377,36 @@ ld.prune.chr <- function(X,stats="R.squared",thresh=.1) {
 
 
 
-# split an aSnpMatrix into a long and short arm (arm.p and arm.q)
+#' Split an aSnpMatrix into a long and short chromosome arm
+#'
+#' When analysing large datasets it is common to split the datafile
+#' into 22 separate files by chromosome to allow parallel processing
+#' of smaller subsets. Sometimes even with this split a dataset may
+#' be too large, particularly for the larger chromosomes. Another
+#' step that can be taken is to split further by chromosome 'arm'.
+#' Labelled as the long and short arms (arm 'p' and arm 'q'), these
+#' are the portions of the chromosome separated by the centromere,
+#' with biological justification for separation as interaction and LD
+#' is far less likely across the centromere. This function
+#' takes an aSnpMatrix object from annotSnpStats and splits into a
+#' separate p and q arm. Note for many chips it's common to have
+#' SNPs for only 1 arm, so allow for this in your code.
+#' @param aSnpMatrix an aSnpMatrix object
+#' @param build string, ucsc annotation build, default is 37/hg19
+#' @param pqvec logical, if TRUE simply return a character vector of 
+#' p's and q's indicating which arm for each SNP in order. If FALSE,
+#' will return whole aSnpMatrix objects.
+#' @param verbose logical, whether to display information about progress
+#' @return If pqvec is TRUE simply return a character vector of 
+#' p's and q's indicating which arm for each SNP in order. If FALSE,
+#' will return two whole aSnpMatrix objects in a named list (arm p and q).
+#' @export
+#' @examples
+#' #ownexample
+#' data(exAnnotSnp)
+#' prv(exAnnotSnp)
+#' outlist <- split.pq(exAnnotSnp)
+#' prv(outlist)
 split.pq <- function(aSnpMat,build=37,pqvec=FALSE,verbose=TRUE) {
   si <- snp.from.annot(aSnpMat)
   if(!is(si)[1]=="RangedData") { si <- as(si,"RangedData") }
@@ -1930,7 +2462,7 @@ split.pq <- function(aSnpMat,build=37,pqvec=FALSE,verbose=TRUE) {
 #' from the inputted support files. Will only include samples and SNPs occuring in both
 #' the dataset and the support files.
 #' @examples
-#' ## my own example for now, only works @DIL ##
+#' ## my ownexample for now, only works @DIL ##
 #' t1.dr <- "/chiswick/data/ncooper/imputation/T1D/"
 #' setwd(t1.dr)
 #' smp <- reader("/chiswick/data/ncooper/iChipData/sample.info.RData")
@@ -2071,3 +2603,1163 @@ annot.sep.support <- function(snpMat, snp.info, sample.info, snp.excl=NULL,
                  phenotype = pheno.slot)
   return(aSnpMat)
 }
+
+
+
+#########################
+## SnpMatrix Functions ##
+#########################
+
+
+#' Calculate Lambda inflation factors for SNP dataset
+#' 
+#' This function calculates SNP-wise or overall Lambda and Lambda_1000 statistics for inflation due
+#' to population structure. It works on a SnpMatrix object or dataframe coded 0,1,2,NA (autodetects
+#'  which).
+#' @param X SnpMatrix or data.frame coded 0,1,2,NA containing genotypes
+#' @param pheno vector of coding for phenotypes, using (0,1) or (1,2) for controls, cases, should 
+#' match nrow(X)
+#' @param checks logical, whether to perform some sanity checks that will slightly slown down 
+#' performance
+#' @param output character vector, containing any of the following "all", "lambda","l1000", "both";
+#' if snp.wise is false, the scalar value(s) specified by 'output', or otherwise a matrix
+#' of parameters for each SNP, optionally limited to just the lambda column(s) by the value of 
+#' 'output'.
+#' @param snp.wise logical, if TRUE, return lambda statistics separately for each SNP (rather than
+#'  an overall)
+#' @export
+#' @author Nicholas Cooper \email{nick.cooper@@cimr.cam.ac.uk}
+#' @references Freedman M.L., et al. Assessing the impact of population stratification
+#'  on genetic association studies. Nat. Genet. 2004;36:388-393.
+#' @seealso \code{\link{lambda_nm}}
+#' @examples
+#' # http://en.wikipedia.org/wiki/Population_stratification
+#' # Note that Y2 ~ L*X2, where allele counts are symbolized:
+#' # Case     r0  r1  r2  R
+#' # Control  s0  s1  s2  S
+#' # Total    n0  n1  n2  N
+#' require(snpStats) ; data(testdata)
+#' pheno <- rep(0,nrow(Autosomes))
+#' pheno[subject.data$cc=="case"] <- 1
+#' lambdas(Autosomes,pheno)
+#' lambdas(Autosomes[,1:5],pheno,snp.wise=TRUE) # list everything snp-wise for the first 5 SNPs
+#' lambdas(Autosomes[,1:5],pheno) # just for the first 5 SNPs
+lambdas <- function(X, pheno, checks=TRUE, 
+                    output=c("all","lamba","l1000","both"),snp.wise=FALSE) {
+  ## i don't think this should ever be used: ?? cc1000=TRUE, ??
+  cc1000 <- FALSE
+  ## workhorse internal function ##
+  do.lambda <- function(x,ph,snpmat=NULL) {
+    if(!is.null(snpmat)) {
+      if(!snpmat) {
+        tt <- table(round(as.numeric(x)),ph)
+      }
+    }
+    if(is.null(snpmat)) {
+      tt <- table(round(as.numeric(x)),ph)
+      if("3" %in% rownames(tt)) { snpmat <- T } else { snpmat <- F }
+    }
+    if(snpmat) {
+      xx <- round(as.numeric(x))-1; xx[xx==-1] <- NA
+      tt <- table(xx,ph)
+    }
+    #tt <- narm(tt)
+    if(checks) {
+      # checks will slow down running so can optionally turn them off
+      if(length(tt)<1) { warning("all allele counts were empty!"); return(NA) }
+      if(!all(rownames(tt) %in% paste(c(0,1,2)))) { 
+        warning("invalid genotype values in X: ",paste(head(unique(names(tt))),collapse=",")) ; return(NA) 
+      }
+      if(!all(colnames(tt) %in% paste(c(0,1,2)))) {
+        warning("invalid genotype values in X: ",paste(head(unique(names(tt))),collapse=",")) ; return(NA)  
+      }
+    }
+    
+    if("0" %in% rownames(tt)) { Ctrl0 <- tt["0","0"]; Case0 <- tt["0","1"] } else { Ctrl0 <- Case0 <- 0 }
+    if("1" %in% rownames(tt)) { Ctrl1 <- tt["1","0"]; Case1 <- tt["1","1"] } else { Ctrl1 <- Case1 <- 0 }
+    if("2" %in% rownames(tt)) { Ctrl2 <- tt["2","0"]; Case2 <- tt["2","1"] } else { Ctrl2 <- Case2 <- 0 }
+    Ctrl0[is.na(Ctrl0)] <- 0; Ctrl1[is.na(Ctrl1)] <- 0; Ctrl2[is.na(Ctrl2)] <- 0
+    Case0[is.na(Case0)] <- 0; Case1[is.na(Case1)] <- 0; Case2[is.na(Case2)] <- 0
+    
+    A0 <- Case0+Ctrl0; A1 <- Case1+Ctrl1; A2 <- Case2+Ctrl2
+    a0 <- (A0*2)+A1; a2 <- (A2*2)+A1
+    if(a0 > a2) { type <- "minor" }
+    if(a2 > a0) { type <- "major" }
+    if(a0==a2) { type <- "neutral"  }
+    if( length(which(c(A0,A1,A2)==0))==2 ) { type <- "monomorph" }
+    #cat(type,"\n")
+    if(type=="minor") {
+      #Case
+      r0 <- Case2  ; r1 <- Case1  ; r2 <- Case0  ; R <- Case0+Case1+Case2
+      #Control  s0  s1  s2  S
+      s0 <- Ctrl2  ; s1 <- Ctrl1  ; s2 <- Ctrl0  ; S <- Ctrl0+Ctrl1+Ctrl2
+    } else {
+      #Case
+      r0 <- Case2  ; r1 <- Case1  ; r2 <- Case0  ; R <- Case0+Case1+Case2
+      #Control  s0  s1  s2  S
+      s0 <- Ctrl2  ; s1 <- Ctrl1  ; s2 <- Ctrl0  ; S <- Ctrl0+Ctrl1+Ctrl2
+    }
+    return(c(r0,r1,r2,R,s0,s1,s2,S))  #,n0,n1,n2,N,xx2,yy2,LL,L1000))
+    #return(c(LL,L1000))
+  }
+  ## main code ##
+  if(!snp.wise) { cc1000 <- FALSE }
+  if(!max(Dim(pheno)) %in% Dim(X)) { warning("Phenotype data different size to dataset X"); return(NA)}
+  if(all(pheno %in% c(1,2))) { pheno <- pheno-1 }
+  if(!all(pheno %in% c(0,1))) { warning("Phenotype must be coded as controls,cases=0,1; or =1,2"); return(NA) }
+  if(length(Dim(X))!=2) {
+    if(length(Dim(X))==1) { return(do.lambda(as.numeric(X),ph=pheno)) } else {
+      warning("invalid object for lambda inflation calculation"); return(NA)
+    }
+  }
+  snpmat <- F
+  if(is(X)[1] %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) { snpmat <- T } else {
+    tt.temp <- table(round(as.numeric(X[,1])));  if("3" %in% names(tt.temp)) { snpmat <- T }
+  }
+  if(snpmat) {
+    cnts0 <- get.allele.counts(X[pheno==0,],cc1000=cc1000)
+    cnts1 <- get.allele.counts(X[pheno==1,],cc1000=cc1000)
+    cnts <- cbind(cnts1,cnts0)
+  } else {
+    cnts <- apply(X,2,do.lambda,ph=pheno,snpmat=snpmat)
+    cnts <- t(cnts)
+  }
+  #Total
+  colnames(cnts) <- c("r0","r1","r2","R","s0","s1","s2","S")
+  if(cc1000) { cnts <- round(cnts) }
+  #  r0 <- s0 <- r1 <- s1 <- r2 <- s2 <- R <- S <- 0  # initialize these values to zero
+  #  tryCatch(detach("cnts"),error=function(e) {NULL}) # in case erroneously attached from earlier
+  #  attach(cnts) # should replace all zeros above with values
+  n0 <- cnts$r0 + cnts$s0 ; n1 <- cnts$r1 + cnts$s1 ; n2 <- cnts$r2 + cnts$s2 ; N <-cnts$ R + cnts$S
+  xx2 <- X_2(cnts$r1,cnts$r2,n1,n2,N,cnts$R)
+  yy2 <- Y_2(cnts$r1,cnts$r2,n1,n2,N,cnts$R)
+  LL <- yy2/xx2
+  L1000 <- lambda_nm(Lnm=LL,n=1000,m=1000,nr=cnts$R,mr=cnts$S)
+  #  detach(cnts)
+  all.res <- cbind(cnts,xx2,yy2,LL,L1000)
+  colnames(all.res)[9:12] <- c("X2","Y2","Lambda","L1000")
+  output <- tolower(paste(output[1]))
+  output <- gsub("lamda","lambda",output); output <- gsub("lamba","lambda",output)
+  if(!output %in% c("lambda","l1000","both")) { output <- "all" }
+  if(!snp.wise) {
+    # return overall scalar result(s) across all SNPs (median based)
+    lam <- medianna(all.res[,"Y2"])/.456
+    if(output=="all") { output <- "both" }
+    if(output %in% c("both","l1000")) { 
+      lam1000 <- lambda_nm(lam,1000,1000,medianna(all.res$R),medianna(all.res$S))
+    }
+    out <- switch(output,lambda=lam,l1000=lam1000, both=c(Lambda=lam,L1000=lam1000))
+  } else {
+    # return separate result(s) for each SNP
+    out <- switch(output,all=all.res,lambda=all.res[["Lambda"]],
+                  l1000=all.res[["L1000"]], both=all.res[,c("Lambda","L1000")])
+  }
+  return(out)
+}
+
+
+
+
+
+#' Convert a snpStats SnpMatrix object to a dataframe
+#' 
+#' Converts a snpStats::SnpMatrix object to a dataframe where coding becomes 0,1,2,NA,
+#' which represents genotypes as the number of copies of the reference allele.
+#' @param SnpMat a snpStats::SnpMatrix object
+#' @param matrix logical, whether to convert to a normal matrix (TRUE), or a data.frame (default, FALSE)
+#' @export
+#' @return data.frame object with genotype coding where 0,1,2 are the number of copies
+#' of the reference allele (by default the letter latest in the alphabet), and NA is
+#' missing data.
+#' @seealso \code{\link{data.frame.to.SnpMatrix}}
+#' @examples
+#' require(snpStats)
+#' samp <- matrix(sample(c(0:3),18,replace=TRUE),
+#'   ncol=3,dimnames=list(paste0("ID0",1:6),c("rs123","rs232","rs433")))
+#' samp # note that 0's for SnpMatrix objects are missing values, and other
+#' # values are the number of copies of the reference allele plus 1. The reference
+#' # allele is by default the letter that is latest in the alphabet, e.g for C/G,
+#' # G would be the reference, for T/A, T would be the reference
+#' test.mat <- new("SnpMatrix", samp)
+#' test.mat # preview does not show data, so use as.data.frame(test.mat)
+#' is(as.data.frame(test.mat)[[1]]) # note that using 'as.data.frame' the type is 'raw'
+#' SnpMatrix.to.data.frame(test.mat) 
+#' # ^ now missing cells are NA, and genotypes are coded as number of copies of reference
+SnpMatrix.to.data.frame <- function(SnpMat,matrix=FALSE) {
+  #if(is(SnpMat)[1]=="snp.matrix") { SnpMat <- as(SnpMat,"SnpMatrix") }
+  if(is(SnpMat)[1]=="aSnpMatrix") { SnpMat <- SnpMat@.Data }
+  if(is(SnpMat)[1]!="SnpMatrix") { stop("SnpMat must be a SnpMatrix/aSnpMatrix object") }
+  cov.data <- as.data.frame(SnpMat)
+  for(jj in 1:ncol(cov.data)) { 
+    nuxt <- as.numeric(cov.data[,jj])-1
+    nuxt[nuxt<0] <- NA
+    cov.data[,jj] <- nuxt
+    # assign(colnames(cov.data)[jj], nuxt)
+  }
+  if(matrix) { cov.data <- as.matrix(cov.data) }
+  return(cov.data)
+}
+
+
+#' Convert a data.frame to a snpStats SnpMatrix object
+#' 
+#' Converts a dataframe to a snpStats::SnpMatrix object where the object contains
+#' genotypes coded as number of copies of the reference allele: 0,1,2, and missing=NA.
+#' This is an alternative to using new("SnpMatrix",data.frame()). Using 'new' the required 
+#' format for the 'data.frame' argument is not as intuitive, as NA's are not allowed, and
+#'  2 copies of the reference allele must be coded as 3, and 1 copy as 2, 0 copies as 1.
+#' Note that this function will also accept data.frames/matrices coded in that way, and
+#' will detect the coding automatically.
+#' @param X a data.frame or matrix object containing allele codes 0,1,2 with missing=NA
+#' @export
+#' @seealso \code{\link{SnpMatrix.to.data.frame}}
+#' @return SnpMatrix object
+#' @examples
+#' require(snpStats)
+#' test.frame <- matrix(sample(c(0:2),18,replace=TRUE),
+#'   ncol=3,dimnames=list(paste0("ID0",1:6),c("rs123","rs232","rs433")))
+#' test.frame[2,2] <- NA # set one genotype to missing
+#' test.frame 
+#' test.mat <- data.frame.to.SnpMatrix(test.frame) 
+#' test.mat
+#' snp.mat <- new("SnpMatrix",test.frame) # note this does not handle the NAs/0s nicely
+#' all.equal(print(as.data.frame(snp.mat)),print(as.data.frame(test.mat))) # shows offset by 1
+#' test.mat
+#' row.summary(test.mat) # call rate analysis by sample using snpStats function
+#' col.summary(test.mat) # analysis by SNP
+data.frame.to.SnpMatrix <- function(X){
+  if(is.data.frame(X)) {
+    if(any(sapply(lapply(X,is),"[",1) %in% c("character","factor"))) {
+      for(cc in 1:ncol(X)) {
+        X[[cc]] <- as.numeric(X[[cc]])
+      }
+    }
+  } else { 
+    if(!is.matrix(X)) { warning("X should be a matrix or data.frame, ",
+                                "conversion is likely to fail if X is not sufficiently matrix-like")}
+  }
+  mxx <- maxna(X)
+  if(mxx>3) { warning("Dataframe does not appear to contain allele codes") }
+  X <- round(X)
+  if(mxx==3) { X <- X-1 ; X[X<0] <- NA }
+  NN <- as.matrix(X)
+  #NN <- round(NN)
+  SS <- as(NN,"SnpMatrix")
+  return(SS)
+}
+
+
+
+#' Determine major or minor allele status for a set of SNPs
+#' 
+#' For a snpStats object or data.frame containing values 0,1,2, NA representing genotypes AA, AB, 
+#' BB and no-call. Determines whether the reference allele is the major or minor allele 
+#' Where the homozygous genotype coded as highest value = reference, e.g, if AA=0, AB=1, BB=2, 
+#' then B is considered the reference here, and by the snpStats package. Combines this with
+#' frequencies of the alleles to evaluate whether 'BB' is major or minor. Note that default
+#' behaviour for a SnpMatrix is to code alleles alphabetically, so usually the reference allele
+#' is the letter later in the alphabet, e.g, it is never an 'A' allele.
+#' @param X a SnpMatrix object (see snpStats), or a data.frame coded by reference allele copies,
+#' 0,1,2, with missing as NA
+#' @param checks logical, whether to perform additional checks for valid values during conversion,
+#' setting FALSE will give a slight increase in speed, but is not recommended.
+#' @param tag.mono logical, whether to append a prefix of 'mono' to the major/minor factor code
+#' for monomorphic SNPs (minor allele frequency = zero)
+#' @param tag.neutral logical, whether to call SNPs with exactly equal A and B allele frequencies
+#' 'neutral'; if this option is false, the default is to call neutral SNPs 'minor'.
+#' @return returns a factor vector of the same length as the number of SNPs (columns) in the
+#' SnpMatrix object/data.frame, indicating for each SNP whether the reference 'B' allele is the 
+#' major or minor allele. If the SnpMatrix was creating using a snpStats import function the 
+#' reference allele should be the nucleotide letter that is latest in the alphabet. So, for 
+#' instance if a SNP is either T/A or A/T, then the reference (B) allele will be 'T'. This 
+#' function indicates whether the 'B' allele is the major or minor allele (the major  allele
+#' has the greatest frequency). This function can also code 'neutral' if both alleles have 
+#' equal frequency when 'tag.neutral' is TRUE, and can add the prefix 'mono.' when 
+#' 'tag.mono' is TRUE and one allele has 100% frequency, i.e, is monomorphic.
+#' @seealso \code{\link{caseway}}
+#' @export
+#' @examples
+#' require(snpStats)
+#' cn <- c("rs123","rs232","rs433","rs234")
+#' rn <- paste0("ID0",1:6)
+#' samp <- rbind(c(0,2,0,2),c(0,0,0,2),c(0,1,1,2),c(0,0,2,NA),c(0,2,1,1),c(0,2,2,0))
+#' dimnames(samp) <- list(rn,cn)
+#' test.mat <- data.frame.to.SnpMatrix(samp)
+#' majmin(test.mat)
+#' col.summary(test.mat) # show call rates, MAF, allele frequencies
+#' samp
+#' majmin(samp) # also works on a matrix/data.frame with same structure as a Snp.Matrix
+#' majmin(test.mat,tag.neutral=TRUE) # rs433 has equal A & B frequencies, and can be tagged neutral
+#' majmin(test.mat,tag.mono=TRUE) # rs123 has zero B allele frequency, and can be tagged 'mono'
+#' samp[2,2] <- 99 # insert invalid value into matrix
+#' majmin(samp,TRUE,TRUE,TRUE) # warning for invalid value
+#' majmin(samp,checks=FALSE) # invalid value is converted to NA without warning
+majmin <- function(X,checks=TRUE,tag.mono=FALSE,tag.neutral=FALSE) {
+  ## workhorse internal function ##
+  #print(is(X)[1])
+  do.mm <- function(x,snpmat=NULL) { 
+    if(!is.null(snpmat)) { 
+      if(!snpmat) { 
+        tt <- table(round(as.numeric(x))) 
+      }
+    }
+    if(is.null(snpmat)) {  
+      tt <- table(round(as.numeric(x)))
+      if("3" %in% names(tt)) { snpmat <- T } else { snpmat <- F }
+    }
+    if(snpmat) {
+      xx <- round(as.numeric(x))-1; xx[xx==-1] <- NA
+      tt <- table(xx)
+    }
+    if(checks) {
+      # checks will slow down running so can optionally turn them off
+      if(length(tt)<1) { warning("all allele counts were empty!"); return(NA) }
+      if(!all(names(tt) %in% paste(c(0,1,2)))) { warning("invalid genotype values in X: ",paste(head(unique(names(tt))),collapse=",")) ; return(NA)  }
+    }
+    type <- "unknown"
+    if("0" %in% names(tt)) { A0 <- tt[["0"]] } else { A0 <- 0 }
+    if("1" %in% names(tt)) { A1 <- tt[["1"]] } else { A1 <- 0 }
+    if("2" %in% names(tt)) { A2 <- tt[["2"]] } else { A2 <- 0 } 
+    a0 <- (A0*2)+A1; a2 <- (A2*2)+A1
+    if(a0 > a2) { type <- "minor" }
+    if(a2 > a0) { type <- "major" }
+    if(a0==a2) { if(tag.neutral) { type <- "neutral"  } else { type <- "minor" } }
+    if( length(which(c(A0,A1,A2)==0))==2 ) { if(tag.mono) { type <- paste("mono",type,sep=".") } }
+    return(type)
+  }
+  ## main code ##
+  if(length(Dim(X))!=2) { 
+    if(length(Dim(X))==1) { return(do.mm(as.numeric(X))) } else {
+      warning("invalid object for major/minor allele testing"); return(NA)
+    }
+  }
+  snpmat <- snp.mat <- F
+  if(is(X)[1] %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) { snpmat <- snp.mat <- T} else {
+    tt1 <- table(round(as.numeric(X[,1])));  if("3" %in% names(tt1)) { snpmat <- T }
+  }
+  if(snp.mat) {  
+    ii <-  col.summary(X)
+    #print(ii)
+    all.typz <- c("minor","major")[as.numeric(round(ii$RAF,3)!=round(ii$MAF,3))+1]
+    if(tag.neutral) { all.typz[round(ii$P.AA,6)==round(ii$P.BB,6)] <- "neutral" }
+    if(tag.mono) { all.typz[round(ii$MAF,6)==0] <- paste("mono",all.typz[round(ii$MAF,6)==0],sep=".") }
+  } else {
+    all.typz <- apply(X,2,do.mm,snpmat=snpmat)
+  }
+  fl <- c("major","minor")
+  if(tag.mono) { fl <- c(fl,"mono.major","mono.minor") }
+  if(tag.neutral) { fl <- c(fl,"neutral") }
+  return(factor(all.typz,levels=fl))
+}
+
+
+
+#' Find the direction of GWAS effects between cases and controls
+#' 
+#' After conducting an case-control association analysis on a SnpMatrix, e.g, 
+#' GWAS using for example snp.rhs.tests from the snpStats package, it is not
+#' always trivial to determine the direction of the effects with respect
+#' to the reference allele. This function calculates which way around the
+#' data is for case vs control (pheno) and will indicate with respect to 
+#' cases whether they have more copies of the reference allele, or less, or also 
+#' can highlight whether the heterozygous is the affected genotype. This function
+#' works on a SnpMatrix or dataframe coded 0,1,2,NA (autodetects which). Note that
+#' using a SnpMatrix, with het.effects=FALSE can be much faster (5-100x) than 
+#' using a data.frame and/or setting het.effects=TRUE.
+#' @param X a SnpMatrix or data.frame containing genotypes for a set of samples
+#' @param pheno integer, must be coded as controls=0 and cases=1, or alternatively
+#' using controls=1, cases=2 will be automatically detected and recoded to 0,1.
+#' @param checks logical, whether to perform additional checks for valid values 
+#' during conversion, setting FALSE will give a slight increase in speed, but is 
+#' not recommended.
+#' @param long logical, whether to use longer more explicit text in the resulting
+#' categories describing effect directions, or to use abbreviated codes. For instance,
+#' if long==TRUE, then SNPs where cases have more of the reference allele will produce
+#' a resulting factor of "cases have more 2, less 0", whereas if long==FALSE, the result
+#' would be "CasesRef+".
+#' @param het.effects logical, whether to allow for the possibility that the risk
+#' effect is seen for the heterozygous genotype rather than either homozygous allele,
+#' if het.effects is TRUE, this will add to two additional possible categories to
+#' the output vector, for and increase or decrease in the het allele for cases. If
+#' het.effects is FALSE, then the borderline result will default to one side,
+#' depending on how the allele is coded in the SnpMatrix object. Note that such
+#' instances are unlikely to matter as the most commonly used 1df tests should 
+#' be non-significant. Whereas if a 2df test is used, het.effects should be set TRUE.
+#' @export
+#' @return a factor with the same length as the number of SNPs in X. If het.effects
+#' is FALSE and long is FALSE, this will take values 'CasesRef+' indicating cases
+#' had a higher frequency of the reference allele than controls, or 'CasesRef-', 
+#' indicating that cases had a lower frequency of the reference allele than controls.
+#' If 'het.effects'=TRUE, then two more categories are added, 'CasesHet+' and 'CasesHet-',
+#' indicating that cases had more of the heterozygous allele, or less, respectively, 
+#' compared to controls. Or if 'long' is TRUE, then these four categories are respectively
+#' changed to: 'cases have more 2, less 0', 'cases have more 0, less 2', and for het,
+#' 'cases have more 1, less 0,2', 'cases have less 1, more 0,2'.
+#' Note that these categories are based on absolute counts, and do not necessarily
+#' reflect statistical differences in frequency, these should just be used to interpret
+#' the direction of your findings, not to perform the analysis.
+#' @seealso \code{\link{majmin}}
+#' @examples
+#' require(snpStats)
+#' cn <- c("rs123","rs232","rs433","rs234","rs222")
+#' rn <- paste0("ID0",1:10)
+#' samp <- rbind(c(0,2,0,2,0),c(0,0,0,2,0),c(0,1,1,2,0),c(0,0,2,NA,1),c(0,2,1,1,0),
+#'               c(0,2,2,0,2),c(0,2,0,2,2),c(0,1,NA,2,1),c(0,1,0,0,2),c(0,2,2,2,2))
+#' dimnames(samp) <- list(rn,cn)
+#' test.mat <- data.frame.to.SnpMatrix(samp)
+#' phenotype <- c(rep(0,5),rep(1,5))
+#' cbind(samp,phenotype) # show example data as a matrix with phenotype
+#' caseway(test.mat,phenotype,long=TRUE) # long version
+#' caseway(samp,phenotype,het.effects=TRUE) # also works using a data.frame
+#' # example conducting association analysis, then adding interpretation of results
+#' result <- data.frame(p.value=p.value(snp.rhs.tests(formula=phenotype~1,snp.data=test.mat)))
+#' result[["direction"]] <- caseway(test.mat,phenotype)
+#' result[["referenceIs"]] <- majmin(test.mat)
+#' result # note that only rs222 is significant
+caseway <- function(X, pheno, checks=TRUE, long=FALSE, het.effects=FALSE) {
+  # coding of output based on long=T/F
+  if(long) { r1 <- "cases have more 1, less 0,2" } else { r1 <- "CasesHet+" }
+  if(long) { r2 <- "cases have less 1, more 0,2" } else { r2 <- "CasesHet-" }
+  if(long) { r3 <- "cases have more 0, less 2" } else { r3 <- "CasesRef-" }
+  if(long) { r4 <- "cases have more 2, less 0" } else { r4 <- "CasesRef+" }
+  ## workhorse internal function ##
+  do.cw <- function(x,ph,snpmat=NULL,r1,r2,r3,r4) { 
+    if(!is.null(snpmat)) { 
+      if(!snpmat) { 
+        tt <- table(round(as.numeric(x)),ph) 
+      }
+    }
+    if(is.null(snpmat)) {  
+      tt <- table(round(as.numeric(x)),ph)
+      if("3" %in% rownames(tt)) { snpmat <- T } else { snpmat <- F }
+    }
+    if(snpmat) {
+      xx <- round(as.numeric(x))-1; xx[xx==-1] <- NA
+      tt <- table(xx,ph)
+    }
+    #tt <- narm(tt)
+    if(checks) {
+      # checks will slow down running so can optionally turn them off
+      if(length(tt)<1) { warning("all allele counts were empty!"); return(NA) }
+      if(!all(rownames(tt) %in% paste(c(0,1,2)))) { warning("invalid genotype values in X: ",paste(head(unique(names(tt))),collapse=",")) ; return(NA)  }
+      if(!all(colnames(tt) %in% paste(c(0,1,2)))) { warning("invalid genotype values in X: ",paste(head(unique(names(tt))),collapse=",")) ; return(NA)  }
+    }
+    if("0" %in% rownames(tt)) { Ctrl0 <- tt["0","0"]; Case0 <- tt["0","1"] } else { Ctrl0 <- Case0 <- 0 }
+    if("1" %in% rownames(tt)) { Ctrl1 <- tt["1","0"]; Case1 <- tt["1","1"] } else { Ctrl1 <- Case1 <- 0 }
+    if("2" %in% rownames(tt)) { Ctrl2 <- tt["2","0"]; Case2 <- tt["2","1"] } else { Ctrl2 <- Case2 <- 0 } 
+    Ctrl0[is.na(Ctrl0)] <- 0; Ctrl1[is.na(Ctrl1)] <- 0; Ctrl2[is.na(Ctrl2)] <- 0
+    Case0[is.na(Case0)] <- 0; Case1[is.na(Case1)] <- 0; Case2[is.na(Case2)] <- 0
+    ctrl.pc0 <- Ctrl0/sum(Ctrl0,Ctrl1,Ctrl2); case.pc0 <- Case0/sum(Case0,Case1,Case2)
+    ctrl.pc1 <- Ctrl1/sum(Ctrl0,Ctrl1,Ctrl2); case.pc1 <- Case1/sum(Case0,Case1,Case2)
+    ctrl.pc2 <- Ctrl2/sum(Ctrl0,Ctrl1,Ctrl2); case.pc2 <- Case2/sum(Case0,Case1,Case2)
+    #prv(ctrl.pc0,ctrl.pc1,ctrl.pc2,case.pc0,case.pc1,case.pc2)
+    if(long) { res <- "unclear results" } else { res <- "???" }
+    if((case.pc0 < ctrl.pc0) & (case.pc2 < ctrl.pc2)) { res <- r1  }
+    if((case.pc0 > ctrl.pc0) & (case.pc2 > ctrl.pc2)) { res <- r2  }
+    if((case.pc0 > ctrl.pc0) & (case.pc2 < ctrl.pc2)) { res <- r3  }
+    if((case.pc0 < ctrl.pc0) & (case.pc2 > ctrl.pc2)) { res <- r4  }
+    if((case.pc0 == ctrl.pc0) & (case.pc2 < ctrl.pc2)) { res <- r3  }
+    if((case.pc0 == ctrl.pc0) & (case.pc2 > ctrl.pc2)) { res <- r4  }
+    if((case.pc0 > ctrl.pc0) & (case.pc2 == ctrl.pc2)) { res <- r3  }
+    if((case.pc0 < ctrl.pc0) & (case.pc2 == ctrl.pc2)) { res <- r4  }
+    return(res)
+  }
+  ## main code ##
+  if(!max(Dim(pheno)) %in% Dim(X)) { warning("Phenotype data different size to dataset X"); return(NA)}
+  if(all(pheno %in% c(1,2))) { pheno <- pheno-1 }
+  if(!all(pheno %in% c(0,1))) { warning("Phenotype must be coded as controls,cases=0,1; or =1,2"); return(NA) }
+  if(length(Dim(X))!=2) { 
+    if(length(Dim(X))==1) { return(do.cw(as.numeric(X),ph=pheno)) } else {
+      warning("invalid object for case/control effect direction testing"); return(NA)
+    }
+  }
+  snpmat <- F
+  if(is(X)[1] %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) { 
+    snpmat <- T
+    if(!het.effects) {
+      SSTS <- snpStats::single.snp.tests(pheno, snp.data=X, score=T)
+      direc <- effect.sign(SSTS)
+      if(long) { r3 <- "cases have more of the allele coded '0'" } else { r3 <- "CasesRef-" }
+      if(long) { r4 <- "cases have more of the allele coded '2'" } else { r4 <- "CasesRef+" }
+      all.res <- rep("???",length(direc))
+      all.res[direc==1] <- r4
+      all.res[direc==-1] <- r3
+      return(factor(all.res))
+    }
+  } else {
+    tt.temp <- table(round(as.numeric(X[,1])));  if("3" %in% names(tt.temp)) { snpmat <- T }
+  }
+  all.res <- apply(X,2,do.cw,ph=pheno,snpmat=snpmat,r1=r1,r2=r2,r3=r3,r4=r4)
+  return(factor(all.res))
+}
+
+
+
+#' Multicore randomised replacement of missing genotypes
+#' 
+#' snpStats imputation only works if there are correlated SNPs with non-missing values
+#' that can be used to interpolate missing SNPs. If any correlated SNPs are missing
+#' 'impute.missing' will leave these blank. This function mops up the remainder
+#' by randomly inserting values consistent with the minor allele frequency of each SNP.
+#' This can be run using multiple cores to speed up progress for large matrices.
+#' @param X a SnpMatrix object, presumably with missing genotypes
+#' @param verbose logical, whether to report on progress, or suppress extraneous output
+#' @param n.cores integer, maximum number of processing cores to use (limited by system)
+#' @return returns a SnpMatrix object with all missing values replaced
+#' @export
+#' @examples
+#' require(snpStats)
+#' test <- rSnpMatrix(nsamp=1000,call.rate=.95) # create a random SnpMatrix
+#' prv(test) 
+#' col.summary(test) # shows some missing values
+#' test2 <- randomize.missing(test,verbose=TRUE)
+#' col.summary(test2) # shows none missing
+randomize.missing <- function(X,verbose=FALSE,n.cores=1) {
+  miss1 <- function(x) { 
+    x <- as.numeric(x)
+    TX <- table(c(round(x),0,1,2,3))-c(1,1,1,1) # to force zero counts to be in the table
+    naz <- which(x==0)
+    if(length(naz)>0 & length(TX)>0) {
+      x[naz] <- sample(as.numeric(names(TX)),size=length(naz),
+                       replace=T,prob=as.numeric(TX))
+    }
+    return(as.raw(x))
+  }
+  miss2 <- function(sel,aa,ab,bb) { 
+    x <- X@.Data[,sel]
+    naz <- which(x==0)
+    p.vec <- c(aa,ab,bb)
+    if(any(is.na(p.vec))) {
+      if(all(is.na(p.vec))) {
+        x[naz] <- as.raw(rsnp(length(naz),cr=1))
+        return(x)
+      } else {
+        stop(p.vec)
+        #Pleft <- 1-sum(p.vec,na.rm=T)  
+      }
+    }
+    x[naz] <- sample(as.raw(1:3),size=length(naz),replace=T,prob=p.vec)
+    return(x)
+  }
+  # randomly generate replacements for missing values using current distribution for each column of X
+  typ <- is(X)[1]
+  if(!typ %in% c("SnpMatrix","XSnpMatrix","aSnpMatrix","aXSnpMatrix")) { stop("X must be a SnpMatrix object or similar") }
+  cs <- col.summary(X)
+  FF <- nrow(X)
+  nmiss <- FF - cs$Calls
+  select <- nmiss>0
+  if(length(which(select))<1) { return(X) }
+  if(verbose) { cat(sum(nmiss),"missing values replaced with random alleles\n") }
+  if(length(which(select))==1) { X[,select] <- miss2(select,cs$P.AA[select],cs$P.AB[select],cs$P.BB[select]); return(X) }
+  if(n.cores>1) {
+    do.chunk <- function(SEL) {
+      ii <- mapply(miss2,SEL,cs$P.AA[SEL],cs$P.AB[SEL],cs$P.BB[SEL])
+      return(ii)
+    }
+    posz <- which(select)
+    Ls <- length(posz)
+    split.to <- min(c(round(Ls/100),n.cores),na.rm=T)
+    #if(n.cores>4) { split.to <- split.to * 4 } # divide more if using multicores
+    stepz <- round(seq(from=1,to=Ls+1,length.out=round((split.to+1))))
+    if((tail(stepz,1)) != Ls+1) { stepz <- c(stepz,Ls+1) }
+    split.to <- length(stepz)-1
+    outlist <- sel.range <- vector("list",split.to)
+    for (cc in 1:split.to) {
+      c1 <- stepz[cc]; c2 <- stepz[cc+1]-1  # check this in FN!
+      sel.range[[cc]] <- posz[c(c1:c2)]
+    }
+    #prv(split.to,stepz,select,Ls,sel.range)
+    outlist <- mclapply(sel.range,do.chunk)
+    for (cc in 1:split.to) {
+      X@.Data[,sel.range[[cc]]] <- outlist[[cc]]
+    }
+  } else {
+    ii <- mapply(miss2,which(select),cs$P.AA[select],cs$P.AB[select],cs$P.BB[select])
+    X@.Data[,select] <- ii
+  }
+  return(X)
+}
+
+
+
+#' Replace missing values in a SnpMatrix object with imputed values
+#'
+#' This function is a wrapper for the snpStats snp.imputation() and impute.snps() functions.
+#' It allows a full imputation with one simple command, and facilitates stratified imputation for
+#' subsets of samples, and the parameter 'by' allows subsetting by SNPs, which speeds up the
+#' imputation for large sets by running it in smaller batches (as large ones are really slow).
+#' The standard use of the snpStats imputation functions will still leave some NA's behind,
+#' whereas the option 'random' ensures each missing value is replaced, even if just by an
+#' allele chosen at random (using existing frequencies).
+# (chris)
+#' @param X SnpMatrix object with missing data that you wish to impute
+#' @param strata factor, imputation can be done independently for different sample subsets,
+#' use a vector here of the same length as the number of samples (nrow(X)) to code this
+#' @param by integer, a parameter that is passed to impute.missing() to determine
+#' what sized subsets to impute by (smaller subsets makes imputation faster)
+#' @param random logical, when imputation is performed using the core function, impute.snps(),
+#' usually there are some SNPs that remain missing, due to missingness in the most correlated
+#' SNPs used to impute them. Setting this parameter TRUE, will replace this remainder with
+#' random values (using the allele frequencies for the non missing data). Setting to FALSE
+#' will leave these values as missing in which case you cannot rely on this function returning
+#' a fully complete matrix.
+#' @param data.frame logical, if TRUE then return the result as a data.frame instead of a
+#' SnpMatrix object
+#' @param verbose logical, if TRUE, more information about what is being done in the 
+#' imputation will be provided. Additionally, if TRUE and the dataset being imputed is 
+#' large enough to take a long time, then a progress bar will be displayed using
+#' 'loop.tracker()'. If FALSE, no progress bar will be used, regardless of the size of dataset.
+#' @param ... further arguments to 'impute.snps()' from snpStats, which is the core function
+#' that performs the main imputation.
+#' @return Returns a SnpMatrix with no missing values (as any originally present are imputed
+#' or randomized), or if random=FALSE, it may contain some missing values. If data.frame=TRUE
+#' then the returned object will be a data.frame rather than a SnpMatrix.
+#' @export
+#' @author Chris Wallace and Nicholas Cooper \email{nick.cooper@@cimr.cam.ac.uk}
+#' @examples
+#' require(snpStats)
+#' test.mat <- rSnpMatrix(nsnp=5,nsamp=10)
+#' print(SnpMatrix.to.data.frame(test.mat))
+#' out.mat <- impute.missing(test.mat)
+#' print(SnpMatrix.to.data.frame(out.mat))
+#' test.mat2 <- rSnpMatrix(nsnp=200,nsamp=100,call.rate=.98)
+#' head(col.summary(test.mat2))
+#' out.mat2 <- impute.missing(test.mat2,by=50)
+#' cs <- col.summary(out.mat2)
+#' head(cs)
+#' # 'random' is true, so there should be no remaining missing values
+#' paste(out.of(length(which(cs$Call.rate==1)),nrow(cs)),"SNPs imputed to 0% missing\n")
+#' out.mat3 <- impute.missing(test.mat2,random=FALSE)
+#' cs <- col.summary(out.mat3)
+#' # random was FALSE, so some of these should still have missing values:
+#' paste(out.of(length(which(cs$Call.rate==1)),nrow(cs)),"SNPs imputed to 0% missing\n")
+#' # for instance, these
+#' print(head(cs[which(cs$Call.rate<1),]))
+#' # complicated example using both sample and SNP subsets for imputation
+#' out.mat4 <- impute.missing(test.mat2, by=100, 
+#'                       strata = c(rep(1,25),rep(2,50),rep(3,25)), random=FALSE)
+impute.missing <- function (X,  strata = NULL, by=NULL, random=TRUE, data.frame = FALSE,
+                            verbose=TRUE,...) {
+  typ <- is(X)[1]
+  if(!typ %in% c("SnpMatrix","aSnpMatrix")) { stop("X must be a SnpMatrix/aSnpMatrix object") }
+  if(Dim(X)[1] < 2 | Dim(X)[2] <2) { stop("X must be at least 2 x 2") }
+  N <- as(X, "numeric"); 
+  done <- FALSE
+  mem.max <- 0.02  #GB
+  bp <- 1:ncol(X) # parameter needed for snp.imputation() ?
+  if(!is.null(by)) {
+    if(!is.numeric(by)) { warning("by must be numeric, ignoring invalid parameter"); by <- NULL }
+    by <- round(by) # force integer
+    if(by<3) { warning("by is too small to be useful, ignoring parameter"); by <- NULL }
+    if((by*1.25)>ncol(X)) { by <- NULL } # ignore 'by' if num SNPs is not that large
+  }
+  if(any(Dim(X)!=Dim(N))) { stop("'as numeric' caused loss of dimensionality for unknown reason") }
+  if (!is.null(strata)) {
+    if(length(strata)==nrow(X)) {
+      ## Partition by sample subsets, then re-send the subsets to this function for processing
+      strata <- as.factor(strata)
+      if (length(levels(strata)) > 20) 
+        stop("too many levels in strata\n")
+      for (i in levels(strata)) {
+        if(verbose) { cat("\nImputing sample subset '", i, "' (strata)\n",sep="") }
+        wh <- which(strata == i)
+        N <- as.data.frame(N)
+        N[wh, ] <- impute.missing(X[wh, , drop = FALSE], 
+                                  data.frame = TRUE, by=by,...)
+      }
+      done <- TRUE
+    } else {
+      #print(length(strata));print(nrow(X))
+      warning("'strata' should have length==nrow(X), all samples will be imputed together")
+    }
+  }
+  if (is.null(strata) & is.numeric(by)) {
+    ## Partition by SNP subsets, then re-send the subsets to this function for processing
+    strata <- as.factor(make.split(ncol(X),by=by))
+    # added by nick
+    for (i in levels(strata)) {
+      wh <- which(strata == i)
+      if(verbose) { cat(" imputing SNP subset ", minna(wh), "-",maxna(wh),"\n",sep="") }
+      anything <- impute.missing(X[,wh , drop = FALSE], data.frame = TRUE, ...)
+      N <- as.data.frame(N)
+      N[, wh] <- anything
+    }
+    done <- TRUE
+  } else {
+    if(!done) {
+      # The core imputation, done using the snpStats functions 'snp.imputation' and 'impute.snps' #
+      csumm <- col.summary(X)
+      use <- csumm[, "Certain.calls"] == 1
+      X2 <- X[, use]
+      bp <- bp[use]
+      imp <- (csumm[, "Call.rate"] < 1 & !is.na(csumm[, "Call.rate"]))[use]
+      #if(sumna(imp)==175) { stst <- strata; byby <- by; prv(stst,byby)}
+      if(verbose) { cat(sumna(imp), " SNP",if(sumna(imp)!=1) {"s"} else { "" }," in the set had missing values\n",sep="")  }
+      ll <- length(which(imp)); dd <- 1 # mx <- max(which(imp),na.rm=T); 
+      if(estimate.memory(X2)<mem.max) { verbose <- FALSE }
+      for (i in which(imp)) {
+        if(verbose) {
+          loop.tracker(dd,ll); dd <- dd + 1 # track this loop as count, these pars not used elsewhere
+        }
+        supres <- capture.output(rule <- snp.imputation(X2[, -i, drop = FALSE], X2[, 
+                                                                                   i, drop = FALSE], bp[-i], bp[i]))
+        if (is.null(rule@.Data[[1]])) 
+          next
+        imp <- impute.snps(rules = rule, snps = X2[, rule@.Data[[1]]$snps, drop = FALSE], ...) 
+        wh.na <- which(is.na(N[, i]))
+        #gtWWW <- X2
+        #prv(gtWWW)
+        if(length(wh.na)>0) { 
+          N[wh.na, colnames(X2)[i]] <- imp[wh.na]
+        }
+      }
+    }
+  }
+  if(random) { N <- randomize.missing2(N,verbose=verbose) } # replace any remaining missing values
+  if(data.frame) {
+    return(as.data.frame(N))
+  }
+  else {
+    #print(Dim(N))
+    #print(Dim(X@snps))
+    N <- round(N)
+    N[is.na(N)] <- -1 # replace missing with -1 [will become zero in next line]
+    if(is(N)[1]=="list" | is(N)[1]=="data.frame") { N <- as.matrix(N) } # sometimes it becomes a list for some reason???
+    out.m <- (new("SnpMatrix", data = (as.raw(N+1)),
+                  nrow = nrow(N), ncol = ncol(N), dimnames = dimnames(N)))
+    if(typ=="SnpMatrix") { return(out.m) } else {
+      X@.Data <- out.m
+      return(X)
+    }
+  }
+}
+
+
+
+
+
+
+#' Create a SNP matrix with simulated data
+#' 
+#' A simple function to simulation random SnpMatrix objects for
+#' testing purposes. Does not produce data with an 'LD' structure
+#' so is not very realistic. 
+#' @param nsnp number of SNPs (columns) to simulate
+#' @param nsamp number of samples (rows) to simulate
+#' @param call.rate numeric, percentage of SNPs called, e.g, .95 leaves 5% missing data,
+#' or 1.0 will produce a matrix with no missing data
+#' @param A.freq.fun function, a function to randomly generate frequencies of the 'A'
+#' allele, this must produce 'n' results 0 < x < 1 with argument n, the default is
+#' for uniform generation.
+#' @export
+#' @return returns a SnpMatrix object with nsnp columns and nsamp rows, with 1-call.rate% 
+#' missing data, with allele frequencies generated by 'A.freq.fun'.
+#' @examples
+#' require(snpStats)
+#' newMat <- rSnpMatrix(call.rate=.92) # specify target of 8% missing data
+#' print(as.data.frame(newMat)) # to see actual values
+rSnpMatrix <- function(nsamp=10, nsnp=5, call.rate=.95, A.freq.fun=runif) {
+  dummy.vec <- rep(nsamp,nsnp)
+  call.rate <- force.percentage(call.rate)
+  exp.fac <- 10
+  ld <- FALSE
+  warn.mem <- 0.5 # 0.5GB
+  if(!ld) {
+    mat <- sapply(dummy.vec,rsnp,A.freq.fun=A.freq.fun,cr=call.rate)
+  } else {
+    # this didn't really work #
+    if(estimate.memory(exp.fac*nsamp*nsnp)>warn.mem) { warning("when ld=TRUE, large simulations can take a long time") }
+    mat <- sapply(rep(nsamp,nsnp*exp.fac),rsnp,A.freq.fun=A.freq.fun,cr=call.rate)
+    mat <- get.top.n(mat,nsnp)    
+  }
+  rownames(mat) <- rsampid(nsamp); colnames(mat) <- rsnpid(nsnp)
+  #sm <- new("SnpMatrix",as.raw(mat),dimnames=list(rsampid(nsamp),rsnpid(nsnp)))
+  sm <- new("SnpMatrix", data = as.raw(mat), nrow = nrow(mat), ncol = ncol(mat), dimnames = dimnames(mat))
+  return(sm)
+}
+
+
+
+
+################## endSnpmatrix ##########################
+
+
+#####################
+## Other Functions ##
+#####################
+
+
+#' Function to produce a clean table from logistic regression done via GLM
+#' 
+#' With input as a glm model result object, returns a clean dataframe with 
+#' coefficients, p values, confidence intervals and standard errors. Multiple
+#' options for which columns to return and digits to display
+#'
+#' @param glm.result should be type 'glm', the result of a call to glm() where
+#' the family parameter specifies logistic regression, i.e, family=binomial("logit")
+#' @param intercept logical, whether to display the intercept as the first row of results
+#' @param ci logical, whether to include upper and lower confidence limits in the table of results
+#' @param se logical, whether to include standard error (SE) in the table of results
+#' @param alpha percentage, the type 1 error rate to apply to calculation of confidence
+#' limits, e.g, alpha=.01 results in a 99\% confidence interval.
+#' @param o.digits, integer, number of digits to use displaying odds-ratios and standard errors
+#' @param p.digits, integer, number of digits to round p-values to, not that a high number ensures
+#' that very small p-value are truncated to be displayed as zero.
+#' @param label, logical, whether to label output matrices as a list, with name corresponding to 
+#' the formula for the model
+#' @return a clean dataframe with coefficients, p values, confidence intervals and standard errors. 
+#' There are multiple options for which columns to return and number of digits to display.
+#' @export
+#' @examples
+#' # do we need to require(stats)?
+#' ph <- c(0,0,0,1,1,1) # phenotype
+#' X <- rnorm(6) # independent variable
+#' test.glm <- glm(ph ~ X,family=binomial('logit'))
+#' logistic.summary(test.glm) # very simple example
+#' XX <- sim.cor(10,3)
+#' X1 <- XX[,1]; X2 <- XX[,2]; X3 <- XX[,3]
+#' ph <-c(rep(0,5),rep(1,5))
+#' test.glm <- glm(ph ~ X1 + X2 + X3,family=binomial('logit'))
+#' logistic.summary(test.glm,intercept=TRUE) # include intercept
+#' logistic.summary(test.glm,ci=TRUE,se=FALSE) # show 95% confidence intervals, hide standard error
+#' logistic.summary(test.glm,ci=TRUE,alpha=.01) # get 99% confidence intervals
+logistic.summary <- function(glm.result,intercept=FALSE,ci=FALSE,se=TRUE,alpha=.05,o.digits=3,p.digits=299,label=FALSE)
+{
+  if(!"glm" %in% is(glm.result)) { stop("'glm.result' was not a glm result (of type 'glm'") }
+  if(family(glm.result)[[1]]!="binomial" | family(glm.result)[[2]]!="logit") { 
+    warning("this function is designed to work for glm logistic regression, i.e; ",
+            "glm(family=binomial('logit'))", " invalid output is likely")
+  }
+  co <- summary(glm.result)$coefficients
+  alpha <- force.percentage(alpha,default=.05)
+  if(rownames(co)[1]!="(Intercept)") { intercept <- TRUE }
+  predz <- rownames(co)
+  if(!intercept) { predz <- predz[-1] }
+  lab <- paste(summary(glm.result)$call)[2]
+  #prv(co)
+  if(length(Dim(co))<2) {
+    warning("glm result was empty of parameters")
+    return(NULL)
+  }
+  if(!intercept & nrow(co)<2) { 
+    warning("intercept was not in use, and there were no other parameters in the models") 
+    return(NULL) 
+  }
+  if(!intercept) { fst <- 2 } else { fst <- 1 }
+  p <- co[fst:nrow(co),4]; #print(p)
+  o.r <- exp(co[fst:nrow(co),1]); #print(o.r)
+  p <- round(p,p.digits)
+  
+  # outlist <- list(round(o.r,o.digits),p)
+  # names(outlist) <- c("OR","p-value")
+  SE <- co[fst:nrow(co),2]
+  if(ci) {
+    #prv(co)
+    co1 <- co[fst:nrow(co),1]-(p.to.Z(alpha)*SE)
+    co2 <- co[fst:nrow(co),1]+(p.to.Z(alpha)*SE)
+    if(sum(co1)<=sum(co2)) { co.l <- co1; co.h <- co2 } else {  co.h <- co1; co.l <- co2 }
+    co.l <- exp(co.l); co.h <- exp(co.h)
+    out.fr <- cbind(round(o.r,o.digits),round(SE,o.digits),round(co.l,o.digits),round(co.h,o.digits),p)
+    colnames(out.fr) <- c("OR","SE","OR-low","OR-hi","p-value")
+  } else {
+    out.fr <- cbind(round(o.r,o.digits),round(SE,o.digits),p)
+    colnames(out.fr) <- c("OR","SE","p-value")
+  }
+  if(is.null(rownames(out.fr)) & nrow(out.fr)==1) {
+    rownames(out.fr) <- predz
+  }
+  if(!se) {
+    if(length(Dim(out.fr))==2) {
+      out.fr <- out.fr[,-which(colnames(out.fr) %in% "SE")]
+    } else {
+      if(length(Dim(out.fr))==1) {
+        out.fr <- out.fr[-which(colnames(out.fr) %in% "SE")]
+      }
+    }
+  }
+  if(label) { out.fr <- list(out.fr); names(out.fr) <- lab }
+  return(out.fr)
+}
+
+
+
+
+
+
+
+#' Meta-analysis using odds ratio and standard error from 2 datasets
+#' 
+#' This function calculates meta analysis odds ratios, standard errors and p-values
+#' using results from a table containing odds ratio and standard error data for analyses
+#' of 2 different datasets (typically logistic regression, but other analyses can be
+#' incorporated if an odds-ratio and SE can be derived, for instance one analysis might
+#' be a case control logistic regression GWAS and the other a family TDT analysis).
+#' @param X A data.frame with column names which should be entered in the parameters:
+#' OR1, OR2, SE1, SE2, and optionally N1, N2. 
+#' @param OR1 The column name of X containing odds ratios from the first analysis
+#' @param OR2 Same as OR1 above but pertaining to the second analysis
+#' @param SE1 The column name of X containing standard errors from the first analysis
+#' @param SE2 Same as SE1 above but pertaining to the second analysis
+#' @param N1 Only required if method="sample.size". Either the column name in X with the 
+#' number of samples in the first analysis, of a vector of the same, or if N's is the
+#'  same for all rows, a scalar' value can be entered
+#' for each.
+#' @param N2 Only required if method="sample.size". Same as N1 above but pertaining to analysis 2
+#' @param method character, can be either 'beta', 'z.score' or 'sample.size', and upper/lower
+#' case does not matter. 'Beta' is the default and will calculate meta-analysis weights using
+#' the inverse variance method (based on standard errors), and will calculate the p-values
+#' based on the weighted beta coefficients of the two analyses. 'Z.score' also uses inverse variance
+#' but calculates p-values based on the weighted Z scores of the two analyses. 'Sample.size' uses
+#' the sqrt of the sample sizes to weight the meta analysis and uses Z scores to calculate p values
+#' like 'Z.score' does.#' 
+#' @return The object returned should have the same number of rows and rownames as the data.frame
+#'  X but columns are the meta analysis stastistics, namely:
+#'   OR.meta, beta.meta, se.meta, z.meta, p.meta, which will contain the meta
+#' analysis odds-ratio, beta-coefficient, standard error, z-score, and p-values respectively
+#' for each row of X.
+#' @export
+#' @examples
+#' X <- data.frame(OR_CC=c(1.8,1.15),OR_Fam=c(1.33,0.95),SE_CC=c(0.02,0.12),SE_Fam=c(0.07,0.5))
+#' rownames(X) <- c("rs689","rs23444")
+#' X
+#' meta.me(X)
+#' X <- data.frame(OR_CC=c(1.8,1.15),OR_CC2=c(1.33,0.95),
+#'  SE_CC=c(0.02,0.12),SE_CC2=c(0.02,0.05),
+#'  n1=c(5988,5844),n2=c(1907,1774))
+#' # even with roughly the same number of samples the standard error will determine the influence of
+#' # each analysis on the overall odds ratio, note here that the second SE for dataset goes
+#' # from 0.5 to 0.05 and as a result the estimate of the odds ratio goes from 1.137 to 0.977,
+#' # i.e, from very close to OR1, changing to very close to OR2.
+#' meta.me(X,OR2="OR_CC2",SE2="SE_CC2") 
+#' # sample size and z-score methods give similar (but distinct) results
+#' meta.me(X,OR2="OR_CC2",SE2="SE_CC2",N1="n1",N2="n2",method="sample.size") 
+#' meta.me(X,OR2="OR_CC2",SE2="SE_CC2",N1="n1",N2="n2",method="z.score")  # N's will be ignored
+meta.me <- function(X,OR1="OR_CC",OR2="OR_Fam",SE1="SE_CC",SE2="SE_Fam",
+                    N1=NA,N2=NA,method=c("beta","z.score","sample.size")) {
+  #N1=18856,N2=7638
+  validz <- c("beta","z.score","sample.size")
+  method <- tolower(method[1])
+  if(!method %in% validz) { method <- validz[1]; warning("invalid method entered, using 'beta' method") }
+  if(!is(X)[1]=="data.frame") { stop("X must be a data.frame") }
+  cnx <- colnames(X)
+  if(is.null(rownames(X))) { rownames(X) <- paste(1:nrow(X)) }
+  if(!all(c(OR1,OR2,SE1,SE2) %in% cnx)) { stop("X must contain column names specified by OR1,OR2,SE1,SE2") } 
+  ok <- FALSE
+  if(method=="sample.size") {
+    if(is.numeric(N1) & is.numeric(N2)) { if(length(N1)!=1 | length(N2)!=1) { 
+      stop("N1, N2 should either be scalar integers, or column names containing N's") } else {
+        N.coln <- FALSE
+      } }
+    if(is.character(N1) & is.character(N2)) { 
+      if(!all(c(OR1,OR2,SE1,SE2) %in% cnx)) { 
+        stop("N1,N2 must contain either be scalar integers or column names with N's") } else {
+          N.coln <- TRUE
+        }
+    }
+  }
+  OR.CC <- X[,OR1]
+  beta.CC  <- log(X[,OR1])
+  se.CC <- X[,SE1]
+  OR.family <- X[,OR2]
+  beta.family  <- log(X[,OR2])
+  se.family <- X[,SE2]
+  z.CC <- beta.CC/se.CC
+  z.family <- beta.family/se.family
+  
+  inv.CC <- 1 / (se.CC^2)
+  inv.family <- 1 / (se.family^2)
+  var.meta <- 1 / (inv.CC+inv.family)
+  weight.CC <- inv.CC * var.meta
+  weight.family <- inv.family * var.meta
+  se.meta <- round(sqrt(var.meta), digits=3)
+  if(method=="sample.size") {
+    if(N.coln) {
+      famN <- X[,N2]
+      ccN <- X[,N1]
+    } else {
+      famN <- N2 # 3819*2  #3509*2   #  3819*2   #  10796
+      ccN <- N1 # 6683+12173 # including CBR, or for UVA analyses use instead: 9416+6670
+    }  
+    WeightFam = sqrt(famN)/(sqrt(famN)+sqrt(ccN))
+    WeightCC <- 1-WeightFam
+    # beta calculated the same way for sample.size method using sample size weights
+    beta.meta <- round((WeightCC * beta.CC) + (WeightFam * beta.family),digits=3) # beta based
+    z.meta <- round((WeightCC * z.CC) + (WeightFam * z.family),digits=6) # n-based, z-based
+  } else {
+    # beta calculated the same way for z.score method and beta method using inverse variance
+    beta.meta <- round((weight.CC * beta.CC) + (weight.family * beta.family),digits=3) # beta based
+    if(method=="z.score") {
+      z.meta <- round((weight.CC * z.CC) + (weight.family * z.family),digits=6) # z-based
+    } else {
+      # default (beta) method
+      z.meta <- beta.meta/se.meta
+    }
+  }  
+  OR.meta <- exp(beta.meta)
+  p.meta <- 2*pnorm(-abs(z.meta))
+  out <- (cbind(OR.meta,beta.meta,se.meta,z.meta,p.meta)) 
+  colnames(out) <- c("OR.meta","beta.meta","se.meta","z.meta","p.meta") 
+  rownames(out) <- rownames(X)
+  return(out)
+}
+
+
+################## end other ##########################
+
+
+
+######################
+## Simple Functions ##
+######################
+
+#' Normalize Lambda inflation factors to specific case-control count
+#' 
+#' Lambda inflation statistics are influenced by the size of the generating datasets. To facilitate
+#' comparison to other studies, this function converts a given lambda from nr cases and mr controls,
+#' to n cases and m controls, where m=n=1000 is the most common normalization. All values other than
+#' 'Lnm' are forced within this function to be positive integers.
+#' @param Lnm numeric, a raw Lambda inflation statistic, generated from nr cases and mr controls
+#' @param n integer, desired number of 'virtual' cases to normalise to
+#' @param m integer, desired number of 'virtual' controls to normalise to
+#' @param nr integer, original number of cases that Lnm was derived from
+#' @param mr integer, original number of controls that Lnm was derived from
+#' @return A normalized Lambda coefficient
+#' @export
+#' @author Nicholas Cooper \email{nick.cooper@@cimr.cam.ac.uk}
+#' @references Freedman M.L., et al. Assessing the impact of population stratification
+#'  on genetic association studies. Nat. Genet. 2004;36:388-393.
+#' @seealso \code{\link{lambdas}}
+#' @examples
+#' require(snpStats) ; data(testdata) # already 'depends'?
+#' pheno <- rep(0,nrow(Autosomes))
+#' pheno[subject.data$cc=="case"] <- 1
+#' raw.L <- lambdas(Autosomes,pheno,output="lambda")
+#' L1000 <- lambda_nm(raw.L,1000,1000,200,200)
+#' raw.L; L1000
+#' lambda_nm(1.56,1000,1000,6500,9300) # lambda1000<lambda when n's>1000,1000
+lambda_nm <- function(Lnm,n=1000,m=1000,nr,mr) { 
+  if(!is.numeric(Lnm)) { stop("Lnm must be numeric") }
+  if(!is.numeric(n)) { stop("n must be numeric") } else { n <- abs(round(n)) }
+  if(!is.numeric(m)) { stop("m must be numeric") } else { m <- abs(round(m)) }
+  if(!is.numeric(nr)) { stop("nr must be numeric") } else { nr <- abs(round(nr)) }
+  if(!is.numeric(mr)) { stop("mr must be numeric") } else { mr <- abs(round(mr)) }
+  return(1 + ((Lnm-1)*(((1/nr)+(1/mr))/((1/n)+(1/m)))) )
+}
+
+
+#' Calculate approximate Bayes factors from p values and MAF
+#'
+#' This is a function to calculate approximate Bayes factors from p
+#' values and MAF - for reference see Wakefield, J (2009) Bayes
+#' factors for genome-wide association studies: comparison with
+#' p-values. 
+#' @param p p value
+#' @param maf minor allele frequency
+#' @param n0 number of controls
+#' @param n1 number of cases
+#' @param scale0 by default, =n0
+#' @param scale1 by default, =n1
+#' @references Genetic Epidemiology 33: 79-86.
+#' @return the appoximate bayes factor calculated based on
+#' the p-value, minor allele frequency and case/control sample
+#' sizes
+#' @export
+#' @author Chris Wallace
+#' @examples
+#' abf(.0001,.2,9500,6670)
+abf <- function(p,maf, n0=1000, n1=1000, scale0=n0, scale1=n1) { 
+  # evidence for null - ie low ABF => support for alternative
+  z <- qnorm(p/2, lower.tail=FALSE)
+  x0 <- 0; x1 <- 1; x2 <- 2 # multiplicative model
+  d2 <- (1-maf)^2 * x0^2 + 2*maf*(1-maf)*x1 + maf^2 * x2^2
+  d1 <- (1-maf)^2 * x0 + 2*maf*(1-maf)*x1 + maf^2 * x2
+  V <- (n0 + n1) / ( n0 * n1 * (d2-d1) )
+  ## scale
+  scale <- ((n0 + n1)/(scale0 + scale1)) * (scale0/n0) * (scale1/n1)
+  V <- V * scale
+  W <- ( log(1.5)/qnorm( 0.99, lower.tail=FALSE) )^2
+  VW <- V+W
+  abf <- 2 * log(sqrt(VW/V) * exp( - z^2 * W / (2 * VW) ))
+  return(abf)
+}
+
+
+
+#' Import a ped file to pedData format used by snpStats
+#'
+#' PLINK ped files (family information files) are not in the
+#' same format as ped files required for use with snpStats, for
+#' instance for the tdt.snp() function to conduct a transmission
+#' disequilibrium test. This function will import a PLINK style
+#' ped file and return a 'pedData' object in the correct form
+#' for snpStats and other rpackages. The plink file format is:
+#' column 1: family id, column 2: individual id: column 3:
+#' father's ID or 0, column 4: mother's ID or 0, column 5: sex of subject,
+#' column 7: phenotype of subject.
+#' @param file character, the name of a valid PLINK 'ped'/'fam' file
+#' @param correct.codes logical, if TRUE, then where coding seems
+#' inconsistent, e.g, mother and father both the same, this will
+#' try to fix this automatically
+#' @param silent logical, when false, output will show what
+#' operations and transformations are being done, when TRUE,
+#' the function produces no interim text to the console
+#' @export
+#' @return return a pedData object (a data.frame)
+#' @examples
+#' \donttest{
+#' # fn <- "myfile.ped" # insert name of your own ped file
+#' # myPed <- read.pedData(fn); prv(myPed)
+#' }
+read.pedData <- function(file,correct.codes=TRUE,silent=FALSE) {
+  rr <- read.ped.file(file,keepsix = TRUE)
+  want <- c("familyid","individual","father","mother","sex","affected")
+  have <- colnames(rr)
+  if(!silent) { cat(paste("mapping column",have,"==>",want,"\n"),sep="") }
+  if(ncol(rr)>6) { warning("expected 6 columns in pedfile, unexpected behaviour could result") }
+  if(ncol(rr)<6) { stop("need at least 6 columns in pedfile to map to headings ",paste(want,collapse="")) }
+  colnames(rr)[1:length(want)] <- want
+  rr <- rr[order(rr$familyid),]
+  rr[["member"]] <- unlist(tapply(rep(1,nrow(rr)),factor(rr$familyid),cumsum))
+  rr <- rr[,c(2,1,7,3:6)]
+  rr <- shift.rownames(rr,T)
+  rr[["father"]] <- rr$member[match(rr$father,rownames(rr))]
+  rr[["mother"]] <- rr$member[match(rr$mother,rownames(rr))]
+  if(correct.codes) {
+    badz <- which(rr$father==1 & rr$mother==1)
+    rr[badz,"mother"] <- 2
+    badz <- which(rr$father==2 & rr$mother==2)
+    rr[badz,"father"] <- 1
+  }
+  return(rr)
+}
+
+############### end simple functions #######################
+
+##############
+## DATASETS ##
+##############
+
+#' Autoimmune enriched regions as mapped on ImmunoChip
+#'
+#' Dataset. A consortium of 12 autoimmune diseases (Type 1 diabetes, Celiac
+#' disease, Multiple Sclerosis, Crohns Disease, Primary Billiary Cirrhosis, 
+#' Psoriasis, Rheumatoid Arthritis, Systemic Lupus Erytematosus, 
+#' Ulcerative Colitis, Ankylosing Spondylitis, Autoimmune Thyroid Disease,
+#' Juvenile Idiopathic Arthritis) created the ImmunoChip custom Illumina
+#' iSelect microarray in order to investigate known regions from GWAS
+#' associating with a p value < 5*10-8 with any of these diseases, using
+#' dense mapping of locii. This object specifies the boundaries of these
+#' regions, defined roughly as 0.1 centimorgan recombination distance either 
+#' side of the top marker in each. The data is in the original build 36
+#' coordinates as a GRanges object, but using functions in the humarray
+#' package can easily be converted to build 37, 38 or RangedData/data.frame.
+#' 
+#' @name exAnnotSnp
+#' @docType data
+#' @format An object of class aSnpMatrix
+#' @keywords datasets
+#' @examples
+#' data(exAnnotSnp)
+#' prv(exAnnotSnp)
+NULL # need some sort of code to trigger devtools:document to pick up a dataset
+

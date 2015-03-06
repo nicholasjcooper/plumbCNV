@@ -6718,10 +6718,30 @@ do.penn.qsub <- function(penn.calls, dir, hrs.guess=1, grid.name="all.q", cluste
 
 
 
-# submit a vector of character commands to the grid
-# can write your own function that constructs the cluster command using args( file.name, output.dir, id),
-# you then pass the name of your function as a string, as the argument to 'cluster.fn'
-# log pref is just what the command files generated and submitted to the queue will look like
+#' Submit a vector of character commands to the grid
+#' 
+#' This function allows you to construct a set of command lines to be sent
+#' to the 'GRID' for processing. This by default uses the 'qsub' system, however,
+#' can be customized for most systems by making your own 'cluster.fn' function
+#' that yields the command line required to start a job on your Grid/cluster/queue.
+#' @param bash.commands character vector, a set of commands that could be run at the
+#' bash prompt
+#' @param dir where to store output files, defaults to the current working directory
+#' @param hrs.guess character/numeric, optionally enter how long you think the process
+#' will take (probably for developers only)
+#' @param grid.name the name of the 'grid', which is probably different in each network.
+#' @param cluster.fn character string, the name of a function that will take a file.name,
+#' output.dir, and id as input and return a string that runs a job on your queue/grid/cluster.
+#' The default 'q.cmd' function does this for the qsub system.
+#' @param interval numeric, time in seconds for how often to check progress of the job. Default
+#' is every minute, so make this number smaller for quicker jobs, however don't choose too
+#' low values as latencies for file operations can cause the function to incorrectly guess
+#' that a process is complete and cause disruption. 10 seconds would probably be the minimum
+#' to use.
+#' @param logpref character string, a prefix to append to temporary command file names
+#' @return logical, simply returns TRUE if the jobs seemed to complete successfully, or FALSE if not.
+#' Jobs can give errors and still complete, so TRUE may not necessarily mean that things ran as expected.
+#' As a side effect, your commands should have been run on different nodes of the queue.
 bash.qsub <- function(bash.commands, dir=getwd(), hrs.guess=NA,
                       grid.name="all.q", cluster.fn="q.cmd", interval=60, logpref="X") {
   cat(" submitting bash commands to grid...\n")

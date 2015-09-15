@@ -4,8 +4,6 @@
 
 
 # plumbCNV critical functions
-  
-
 
 # reads in the plink cnvr summary file and can either extract 'by.cnv', ie., a row for each
 # CNV but with a column specifying which CNVR it belongs to, or else, just a list of CNVRs, with
@@ -562,8 +560,8 @@ add.scores.to.cnvrs <- function(cnvs.r,cnvs.d,colname="score") {
     } else {
       new <- (cnvs.r[sset1, ,drop=FALSE])
       old <- (cnvs.d[sset2, ,drop=FALSE])
-      new.id <- paste(chr2(new),start(new),end(new),sep=".")
-      old.id <- paste(chr2(old),start(old),end(old),sep=".")
+      new.id <- paste(chrm(new),start(new),end(new),sep=".")
+      old.id <- paste(chrm(old),start(old),end(old),sep=".")
       sset0 <- match(new.id,old.id)
       cnvs.r[[colname]][sset1] <- old[[colname]][sset0]
     }
@@ -605,7 +603,7 @@ plot.all.samples.for.cnv <- function(dir,reg="S1",dup=F,cnvResult=NULL,suffix=""
   cnvr <- is.cnvr.in.cnv.result.object(cnvResult)
   if(dup){ cnv.txt <- "DUP" } else { cnv.txt <- "DEL" }
   cnv.row <- cnvResult[[cnvr]][[(1+as.numeric(dup))]][reg,]
-  cnv.lim <- c(chr2(cnv.row),start(cnv.row),end(cnv.row))
+  cnv.lim <- c(chrm(cnv.row),start(cnv.row),end(cnv.row))
   cnv.ranges <- cnvResult[[1]][[(4+as.numeric(dup))]][cnv.lim[1]]
   cnv.ranges <- cnv.ranges[(start(cnv.ranges)>=cnv.lim[2] & end(cnv.ranges)<=cnv.lim[3]),]
   # do the plots - may be slow
@@ -869,7 +867,7 @@ get.correspondence <- function(all.runs.d,plots=F) {
   length.tab <- length.tab[order(length.tab[,2]),]
   length.tab <- length.tab[order(length.tab[,1]),]
   rownames(length.tab) <- NULL
-  range.tab <- data.frame.to.ranges(as.data.frame(length.tab),stringsAsFactors=FALSE)
+  range.tab <- df.to.ranged(as.data.frame(length.tab),stringsAsFactors=FALSE)
   nr <- length(z1); tc <- table(all.runs.d$RUN); nc <- length(tc)
   mm <- matrix(nrow=nr,ncol=nc); colnames(mm) <- names(tc); rownames(mm) <- names(rnz)
   colvec <- 1:ncol(mm)

@@ -153,7 +153,7 @@ jlapply <- function(list1, list2, FUN=NULL, select=F, pc=F, collapse=NULL) {
 either.side <- function(ranges,limit=NULL,build=NULL,collapse=TRUE,sep=",",tracker=TRUE) {
   typ <- is(ranges)[1]
   if(!typ %in% c("GRanges","RangedData","ChipInfo")) { stop("invalid 'ranges' object") }
-  chrz <- chr2(ranges)
+  chrz <- chrm(ranges)
   stz <- start(ranges)
   enz <- end(ranges)
   left <- right <- character(length(stz))
@@ -662,10 +662,10 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   #  prv(xlist)
   #prv(query)  ## remove me
   xx <- xlist[[1]]
-  xx=toGenomeOrder2(xx,strict=T)
+  xx=toGenomeOrder(xx,strict=T)
   #print(head(xx))
   ili <- set.chr.to.numeric(subj,table.in=xlist[[2]],table.out=F)
-  yy=toGenomeOrder2(ili,strict=T)
+  yy=toGenomeOrder(ili,strict=T)
   if(autosomes.only) {
     xx=select.autosomes(xx)
     yy=select.autosomes(yy)
@@ -712,7 +712,11 @@ overlap.pc <- function(query,subj,name.by.gene=F,rel.query=T,fill.blanks=T,autos
   if(fill.blanks) {
     replc <- list("",none.val,none.val)
     if(length(by.chr.list)==3) {
-      for (dd in 1:3) { by.chr.list[[dd]] <- fill.blank.matches(by.chr.list[[dd]],replc[[dd]],full.len=subj.nrow) }
+      for (dd in 1:3) { 
+        fbm <- fill.blank.matches(by.chr.list[[dd]],replc[[dd]],full.len=subj.nrow) 
+        by.chr.list[[dd]] <- if(is.null(fbm)) { "" } else { fbm }
+          
+      }
     }
   }
   #if(text.out) {
@@ -795,13 +799,16 @@ import.marker.data <- function(dir, markerinfo.fn="snpdata.map",snp.fn="snpNames
     }
     # match snp list to vcf file
     match.list.to.vcf <- match(snp.list,vcf.file[,snp.col])
-    pc.missing <- (length(which(is.na(match.list.to.vcf)))/length(snp.list))
+    pc.missing <- (length(which(is.na(match.list.to.vcf)))/length(snp.list))#
     if(verbose) { cat("",paste(round(100*pc.missing,1),"% snps missing from annotation file\n")) }
     if(pc.missing>.5) { stop("too many missing. comment out [#] line in function 'calc.chr.ind' if intentional")}
   }
-  snpData <- RangedData(ranges=IRanges(start=vcf.file[,pos.col],width=1,
-                                       names=paste(vcf.file[,snp.col])),space=vcf.file[,chr.col])
-  snpData <- toGenomeOrder2(snpData,strict=T)
+  stt <- vcf.file[,pos.col]; nmz <- paste(vcf.file[,snp.col]); spcc <- vcf.file[,chr.col]
+ # prv(stt,nmz,spcc)
+  #print(length(which(is.na(stt))))
+  if(any(is.na(stt))) { stop("found NA's for 'position' in the snpdata.map file, cannot proceed") }
+  snpData <- RangedData(ranges=IRanges(start=stt,width=1, names=nmz),space=spcc)
+  snpData <- toGenomeOrder(snpData,strict=T)
   return(snpData)
 }
 
@@ -823,7 +830,7 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,add.miss
   build <- ucsc.sanitizer(build)
   if(!is(snp.info)[1]=="RangedData") { warning("snp.info wasn't RangedData") ; return(NULL) }
   snp.info <- select.autosomes(snp.info)
-  snp.info <- toGenomeOrder2(snp.info,strict=T)
+  snp.info <- toGenomeOrder(snp.info,strict=T)
   chr.set <- chrNums(snp.info); n.chr <- length(snp.info)
   # single core -  multicore doesn't really help much (like 5 seconds saving for 22 cores for a large dataset)
   rd <- calc.cov(snp.info, targ.int, min.snps)
@@ -840,12 +847,12 @@ chip.coverage <- function(snp.info,targ.int=100000,by.chr=F,min.snps=10,add.miss
     enz  <- (chr.lens.full - sapply(snp.info,function(x) { rev(sortna(start(x)))[min.snps-1] })) - (targ.int)
     rd2 <- RangedData(IRanges(start=rep(1,n.chr)[stz>0],end=stz[stz>0]),space=chr.set[stz>0])
     rd3 <- RangedData(IRanges(start=(chr.lens.full-enz-targ.int)[enz>0],end=(chr.lens.full-targ.int)[enz>0]),space=chr.set[enz>0])
-    rd  <- rbind(toGenomeOrder2(rd,strict=T),toGenomeOrder2(rd2,strict=T),toGenomeOrder2(rd3,strict=T))
+    rd  <- rbind(toGenomeOrder(rd,strict=T),toGenomeOrder(rd2,strict=T),toGenomeOrder(rd3,strict=T))
   } else { 
     cat("using range restricted by start and end of chip coverage for each chromosome")
     chr.lens <- chr.lens.range  
   }
-  rd <- toGenomeOrder2(rd,strict=T)
+  rd <- toGenomeOrder(rd,strict=T)
   gappoz <- sum(as.numeric(width(rd)))
   if(by.chr) {
     ind.chrs <- 1-(sapply(rd,function(x) { sum(width(x)) })/chr.lens)
@@ -918,9 +925,9 @@ chip.coverage2 <- function(snp.info,targ.int=100000,min.snps=10,by.chr=F,pad.mis
 calc.cov2 <- function (snp.info, targ.int, min.snps) {
   typ <- is(snp.info)[1]
   if(!typ %in% c("RangedData","GRanges","ChipInfo")) { stop("snp.info must be GRanges, RangedData, or ChipInfo type") }
-  snp.info <- toGenomeOrder2(snp.info)
+  snp.info <- toGenomeOrder(snp.info)
   st <- start(snp.info)
-  ch <- chr2(snp.info)
+  ch <- chrm(snp.info)
   tch <- table(ch)
   if(sum(as.numeric(tch))<1) { stop("no SNPs found in snp.info") }
   chr.list <- names(tch)[as.numeric(tch)>0]
@@ -949,7 +956,7 @@ calc.cov2 <- function (snp.info, targ.int, min.snps) {
   }
  # print(sapply(chr.cov,is))
   #return(chr.cov)
-  out.obj <- toGenomeOrder2(do.call("rbind",args=chr.cov))
+  out.obj <- toGenomeOrder(do.call("rbind",args=chr.cov))
   out.obj <- as(out.obj,typ)
   return(out.obj)
 }
@@ -957,7 +964,7 @@ calc.cov2 <- function (snp.info, targ.int, min.snps) {
 
 # internal function used by chip.coverage() to calculate coverage gaps
 calc.cov <- function (snp.info, targ.int, min.snps) {
-  cur.chr <- chr2(snp.info)
+  cur.chr <- chrm(snp.info)
   if(nrow(snp.info)<(min.snps+1)) { warning("not enough snps to calculate coverage"); return(NA) }
   nsnp <- nrow(snp.info)-min.snps;
   beg <- fin <- Chr <- integer(nsnp) 
@@ -993,7 +1000,7 @@ calc.cov <- function (snp.info, targ.int, min.snps) {
   sel <- !is.na(beg) & !is.na(fin) & beg!=0
   beg <- beg[sel] ; fin <- fin[sel] ; Chr <- Chr[sel]
   rd <- RangedData(IRanges(start=beg,end=fin),space=Chr)
-  rd <- toGenomeOrder2(rd,strict=T)
+  rd <- toGenomeOrder(rd,strict=T)
   return(rd)
 }
 
@@ -1002,15 +1009,15 @@ get.genome <- function(build=NULL,num.names=TRUE) {
   ccc <- get.chr.lens(build=build,names=T)
   ch <- names(ccc); if(num.names) { ch <- gsub("chr","",ch) }
   ii <- RangedData(IRanges(start=rep(1,length(ccc)),end=as.numeric(ccc)),space=ch)
-  return(toGenomeOrder2(ii))
+  return(toGenomeOrder(ii))
 }
 
 
 #dir <- make.dir("/chiswick/data/ncooper/ImmunochipFamilies")
 #hh550 <- reader("~/Downloads/hh550.map")
 #colnames(hh550) <- c("chr","pos")
-#hh550 <- data.frame.to.ranges(hh550)
-#hh550 <- toGenomeOrder2(subsetByOverlaps(hh550, get.genome(build=36))) # make sure no illegal SNP positions!
+#hh550 <- df.to.ranged(hh550)
+#hh550 <- toGenomeOrder(subsetByOverlaps(hh550, get.genome(build=36))) # make sure no illegal SNP positions!
 #ichip.regions <- reader("/chiswick/data/ncooper/imputation/COMMON/iChipFineMappingRegionsB36.RData")
 #snp.info <- read.snp.info(dir)
 #i12 <- set.chr.to.numeric(ichip.regions)
@@ -1090,7 +1097,7 @@ get.dgv.ranges <- function(dir=NULL,build="hg18",bioC=TRUE,text=FALSE,shortenID=
   if(bioC | text) {
     must.use.package(c("genoset","IRanges"),bioC=T)
     if(compact) { to.cut <- colnames(tt)[!colnames(tt) %in% colnm.core] } else { to.cut <- NULL }
-    outData <- data.frame.to.ranges(tt,ids=colnm.core[1],start=colnm.core[2],end=colnm.core[3],
+    outData <- df.to.ranged(tt,ids=colnm.core[1],start=colnm.core[2],end=colnm.core[3],
                                     width=NULL,chr=colnm.core[4],build=build, exclude=to.cut)
     if(text) { outData <- ranges.to.txt(outData) }
   } else {
@@ -1167,6 +1174,7 @@ read.penn.cnv.file <- function(filename,readtable=TRUE) {
   cN <- c("coords","n.snps","length","copy.number","file","first.snp","last.snp")
   if(!file.exists(filename)) { stop("specified penn-cnv file did not exist") }
   if(readtable) {
+    if(file.nrow(filename)<1) { return(matrix("",nrow=0,ncol=0)) }
     file.out <- read.table(filename,header=FALSE,stringsAsFactors=FALSE)
     colnames(file.out) <- cN
   } else {
@@ -1236,7 +1244,7 @@ plink.to.Ranges <- function(plink.cnv) {
   #FID  IID  CHR  BP1  BP2  TYPE	SCORE	SITES
   outData <- RangedData(ranges=IRanges(start=dat$BP1,end=dat$BP2),id=dat$IID,space=dat$CHR,
                         cn=dat$TYPE,numSnps=dat$SITES,fid=dat$FID,score=dat$SCORE)
-  outData <- toGenomeOrder2(outData,strict=T)
+  outData <- toGenomeOrder(outData,strict=T)
   # note the IDs can't be rownames due to duplicates
   return(outData)
 }
@@ -1376,7 +1384,8 @@ rmv.dir.penn.cnv.file <- function(filename,append=".nodir",ext=F,verbose=F,
   } else {
     p.file <- read.penn.cnv.file(filename,readtable=readtable); cL <- "file"
   }
-  all.dirs <- dirname(p.file[,cL])
+ # prv(p.file)
+  if(length(p.file)>2) { all.dirs <- dirname(p.file[,cL]) } else { all.dirs <- character(0) }
   un.all <- unique(all.dirs)
   un.dirs <- dir.force.slash(un.all)
   if(length(un.all)>0) {
@@ -1386,7 +1395,7 @@ rmv.dir.penn.cnv.file <- function(filename,append=".nodir",ext=F,verbose=F,
     }
   }
   if(ext) {
-    all.ext <- get.ext(p.file[,cL])
+    if(length(p.file)>2) { all.ext <- get.ext(p.file[,cL]) } else { all.ext <- character(0) }
     un.all <- unique(all.ext)
     if(length(un.all)>0) {
       un.ext <- paste(".",un.all,sep="")
@@ -1557,12 +1566,12 @@ extractROH <- function(dd,min.size=100,merge.gap.pc=.01,verbose=F) {
 # for an ROHlist, converts raw snp index information back into a position
 convert.snp.indx.to.pos <- function(ROHlist,snpMat,snp.info) {
   #must.use.package("genoset")
-  snp.info <- toGenomeOrder2(select.autosomes(snp.info),strict=T)
+  snp.info <- toGenomeOrder(select.autosomes(snp.info),strict=T)
   valid.snps <- colnames(snpMat)[colnames(snpMat) %in% rownames(snp.info)]
   select <- which(rownames(snp.info) %in% valid.snps)
   if(length(valid.snps)<ncol(snpMat)) { warning("some snp names from snpMat were not found in snp.info - set to NA") }
   snp.info <- snp.info[select,]  
-  st <- start(snp.info); en <- end(snp.info); ch <- chr2(snp.info)
+  st <- start(snp.info); en <- end(snp.info); ch <- chrm(snp.info)
   #print(paste("st",st,"en",en,"chr",ch)[en>st])
   main.fun <- function(X,st,en,chr) {
     if(is.null(X) | length(which(!is.na(X)))<2) { warning("sample had no ROH regions exceeding min.size"); return(NULL) }
@@ -1607,7 +1616,7 @@ get.ROH.for.SnpMatrix <- function(snpMat,snp.info=NULL,snp.fail=NULL,dir=NULL,sa
   if(is.null(snp.info) & is.null(dir)) { stop("at least one of snp.info or dir must be non-null to run this function") }
   doROHrow <- function(x,...) { dd <- as.numeric(x); out <- extractROH(dd,...); return(out) }
   if(!is.null(dir) & !is(snp.info)[1]=="RangedData") { snp.info <- read.snp.info(dir) }
-  snp.info <- toGenomeOrder2(select.autosomes(snp.info),strict=T)
+  snp.info <- toGenomeOrder(select.autosomes(snp.info),strict=T)
   if(is.character(snp.fail)) { ii <- snp.fail } else { 
     if("QCfail" %in% colnames(snp.info)) {
       ii <- rownames(snp.info)[snp.info$QCfail!=0]

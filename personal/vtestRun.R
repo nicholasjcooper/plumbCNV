@@ -6,7 +6,7 @@ dgv.valid <- F
 samp.excl <- F
 eval <- F
 my.st <- 0
-my.end <- 6
+my.end <- 2
 do.cnv <- T
 comp <- F
 samp.set <- "light"
@@ -28,15 +28,15 @@ load.all.libs()
 #         dir.base="/chiswick/data/ncooper/ImmunochipReplication/",
 
 
-auxdirI <- "/home/ncooper/Documents/necessaryfilesVASC"
+auxdirI <- "/chiswick/data/ncooper/plumbCNV_Example/preRunAnnotFiles"
 
-dir_rawI <- "/sopworth/data/illumina/hui/vasculitis/"
+dir_rawI <- "/chiswick/data/ncooper/plumbCNV_Example/genomeStudioRawFiles"
 
-dir_baseI <- "/chiswick/data/ncooper/vasculitis"
+dir_baseI <- "/chiswick/data/ncooper/plumbCNV_Example/pipesDisease"
 
-s.supI <- "/sopworth/data/illumina/hui/vasculitis/vasculitis_FinalReport.txt.gz"
+s.supI <- "/chiswick/data/ncooper/plumbCNV_Example/genomeStudioRawFiles/lab1dataset.txt.tar.gz"   #preRunAnnotFiles/snpdata.map"
 
-gsfI <- T
+gsfI <- TRUE #FALSE
 
 
 ##############
@@ -99,18 +99,18 @@ if(samp.set=="none") {
 
 
 if(pca.set==0) {
-  pca.settings <- list(num.pcs=0,pc.to.keep=.20,assoc=F,n.store=50,correct.sex=sex.correct,
+  pca.settings <- list(num.pcs=0,pc.to.keep=.25,assoc=F,n.store=50,correct.sex=sex.correct,
                        add.int=F,preserve.median=F,
                        comparison=F,comp.gc=F,comps="plate",exclude.bad.reg=F)
 } else {
   if(pca.set==12) {
     
-    pca.settings <- list(num.pcs=12,pc.to.keep=.15,assoc=F,n.store=20,correct.sex=sex.correct,
+    pca.settings <- list(num.pcs=12,pc.to.keep=.35,assoc=F,n.store=20,correct.sex=sex.correct,
                          add.int=F,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   } else {
     #24
-    pca.settings <- list(num.pcs=24,pc.to.keep=.30,assoc=F,n.store=50,correct.sex=sex.correct,
+    pca.settings <- list(num.pcs=24,pc.to.keep=.50,assoc=F,n.store=50,correct.sex=sex.correct,
                          add.int=F,preserve.median=F,
                          comparison=T,comp.gc=T,comps="plate",exclude.bad.reg=T)
   }
@@ -120,12 +120,12 @@ if(pca.set==0) {
 
 if(!do.cnv) {
   #none
-  cnv.settings <- list(out.format="Ranges",results="everything",print.summary.overlaps=T,
+  cnv.settings <- list(out.format="Ranges",results="ranges",print.summary.overlaps=F,
                        cnv.qc=F,rare.qc=F,plate.qc=F,pval=0.01,del.rate=2,dup.rate=2,thr.sd=5,plate.thr=5,
                        rmv.low.plates=F,min.sites=4,rare.olp=0.5,rare.pc=0.03,rmv.bad.reg=T)
 } else {
   #normal   # RARE  del.rate=0.4,dup.rate=0.2
-  cnv.settings <- list(out.format="Ranges",results="everything",print.summary.overlaps=T,
+  cnv.settings <- list(out.format="Ranges",results="ranges",print.summary.overlaps=F,
                        cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.01,del.rate=0.6,dup.rate=0.75,thr.sd=3.5,plate.thr=2.5,
                        rmv.low.plates=F,min.sites=6,rare.olp=0.5,rare.pc=0.05,rmv.bad.reg=T)
 }
@@ -135,13 +135,13 @@ settings <- c(chip.settings,base.settings,snp.settings,samp.settings,pca.setting
 ###################
 
 
-dir <- make.dir("/chiswick/data/ncooper/immunochipRunTwo/")
+dir <- make.dir("/chiswick/data/ncooper/plumbCNV_Example/pipesDisease/")
 
 
 if(plumber) {
   if(samp.excl) {
     ## add other sample exclusion ##
-    extra.excl <- "/home/ncooper/Documents/necessaryfilesICHIP/excl.samples.support.txt"
+#    extra.excl <- "/home/ncooper/Documents/necessaryfilesICHIP/excl.samples.support.txt"
     system(paste("cp",extra.excl,dir$excl))
   }  
   cnvResult <- plumbcnv(settings,start.at=my.st,pause.after=my.end,restore.mode=restore,
@@ -149,8 +149,11 @@ if(plumber) {
   save(cnvResult,file=cat.path(dir$res,"fullresult",suf=suffix,ext="RData"))
 }
 
-# test 100kb overlaps
+Header("CNVs called:")
+prv(cnvResult) # show a preview of the object containing the called CNVs
 
+# test 100kb overlaps
+if(F) {
 big.summary <- do.CNV.all.overlaps.summary(cnvResult[[1]],dir,comps=c(4:5),dbs=1:3,len.lo=1000, len.hi=5000000,min.sites=6,n.cores=1)
 print(pheno.ratios.table(dir,sum.table=summary.counts.table(big.summary)))
 DT <- read.data.tracker(dir)
@@ -172,26 +175,4 @@ length.analysis.suf(LL,dir,cnvResult,suffix,thr.col="score",cnts=c(9238,6524),up
 
 
 
-
-if(eval) {
-  #source("validationWorking.R")
-  do.plots <- F # don't redo fp/fn plots each time
-  do.metabo <- F  # don't redo the metabochip analysis each time
-  do.qs <- T
-  plot.range <- 1:20
-  min.snps <- 6
-  print.common <- F
-  ind.examples <- F
-  n.pcs <- pca.set; n.pcs2 <- NA
-  suffix <- suffix
-  dir2 <- make.dir("/chiswick/data/ncooper/metabochipRunTest/")
-  if(metabo) { source("~/github/plumbCNV/personal/metabochip.validation.R") }
-  from.scratch <- F  # first time only set to T, otherwise F
-  suffix <- suffix
-  validate <- T
-  dir <- make.dir("/chiswick/data/ncooper/immunochipRunTwo/")
-  DT <- read.data.tracker(dir)
-  thr <- .95
-  n.cores <- 1
-  if(dgv.valid) { source("~/github/plumbCNV/personal/create.dgv.validation.set.for.ichip.R") }
 }

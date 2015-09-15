@@ -170,6 +170,15 @@ Usage: getDataGS [-h] [-B] [-T] [-N] [-S] [-L] [-F] [-l] [-C] [-D] [-M] [-m] [-R
 
 ### parse command line options ###
 
+if hash getopts 2>/dev/null; then gotone="yes"; else echo "no"; fi
+
+if [ "$gotone" = "no" ]
+then
+   echo need to install posix function 'getopts' to run this script
+   exit
+fi
+
+
 while getopts B:T:N:m:F:O:x:y:z:a:b:c:d:hfltLSCDMGRPX OPT;
 do
     case $OPT in
@@ -342,6 +351,10 @@ fi
 numfiles=$(wc -l FILES.TMP | cut -d ' ' -f 1)
 echo "$numfiles datafiles expected"
 
+#echo "$outdir"/ANNOTATION/
+
+
+
 if [ "$getSnpSub" = "yes" ] ; 
 then 
     #GET LIST OF SNPs#
@@ -353,15 +366,15 @@ then
     fnm=$(head -1 FILES.TMP) 
     if [ "$nexttype" = "gzip" ];
     then 
-      SUBID1=$(zcat $loco/$fnm | head -50 | tail -1 | cut -f $SampCol)
-      SNPID1=$(zcat $loco/$fnm | head -50 | tail -1 | cut -f $SnpCol)
-      zcat $loco/$fnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $SnpCol | awk '!a[$0]++'  > snplist.txt ;
+      SUBID1=$(zcat $loco/$fnm | head -30 | tail -1 | cut -f $SampCol)
+      SNPID1=$(zcat $loco/$fnm | head -30 | tail -1 | cut -f $SnpCol)
+      zcat $loco/$fnm | head -"$MaxSnp" | grep -a $SUBID1 | cut -f $SnpCol | awk '!a[$0]++'  > snpNames.txt ;
     else
-      SUBID1=$(head -50 $loco/$fnm  | tail -1 | cut -f $SampCol)  
-      SNPID1=$(head -50 $loco/$fnm  | tail -1 | cut -f $SnpCol)
-      head -"$MaxSnp" $loco/$fnm  | grep $SUBID1 | cut -f $SnpCol | awk '!a[$0]++'  > snplist.txt ;
+      SUBID1=$(head -30 $loco/$fnm  | tail -1 | cut -f $SampCol)  
+      SNPID1=$(head -30 $loco/$fnm  | tail -1 | cut -f $SnpCol)
+      head -"$MaxSnp" $loco/$fnm  | grep -a $SUBID1 | cut -f $SnpCol | awk '!a[$0]++'  > snpNames.txt ;
     fi
-    
+
     #GET LIST OF IDS (in order)#
     echo 'extracting ID list...'
     
@@ -372,23 +385,43 @@ then
        file=$(head -$i FILES.TMP | tail -1 )
        if [ "$nexttype" = "gzip" ];
        then 
-        zcat $loco/$file | grep $SNPID1 | cut -f $SampCol  > $file.ids ;
+        zcat $loco/$file | grep -a $SNPID1 | cut -f $SampCol  > $file.ids ;
        else
-        grep $SNPID1 $loco/$file | cut -f $SampCol  > $file.ids
+        grep -a $SNPID1 $loco/$file | cut -f $SampCol  > $file.ids
        fi
     done
 
-    cat *.ids > subIdsALL.txt ;
+    nidfiles="$(ls '$outdir/ANNOTATION/*.ids' | wc -l)"
+
+
+
+    echo $nidfiles
+
+    if [ "$nidfiles" -gt 0 ];
+    then
+       cat *.ids > subIdsALL.txt ;
+       echo found $nidfiles *.id files for cohorts, combined to subIdsALL.txt ;
+    else
+       if [ ! -f "$outdir/ANNOTATION/subIdsALL.txt" ];
+       then
+          echo "error: no separate sample *.ids files found, and no file called subIdsALL.txt"
+	  exit ;
+       else
+          echo "found sample ids in file subIdsALL.txt" ;
+          cat "$outdir/ANNOTATION/subIdsALL.txt" > subIdsALL.txt ;
+       fi ;
+    fi
+
     numids=$(wc -l subIdsALL.txt | cut -d ' ' -f 1)
     echo "found $numids subject IDs"
-    numsnps=$(wc -l snplist.txt | cut -d ' ' -f 1)
+    numsnps=$(wc -l snpNames.txt | cut -d ' ' -f 1)
     echo "found $numsnps snp IDs"
     if [ "$numids" -eq "0" ] ; then exit ; fi
     if [ "$numsnps" -eq "0" ] ; then exit ; fi
     mv *.ids "$outdir"/LRRDATA/SAMPLEFILES/
     cp subIdsALL.txt "$outdir"/ANNOTATION/subIdsALL.txt
     mv subIdsALL.txt "$outdir"/ANNOTATION/SAMPLE_SORT/subIdsALL.txt
-    mv snplist.txt "$outdir"/ANNOTATION/snpNames.txt;
+    mv snpNames.txt "$outdir"/ANNOTATION/snpNames.txt;
 fi    
 
 
@@ -398,7 +431,7 @@ fi
 # Such a file is very fast to read into R
 # order will be all SNPs for one SUBJ, then next subject and so forth
 # SNPS.by.SUBJs.MATRIX <- matrix(GC.dat,nrow=num.SNPs)
-# colnames = subIdsALL; rownames = snplist.txt
+# colnames = subIdsALL; rownames = snpNames.txt
 # use script: 'plainVecFileToBigMatrix.R'
 
 # takes about 35 mins on 'wootton' for 200K snps x 6K samps. 
@@ -579,15 +612,15 @@ then
     then 
         echo "extracting from zip file (*.gz)"
         SUBID1=$(zcat $mfnm | head -50 | tail -1 | cut -f $mSampCol)
-        zcat $mfnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $mchrCol  > snpdata1.temp 
-        zcat $mfnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $mSnpCol  > snpdata2.temp 
-        zcat $mfnm | head -"$MaxSnp" | grep $SUBID1 | cut -f $mposCol  > snpdata3.temp 
+        zcat $mfnm | head -"$MaxSnp" | grep -a $SUBID1 | cut -f $mchrCol  > snpdata1.temp 
+        zcat $mfnm | head -"$MaxSnp" | grep -a $SUBID1 | cut -f $mSnpCol  > snpdata2.temp 
+        zcat $mfnm | head -"$MaxSnp" | grep -a $SUBID1 | cut -f $mposCol  > snpdata3.temp 
     else
         echo "extracting from uncompressed text file (*.txt)"
         SUBID1=$(head -50 $mfnm  | tail -1 | cut -f $mSampCol)  
-        head -"$MaxSnp" $mfnm  | grep $SUBID1 | cut -f $mchrCol  > snpdata1.temp 
-        head -"$MaxSnp" $mfnm  | grep $SUBID1 | cut -f $mSnpCol  > snpdata2.temp 
-        head -"$MaxSnp" $mfnm  | grep $SUBID1 | cut -f $mposCol  > snpdata3.temp 
+        head -"$MaxSnp" $mfnm  | grep -a $SUBID1 | cut -f $mchrCol  > snpdata1.temp 
+        head -"$MaxSnp" $mfnm  | grep -a $SUBID1 | cut -f $mSnpCol  > snpdata2.temp 
+        head -"$MaxSnp" $mfnm  | grep -a $SUBID1 | cut -f $mposCol  > snpdata3.temp 
     fi
   else
     echo "Extracting SNP support from support file, e.g, bim, vcf, map, etc."
@@ -661,7 +694,7 @@ then
   plink --lfile snpdata  --map3 --missing --hardy --missing-genotype '-' --out snpdataout --noweb --geno "$snpcr" --hwe "$hwe" --mind "$sampcr" --allow-no-sex
 
   mv snpdataout.hwe snpdataout.hwe.messy
-  grep ALL snpdataout.hwe.messy  > snpdataout2.hwe
+  grep -a ALL snpdataout.hwe.messy  > snpdataout2.hwe
   head -1 snpdataout.hwe.messy > snpdataout1.hwe
   cat snpdataout1.hwe snpdataout2.hwe > snpdataout.hwe
   rm snpdataout1.hwe snpdataout2.hwe snpdataout.hwe.messy

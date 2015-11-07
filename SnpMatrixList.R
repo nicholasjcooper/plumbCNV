@@ -5007,6 +5007,142 @@ read.pedData <- function(file,correct.codes=TRUE,silent=FALSE) {
   return(rr)
 }
 
+# prefer to have the following 2 functions in humarray 
+# use aSnpMatrix or SnpMatrix plus data.frame of allele.codes
+# allele codes must be in the form alt, ref = actually unnecessary unless group is skewed so much MAFs are flipped- update later for this
+estimate.HLA <- function(chr6,allele.codes=NULL,snp.names=c("rs3104413", "rs2854275", "rs9273363"),assume.mafs=FALSE) {
+   rs3vals <- c("CC","GC","GG")  # rs3104413  C > G (~26% MAF)
+   rs2vals <- c("CC","AC","AA") # rs2854275  C > A (~10% MAF)
+   rs9vals <- rev(c("AA","AC","CC")) # rs9273363  C > A (~33% MAF) according to immunobase, but paper suggests A is major
+   sw <- logical(3) ; sw <- rep(F,3)
+   #########################
+   chr6 <- chr6[,snp.names]
+	if(is(chr6)[1]=="aSnpMatrix") { 
+	   allele.codes <- snps(chr6)[,alleles(chr)] 
+	} else { 
+		if(!is.data.frame(allele.codes)) {
+			if(! assume.mafs) { 
+				stop("if not using an aSnpMatrix then allele.codes must be a n x 2 data.frame") 
+			}
+		} else {
+			if(is(chr6)[1]!="SnpMatrix") { stop("chr6 must be a SnpMatrix or aSnpMatrix") }
+			if(ncol(chr6)!=nrow(allele.codes)) { stop("allele.codes must have rows corresponding to the number of columns (SNPs) in chr6")}
+		}
+   }
+      	   cs <- col.summary(chr6[,snp.names])
+   	 #  print(cs)
+   if(!assume.mafs) {
+   		#if(allele.codes[1,2]=="C") { sw[1] <- T }
+   		if(cs$MAF[1]!=cs$RAF[1]) { sw[1] <- T }
+   		if(allele.codes[2,2] %in% c("C","G")) { sw[2] <- T }
+  		if(allele.codes[3,2] %in% c("C","G")) { sw[3] <- T }
+   } else {
+
+   	   for (cc in 1:3) {	if(cs$MAF[cc]!=cs$RAF[cc]) { sw[cc] <- T } }
+   }
+   if(all(snp.names %in% colnames(chr6))) {
+   	   df <- SnpMatrix.to.data.frame(chr6[,snp.names])
+   	 #  prv(df)
+   	   # make sure the ref is the minor allele
+   	   for (cc in 1:3) {
+   	   	  if(sw[cc]) { 
+   	   	  	 df[,cc] <- 2-df[,cc] 
+   	   	  }
+   	   }
+   	  # prv(df)
+   	   rs3104413 <- rs3vals[(df[,1]+1)]; rs3104413[is.na(rs3104413)] <- ""
+   	   rs2854275 <- rs2vals[(df[,2]+1)]; rs2854275[is.na(rs2854275)] <- ""
+   	   rs9273363 <- rs9vals[(df[,3]+1)]; rs9273363[is.na(rs9273363)] <- ""
+   } else {
+   	  stop("chr6 must contain the SNPs: ",paste(snp.names,collapse=",")," to calculate HLA types")
+   }
+   ll <- length(rs3104413)
+   results <- data.frame(DR = rep("",ll), DQ = rep("",ll), risk = rep("",ll),stringsAsFactors=FALSE)
+   rownames(results) <- rownames(chr6) ; if(all(rownames(chr6)!=rownames(df))) { warning("has row order changed during SnpMatrix conversion?") }
+   #for (cc in 1:3) { results[[cc]] <- as.character(results[[cc]])}
+   for (dd in 1:ll) {
+   	   results[dd,] <- paste(apply.3snp.rules(rs3104413[dd], rs2854275[dd], rs9273363[dd]))
+   }
+   return(results)
+}
+
+apply.3snp.rules <- function(rs3104413 = "GG", rs2854275 = "AC", 
+	rs9273363 = "AA") {
+	risk <- "normal"
+	DQ <- ""; DR <- ""
+	if (rs3104413 == "GG") {
+		DR <- "DR4/4"
+		if (rs9273363 %in% c("AA", "AC")) {
+			DQ <- "DR4-DQ8"
+			risk <- "high"
+		} else {
+			DQ <- "x"
+			risk = "normal"
+		}
+	} else {
+		if (rs3104413 == "GC") {
+			if (rs2854275 == "AC") {
+				DR <- "DR3/4"
+				if (rs9273363 == "AA") {
+					DQ <- "DR3/4-DQ8"
+					risk <- "very high"
+				} else {
+					DQ <- "DR3/4-DQ2" #\DRB1*03:01-DQA1*05:01-DQB1*02:01\"; risk <- \"high\""
+					risk <- "normal"
+				}
+			} else {
+				if (rs2854275 == "CC") {
+					DR <- "DR4/x"
+					if (rs9273363 == "CC") {
+						DQ <- "DR4-DQ7"
+						risk <- "low"
+					} else {
+						DQ <- "DR4-DQ8"
+						risk <- "normal"
+					}
+				} else {
+					if (rs2854275 == "AA") {
+						DR <- "unknown"
+						risk <- "unknown"
+						DQ <- "unknown"
+					} else {
+						DR <- DQ <- "missing"
+						risk <- "unknown"
+					}
+				}
+			}
+		} else {
+			if (rs3104413 == "CC") {
+				if (rs2854275 == "AA") {
+					DR <- "DR3/3"
+					risk <- "high"
+					DQ <- "DR3/3-DQ2" #\DRB1*03:01-DQA1*05:01-DQB1*02:01\""
+				} else {
+					DQ <- "x"
+					if (rs2854275 == "AC") {
+						DR <- "DR3/x"
+						risk <- "normal"
+					} else {
+						if (rs2854275 == "CC") {
+							DR <- "DRx/x"
+							risk <- "very low"
+						} else {
+							DR <- "missing"
+							risk <- "unknown"
+						}
+					}
+				}
+			} else {
+				DR <- "missing"
+				risk <- "unknown"
+			}
+		}
+	}
+	return(c(DR = DR, DQ = DQ, risk = risk))
+}
+
+
+
 ############### end simple functions #######################
 
 ##############
@@ -5053,4 +5189,6 @@ NULL # need some sort of code to trigger devtools:document to pick up a dataset
 #' show(exSnpMat)
 #' prv(exSnpMat)
 NULL # need some sort of code to trigger devtools:document to pick up a dataset
+
+
 

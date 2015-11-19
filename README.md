@@ -22,11 +22,16 @@ To prepare for running, work your way through the instructions below. Feel free 
 
 These run on my system with 22 cores ('n.cores' parameter) for most tasks, and automatically submit to a 100-core 'grid' for others ('q.cores' parameter), but you don't have to use a grid if you don't have one, in which case you would set q.cores=0.
 
+System
+------
+For linux type 'uname -a' into the terminal to see whether you need the 
+plink and PennCNV x86_64 or 32 bit versions
+
 
 Public software required to be installed on your system:
 --------------------------------------------------------
 
-PennCNV - http://www.openbioinformatics.org/penncnv/penncnv_download.html
+PennCNV - http://www.openbioinformatics.org/penncnv/penncnv_download.html (or v1.0.3 now on github)
 
 Plink - http://pngu.mgh.harvard.edu/~purcell/plink/
 

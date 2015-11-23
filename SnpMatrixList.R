@@ -4808,7 +4808,7 @@ logistic.summary <- function(glm.result,intercept=FALSE,ci=FALSE,se=TRUE,alpha=.
 #' # sample size and z-score methods give similar (but distinct) results
 #' meta.me(X,OR2="OR_CC2",SE2="SE_CC2",N1="n1",N2="n2",method="sample.size") 
 #' meta.me(X,OR2="OR_CC2",SE2="SE_CC2",N1="n1",N2="n2",method="z.score")  # N's will be ignored
-meta.me <- function(X,OR1="OR_CC",OR2="OR_Fam",SE1="SE_CC",SE2="SE_Fam",
+meta.me <- function(X,OR1="OR_CC",OR2="OR_Fam",SE1="SE_CC",SE2="SE_Fam",Z1=NA,Z2=NA,
                     N1=NA,N2=NA,method=c("beta","z.score","sample.size")) {
   #N1=18856,N2=7638
   validz <- c("beta","z.score","sample.size")
@@ -4837,9 +4837,20 @@ meta.me <- function(X,OR1="OR_CC",OR2="OR_Fam",SE1="SE_CC",SE2="SE_Fam",
   OR.family <- X[,OR2]
   beta.family  <- log(X[,OR2])
   se.family <- X[,SE2]
-  z.CC <- beta.CC/se.CC
-  z.family <- beta.family/se.family
-  
+  if(!is.na(Z1) & method!="beta") {
+    if(Z1 %in% colnames(X)) {
+      z.CC <- X[,Z1]
+    } else { warnings("Z1 column not found, ignoring") }
+  } else {    
+    z.CC <- beta.CC/se.CC
+  }
+  if(!is.na(Z2) & method!="beta") {
+    if(Z2 %in% colnames(X)) {
+      z.family <- X[,Z2]
+    } else { warnings("Z2 column not found, ignoring") }
+  } else {
+    z.family <- beta.family/se.family
+  }
   inv.CC <- 1 / (se.CC^2)
   inv.family <- 1 / (se.family^2)
   var.meta <- 1 / (inv.CC+inv.family)

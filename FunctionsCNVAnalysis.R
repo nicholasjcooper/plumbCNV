@@ -591,11 +591,13 @@ load.data.to.bigmat <- function(dat.fn,inputType="TXT",bck,des,dir,Hopt=F,RNopt=
       }
     }
     cat(" saving datafile as big matrix\n")
+    if(file.exists(cat.path(dir$big,bck))) { unlink(cat.path(dir$big,bck)) }
     bigMat <- as.big.matrix(m.by.s.matrix, backingfile=bck,
                             backingpath=dir$big, descriptorfile=des)
   } else {
     # assume inputType=="TXT"
     cat("\nLoading TAB file...(this will probably be slow)...")
+    if(file.exists(cat.path(dir$big,bck))) { unlink(cat.path(dir$big,bck)) }
     read.big.matrix(dat.fn, sep = '\t', header = Hopt,
                     has.row.names=RNopt, ignore.row.names=FALSE,
                     backingfile = bck, backingpath = dir$big,
@@ -770,6 +772,7 @@ exclude.combine.big.mats <- function(bigList,dir="",pref=paste("SampQC_Combined"
       nR <- length(snp.labels)
       nC <- length(all.samps);  nCf <- length(all.samps[f.AS])
       cat(" combing matrices, expect this to take some time\n")
+      if(file.exists(cat.path(dir$big,bck))) { unlink(cat.path(dir$big,bck)) }
       bigUnified <- big.matrix(nR,nCf, backingfile=bck,
                                backingpath=dir$big, descriptorfile=des)
       d2 <- d1 <- 0
@@ -1312,6 +1315,7 @@ big.matrix.operation <- function(bigM1,bigM2,operation="-",bck,des,dir,split.to=
     nR <- nrow(bigM1); nC <- ncol(bigM1)
     cat(" applying function to matrices. expect this to take some time\n")
     #bigR <- eval(call("-",bigM1[1:nR,1:nC],bigM2[1:nR,1:nC]))
+    if(file.exists(cat.path(dir$big,bck))) { unlink(cat.path(dir$big,bck)) }
     bigO <- big.matrix(nR,nC, backingfile=bck,
                        backingpath=dir$big, descriptorfile=des)
     stepz <- round(seq(from=1,to=nR+1,length.out=round((split.to+1))))
@@ -2038,6 +2042,7 @@ get.subIDs <- function(dir,ret=c("all","lists","combined","files","groups"),verb
   subIDs.list <- vector("list", num.filz)
   names(subIDs.list) <- id.fnz
   path.fn <- cat.path(dir$ids,id.fnz) #,must.exist=T)  # sample id file name
+  prv(num.filz,id.fnz,file.info,path.fn)
   if(!all(file.exists(path.fn))) {
     faild <- FALSE
     if(num.filz==1) {
@@ -3259,6 +3264,7 @@ big.exclude.sort <- function(des.fn="LRRdescrFile", dir="", deepC=T, tranMode=2,
       cat(" adding rownames\n") ; rownames(bigMat1) <- rownames(bigMat)[to.order.r] 
       cat(" converting matrix to big.matrix\n") 
     }
+    if(file.exists(cat.path(dir$big,bck.fn.o))) { unlink(cat.path(dir$big,bck.fn.o)) }
     bigMat2 <- as.big.matrix(bigMat1, backingfile=bck.fn.o,
                              backingpath=dir$big, descriptorfile=des.fn.o)
     if(verbose) { cat(paste(" matrix descr saved as standard description file:",des.fn.o,"\n")) }
@@ -3266,6 +3272,7 @@ big.exclude.sort <- function(des.fn="LRRdescrFile", dir="", deepC=T, tranMode=2,
   } else {
     #this is slow but creates backing file and will speed up ops later
     cat(" starting deep copy...")
+    if(file.exists(cat.path(dir$big,bck.fn.o))) { unlink(cat.path(dir$big,bck.fn.o)) }
     bigMat2 <- deepcopy(bigMat, cols = to.order.c, rows = to.order.r,
                         backingfile=bck.fn.o,backingpath=dir$big, descriptorfile=des.fn.o )
     cat("done\n")
@@ -3501,7 +3508,7 @@ add.color.to.snp.info <- function(snp.info,scheme=c("mono","alt","unique","hilit
   if(!col1 %in% colors()) { col1 <- "purple" }
   if(!col2 %in% colors()) { col2 <- "orange" }
   if(is(snp.info)[1]!="RangedData") { stop("snp.info must be a RangedData object to add colours") }
-  snp.info <- toGenomeOrder(snp.info,strict=T)
+  snp.info <- toGenomeOrder(snp.info) #,strict=T)
   chr.set <- chrNums(snp.info); n.chr <- length(chr.set)
   if(n.chr<1) { stop("there seem to be no chromosomes in the snp.info object") }
   scheme[is.na(scheme)] <- "mono"
@@ -3550,7 +3557,7 @@ add.gindx.to.Ranges <- function(snp.info,build="hg18",absolute=T,label="gindx") 
     warning("object wasn't a RangedData object, genome index not added")
     return(snp.info)
   }
-  snp.info <- toGenomeOrder(snp.info,strict=T)
+  snp.info <- toGenomeOrder(snp.info) #,strict=T)
   if(!absolute) {
     snp.info[[paste(label[1])]] <- genoPos(snp.info)
     return(snp.info)
@@ -3600,7 +3607,7 @@ filter.snp.info <- function(snp.info,filt.names=NULL,include=T,dir=NULL,verbose=
   filt.names.valid <- filt.names[(filt.names %in% rownames(snp.info))]
   if(length(filt.names.valid)>0) {
     pc.ok <- round((length(filt.names.valid)/length(filt.names))*100,1)
-    snp.info <- toGenomeOrder(snp.info,strict=T)
+    snp.info <- toGenomeOrder(snp.info) #,strict=T)
     if(include) {
       if(verbose) { cat(pc.ok,"% of 'filt.names' found in snp.info object, selecting these to create new snp.info object\n",sep="") }
       snp.info <- snp.info[rownames(snp.info) %in% filt.names.valid,]
@@ -5154,6 +5161,12 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
                                     sample.info[sample.info$QCfail==0,],dir=dir,n.cores=l.cores) } 
   
   orig.snp.info <- snp.info
+  objs <- list(dir=dir, plink=import.plink, n.cores=l.cores, proc=2,
+                         call.rate=callrate.snp.thr, hwe.p.thr=hwe.thr,
+                         grp.hwe.z.thr=grp.hwe.z.thr, grp.cr.thr=grp.cr.thr, maf.thr=NA,
+                         snpMatLst=snpMatLst, subIDs.plink=subIDs.actual, group.miss=group.miss,
+                         snp.info=snp.info, sample.info=sample.info, autosomes.only=autosomes.only)
+  save(objs,file="~/EXOME/objs.RData")
   snp.qc.list <- doSnpQC(dir=dir, plink=import.plink, n.cores=l.cores, proc=2,
                          call.rate=callrate.snp.thr, hwe.p.thr=hwe.thr,
                          grp.hwe.z.thr=grp.hwe.z.thr, grp.cr.thr=grp.cr.thr, maf.thr=NA,
@@ -5970,8 +5983,8 @@ make.dir <- function(dir.base="plumbCNV_LRRQC",dir.raw="LRRQC_Raw_Files",no.raw=
   dir.baf.col <- paste.dr(dir.baf,"RAWDATA",sep="")
   dir.ids <- paste.dr(dir.lrr.dat,"SAMPLEFILES",sep="")
   ## now search the local name space for all dir.xxx
-  if ("dir" %in% ls()) { rm(dir) }
-  all.locs <- ls()[grep("dir.",ls())]
+  if ("dir" %in% base::ls()) { rm(dir) }
+  all.locs <- base::ls()[grep("dir.",base::ls())]
   nloc <- length(all.locs)
   dir <- vector("list", nloc)
   inval <- NULL
@@ -6406,7 +6419,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
                                  plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,
                                  rmv.low.plates=F,raw.main="raw",plink.out="plink.cnv",rmv.bad.reg=T,
                                  bad.reg.fn="badRegions.txt",hide.plink.out=T,verbose=F,ped.file="my.ped",
-                                 trio=FALSE,hmm="hh550.hmm",joint=FALSE,restore.mode=FALSE,...)
+                                 trio=FALSE,hmm="hh550.hmm",joint=FALSE,restore.mode=FALSE,plink.cmd="plink",...)
 {
   # This function runs the penn cnv output through a series of filters from penn scripts,
   # plink commands, both utilising bash commands, and also R-functions, to end up with
@@ -6557,9 +6570,10 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   commands[7] <- "# directories and file extensions removed in R"
   commands[8] <- "# plink .fam file created in R"
   # make map file in plink
-  commands[9] <- paste("plink --cnv-list ",plink.out," --cnv-make-map --out ",rmv.ext(plink.out),sep="")
+  commands[9] <- paste(plink.cmd," --cnv-list ",plink.out," --cnv-make-map --out ",rmv.ext(plink.out),sep="")
   # check for overlapping regions (duplicates)
-  commands[10] <- paste("plink --cfile",rmv.ext(plink.out),"--cnv-check-no-overlap --allow-no-sex")
+  commands[10] <- paste(plink.cmd," --cfile",rmv.ext(plink.out),"--cnv-check-no-overlap --allow-no-sex")
+  #print(commands); print(commands[9:10])
   nn[[4]] <- sapply(commands[9:10],system,intern=hide.plink.out,USE.NAMES=F)
   #j3 <- proc.time()[3]; print(j3-j2)
   ovlp.fn <- cat.path(dir$cnv.qc,paste(rmv.ext(plink.out),".cnv.overlap",sep=""))
@@ -6585,10 +6599,10 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   dupR.file <- "rareDUP"
   delR.file <- "rareDEL"
   # rare dels
-  commands[12] <- paste("plink --cfile",rmv.ext(plink.rmv),
+  commands[12] <- paste(plink.cmd," --cfile",rmv.ext(plink.rmv),
                         "--cnv-del --cnv-sites",min.sites,"--cnv-drop-no-segment --cnv-freq-exclude-above",rare.cut,"--cnv-overlap",rare.olp,"--cnv-write --out",delR.file,"--allow-no-sex")
   # rare dups
-  commands[13] <-paste("plink --cfile",rmv.ext(plink.rmv),
+  commands[13] <-paste(plink.cmd," --cfile",rmv.ext(plink.rmv),
                        "--cnv-dup --cnv-sites",min.sites,"--cnv-drop-no-segment --cnv-freq-exclude-above",rare.cut,"--cnv-overlap",rare.olp,"--cnv-write --out",dupR.file,"--allow-no-sex")
   nn[[5]] <- sapply(commands[12:13],system,intern=hide.plink.out,USE.NAMES=F)
   
@@ -6622,33 +6636,33 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   
   commands[15] <- "# remove samples with too many rare or total CNVs per plate in R"
   # all cnvs
-  commands[16] <- paste("plink --cfile",rmv.ext(plink.rmv5),"--cnv-drop-no-segment --cnv-write --out allCNV --allow-no-sex")
+  commands[16] <- paste(plink.cmd," --cfile",rmv.ext(plink.rmv5),"--cnv-drop-no-segment --cnv-write --out allCNV --allow-no-sex")
   # make map file in plink
-  commands[17] <- paste("plink --cnv-list allCNV.cnv --cnv-make-map --out allCNV")
+  commands[17] <- paste(plink.cmd," --cnv-list allCNV.cnv --cnv-make-map --out allCNV")
   # all dels
-  commands[18] <- paste("plink --cfile allCNV --cnv-del --cnv-drop-no-segment --cnv-write --out allDel --allow-no-sex")
+  commands[18] <- paste(plink.cmd," --cfile allCNV --cnv-del --cnv-drop-no-segment --cnv-write --out allDel --allow-no-sex")
   # all dups
-  commands[19] <- paste("plink --cfile allCNV --cnv-dup --cnv-drop-no-segment --cnv-write --out allDup --allow-no-sex")
+  commands[19] <- paste(plink.cmd," --cfile allCNV --cnv-dup --cnv-drop-no-segment --cnv-write --out allDup --allow-no-sex")
   # rare dups
-  commands[20] <- paste("plink --cfile allCNV --cnv-dup --cnv-sites",min.sites,"--cnv-drop-no-segment --cnv-freq-exclude-above",rare.cut,"--cnv-overlap",rare.olp,"--cnv-write --out",dupR.file,"--allow-no-sex")
+  commands[20] <- paste(plink.cmd," --cfile allCNV --cnv-dup --cnv-sites",min.sites,"--cnv-drop-no-segment --cnv-freq-exclude-above",rare.cut,"--cnv-overlap",rare.olp,"--cnv-write --out",dupR.file,"--allow-no-sex")
   # make a map file for each
-  commands[21] <- paste("plink --cnv-list ",paste(delR.file,".cnv",sep="")," --cnv-make-map --out ",delR.file,sep="")
-  commands[22] <- paste("plink --cnv-list ",paste(dupR.file,".cnv",sep="")," --cnv-make-map --out ",dupR.file,sep="")
-  #nn[[5]] <- sapply(commands[16:19],system,intern=hide.plink.out,USE.NAMES=F)
+  commands[21] <- paste(plink.cmd," --cnv-list ",paste(delR.file,".cnv",sep="")," --cnv-make-map --out ",delR.file,sep="")
+  commands[22] <- paste(plink.cmd," --cnv-list ",paste(dupR.file,".cnv",sep="")," --cnv-make-map --out ",dupR.file,sep="")
+  #nn[[5]] <- sapply(commands[16:19/],system,intern=hide.plink.out,USE.NAMES=F)
   #nn[[6]] <- system(commands[20],intern=hide.plink.out)
   #nn[[7]] <- sapply(commands[21:22],system,intern=hide.plink.out,USE.NAMES=F)
   # rare dels
   #print(min.sites); print(rare.cut); print(rare.olp); print(delR.file);
-  commands[23] <- paste("plink --cfile allCNV --cnv-del --cnv-sites",min.sites[1],"--cnv-drop-no-segment --cnv-freq-exclude-above",rare.cut[1],"--cnv-overlap",rare.olp[1],"--cnv-write --out",delR.file[1],"--allow-no-sex")
+  commands[23] <- paste(plink.cmd," --cfile allCNV --cnv-del --cnv-sites",min.sites[1],"--cnv-drop-no-segment --cnv-freq-exclude-above",rare.cut[1],"--cnv-overlap",rare.olp[1],"--cnv-write --out",delR.file[1],"--allow-no-sex")
   commands[24] <- paste("wc -l *.cnv | grep -vi '.map.cnv' | grep -vi 'total' | sort -bgr > cnv_qc_summary.txt",sep="")  # count the number of cnvs at various stages
 
   ## JUST FOR RARE ##
   # create segment files (in each 1mb count cases vs controls, make pretty pic) # use this to graph
-  commands[25] <- paste("plink --cfile",delR.file,"--cnv-seglist  --out",delR.file,"--allow-no-sex")
-  commands[26] <- paste("plink --cfile",dupR.file,"--cnv-seglist  --out",dupR.file,"--allow-no-sex")
+  commands[25] <- paste(plink.cmd," --cfile",delR.file,"--cnv-seglist  --out",delR.file,"--allow-no-sex")
+  commands[26] <- paste(plink.cmd," --cfile",dupR.file,"--cnv-seglist  --out",dupR.file,"--allow-no-sex")
   # create CNVR regions file(s)
-  commands[27] <- paste("plink --cfile",delR.file,"--segment-group --out ",delR.file," --cnv-overlap 0.5 --allow-no-sex")
-  commands[28] <- paste("plink --cfile",dupR.file,"--segment-group --out ",dupR.file," --cnv-overlap 0.5 --allow-no-sex")
+  commands[27] <- paste(plink.cmd," --cfile",delR.file,"--segment-group --out ",delR.file," --cnv-overlap 0.5 --allow-no-sex")
+  commands[28] <- paste(plink.cmd," --cfile",dupR.file,"--segment-group --out ",dupR.file," --cnv-overlap 0.5 --allow-no-sex")
   
   nn[[6]] <- suppressWarnings(sapply(commands[16:28],system,intern=hide.plink.out,USE.NAMES=F))
   #nn[[9]] <- system(commands[28],intern=hide.plink.out)
@@ -6672,12 +6686,29 @@ dir.force.slash <- function(dir) {
   return(dir)
 }
 
+btt <- function() {
+  bash.txt <- c("#!/bin/bash",
+"#! Name of the job:",
+paste0("#SBATCH -J testjob",sample(1000000,1)),
+"#! Which project should be charged:",
+"#SBATCH -A TODD",
+"#! How many whole nodes should be allocated?",
+"#SBATCH --nodes=1",
+"#! How many (MPI) tasks will there be in total? (<= nodes*16)",
+"#SBATCH --ntasks=1",
+"#! How much wallclock time will be required?",
+"#SBATCH --time=00:10:00",
+"#! Select partition:",
+"#SBATCH -p sandybridge")
+  return(bash.txt)
+}
 
 q.submit <- function(penncmd,cc,dest,cluster.fn="q.cmd",grid.name="all.q",
                      filepref="qsub_done_",sub.dir.nm="complete_flags/", logpref="X") {
   # make the sh file
   # make the qsub call
   # submit to queue
+  if(grid.name=="SLURM") { bashtxt <- btt() } else { bashtxt <- "#!/bin/sh" }
   sub.dir.path <- paste(dir.force.slash(dest),sub.dir.nm,sep="")
   flag.fl.nm <- paste0(sub.dir.path,filepref,cc)
   if(!file.exists(sub.dir.path)) {
@@ -6687,13 +6718,15 @@ q.submit <- function(penncmd,cc,dest,cluster.fn="q.cmd",grid.name="all.q",
   }
   extraline <- paste0("touch ",flag.fl.nm)
   nxt.fn <- cat.path(dest,logpref,suf=cc,ext="sh")
-  next.content <- paste(c(penncmd,extraline))
+  next.content <- paste(c(bashtxt,penncmd,extraline))
   writeLines(next.content,con=nxt.fn)
   #q.call <- paste("qsub -q ",grid.name," -o ",dest," -j y ",nxt.fn,sep="")
   if(is.function(cluster.fn) | (is.character(cluster.fn))) {
     q.call <- do.call(cluster.fn,args=list(file.name=nxt.fn,output.dir=dest,id=grid.name))
   }
+  print(q.call)
   call.out <- system(q.call,intern=T)
+#  print(call.out)
   return(call.out)
 }
 
@@ -7048,6 +7081,7 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
       for (tt in 1:n.calls) {
         cat(" expect HMM process ",tt,"/",n.calls," to take roughly ",round(time.per.it,2)," minutes\n",sep="")
         kk <- proc.time()
+        save(penn.calls,file="~/EXOME/test.RData")
 			  print(penn.calls[tt])
         killme <- system(penn.calls[tt],intern=hide.penn.out, ignore.stderr=hide.penn.out)
         jj <- proc.time()
@@ -7092,13 +7126,13 @@ run.CNV.qc <- function(DT=NULL,dir=NULL,num.pcs=NA,penn.path="/usr/local/bin/pen
                          cnv.qc=T,rare.qc=T,plate.qc=T,restore.mode=F,trio=FALSE,joint=FALSE,ped.file="my.ped",
                          pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,rmv.low.plates=F,
                          min.sites=10,rare.olp=.5,rare.pc=1,rmv.bad.reg=T,hide.plink.out=T,verbose=F,
-                         hmm="hh550.hmm",q.cores=NA,grid.id="all.q",n.cores=1)
+                         hmm="hh550.hmm",q.cores=NA,grid.id="all.q",n.cores=1,plink.cmd="plink")
 {
   #takes PC corrected data, generates the prerequisite PENN-CNV input files
   # and runs PennCNV to detect CNVs (or gives the commands to run manually)
   # will import and process the BAF data/file during this process
   load.all.libs(more.bio=c("BSgenome","Rsamtools","rtracklayer","biomaRt","gage",
-                           "graph","multtest","GenomicFeatures","AnnotationDbi")) # load all main plumbcnv libraries
+                           "graph","multtest","GenomicFeatures","AnnotationDbi")[-8]) # load all main plumbcnv libraries
   if(is.data.tracker(DT)) {
     DTs.required <- c("ngrps","sample.info","snp.info")
     is.valid <- req.valid(DT,DTs.required,n.pcs=num.pcs)
@@ -7130,7 +7164,7 @@ run.CNV.qc <- function(DT=NULL,dir=NULL,num.pcs=NA,penn.path="/usr/local/bin/pen
                    min.sites=min.sites,rare.olp=rare.olp,rare.pc=rare.pc,rmv.low.plates=rmv.low.plates,
                    rmv.bad.reg=rmv.bad.reg,verbose=verbose,trio=trio,joint=joint,ped.file=ped.file,  
                    DT=DT,num.pcs=num.pcs,run.manual=F,hmm=hmm,print.cmds=F,
-                   q.cores=q.cores,grid.id=grid.id, n.cores=n.cores,restore.mode=restore.mode)
+                   q.cores=q.cores,grid.id=grid.id, n.cores=n.cores,restore.mode=restore.mode,plink.cmd=plink.cmd)
   
   cat("\nCNV-QC complete\n")
   penn.cmds <- my.out
@@ -7503,7 +7537,7 @@ get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info
     if(any(fl[,1]>fl[,2])) { print(head(fl[fl[,1]>fl[,2],])) }
     left <- RangedData(ranges=IRanges(start=fl[,1],end=fl[,2],names=rownames(ranged)),space=chrm(ranged),id=idz)
     #rownames(left) <- rownames(ranged)
-    flanking_1 <- rangeSnp(toGenomeOrder(left,strict=T),snp.info=snp.info)
+    flanking_1 <- rangeSnp(toGenomeOrder(left),snp.info=snp.info)
     if(nrow(flanking_1)!=length(idz)) { stop("unequal lengths, or id column missing from ranged") }
     if(!is.null(rownames(flanking_1))) { flanking_1 <- flanking_1[rN,] } # ensures same order
   }
@@ -7512,7 +7546,7 @@ get.flanks.from.big.mat <- function(ranged,bigMat,ratio=5,bp=NA,nsnp=NA,snp.info
     if(any(fl[,3]>fl[,4])) { print(head(fl[fl[,3]>fl[,4],])) }
     right <- RangedData(ranges=IRanges(start=fl[,3],end=fl[,4],names=rownames(ranged)),space=chrm(ranged),id=idz)
     #    rownames(right) <- rownames(ranged)
-    flanking_2 <- rangeSnp(toGenomeOrder(right,strict=T),snp.info=snp.info)
+    flanking_2 <- rangeSnp(toGenomeOrder(right),snp.info=snp.info)
     if(nrow(flanking_2)!=length(idz)) { stop("unequal lengths, or id column missing from ranged") }
     if(!is.null(rownames(flanking_2))) { flanking_2 <- flanking_2[rN,] } # ensures same order
   }
@@ -7799,7 +7833,7 @@ calc.quality.stats <- function(DEL, bigBAF, bigPCC, snp.info, pr.acc=0.5,
   #flanking5 <- get.flanks.from.big.mat(DEL,bigPCC,ratio=5,snp.info=snp.info)
   fl <- get.ratio.set(DEL,ratio=short.ratio)
   FLK <- RangedData(ranges=IRanges(start=fl[,1],end=fl[,4]),space=chrm(DEL),id=DEL$id)
-  FLK <- toGenomeOrder(FLK,strict=T)
+  FLK <- toGenomeOrder(FLK) #,strict=T)
   bafDat2R <- get.flanks.from.big.mat(DEL,bigBAF,ratio=short.ratio,snp.info=snp.info,L=F, nsnp=nsnp)
   #print(head(bafDat2R))
   bafDat2L <- get.flanks.from.big.mat(DEL,bigBAF,ratio=short.ratio,snp.info=snp.info,R=F, nsnp=nsnp)
@@ -8846,6 +8880,7 @@ LRR.gc.correct <- function(dir,snp.info,bigLRR,pref="GC",write=F,add.means=T,n.c
   # create new matrix same size, ready for corrected values
   nR <- nrow(origMat); nC <- ncol(origMat)
   cat(" creating new file backed big.matrix to store gc-corrected data...")
+  if(file.exists(cat.path(dir$big,paste0(pref,"Bck")))) { unlink(cat.path(dir$big,paste0(pref,"Bck"))) }
   gcCorMat <- filebacked.big.matrix(nR,nC, backingfile=paste(pref,"Bck",sep=""),
                                     backingpath=dir$big, descriptorfile=paste(pref,"Descr",sep=""))
   cat("done\n")
@@ -8985,7 +9020,7 @@ get.gc.human <- function(windowsize=10^6,build="hg18",ret=c("bio","gc")[1], n.co
   cat("\nExtracting GC% for each",windowsize,"window of the human genome...")
   lData <- RangedData(ranges=IRanges(start=(stz+(windowsize/2)),width=1),
                       space=coco,universe=build)
-  lData <- toGenomeOrder(lData,strict=T)
+  lData <- toGenomeOrder(lData)  ##,strict=T)
   suppressWarnings(gc.dat <- calcGC(lData, expand = windowsize/2, bsgenome = Hsapiens,return.bio=T, n.cores=n.cores))
   #print(is(gc.dat)); print(length(gc.dat)); print(dim(gc.dat)); print(gc.dat)
   #if(ret=="bio") {
@@ -9240,7 +9275,7 @@ get.pfb.ranges <- function(dir) {
   if("PFB" %in% colnames(pfb)) {
     pfbData <- RangedData(ranges=IRanges(start=pfb$Position,end=pfb$Position,names=rownames(pfb)),
                           space=pfb$Chr,PFB=pfb$PFB)
-    pfbData <- toGenomeOrder(pfbData,strict=T)
+    pfbData <- toGenomeOrder(pfbData) #,strict=T)
     pfbData <- add.gindx.to.Ranges(pfbData,build=build,absolute=T,label="gindx")     
     pfbData$PFB[is.na(pfbData$PFB)] <- 0
   }
@@ -9256,7 +9291,7 @@ get.snpqc.ranges <- function(dir,col="het",def=NA) {
   if(col %in% colnames(hz)) {
     hzData <- RangedData(ranges=IRanges(start=hz$start,end=hz$end,names=hz$names),
                          space=hz$space)
-    hzData <- toGenomeOrder(hzData,strict=T)
+    hzData <- toGenomeOrder(hzData) #,strict=T)
     hzData[[col]] <- hz[[col]]
     hzData <- add.gindx.to.Ranges(hzData,build=build,absolute=T,label="gindx")   
     hzData[[col]][is.na(hzData[[col]])] <- def
@@ -9313,7 +9348,7 @@ cnv.plot <- function(dir="",samples="",LRR=T,BAF=F,PREPOSTPC=F,n.pcs=NA,
   } 
   ## over-ride settings incompatible with viewing a partial chromosome if ZOOM is on:
   if(is(snp.info)[1]!="RangedData") { snp.info <- read.snp.info(dir) }
-  snp.info <- toGenomeOrder(snp.info,strict=T)
+  snp.info <- toGenomeOrder(snp.info) #,strict=T)
   chr.set <- chrNums(snp.info); 
   if(all(is.na(Pos)) & all(Cnv==force.chr.pos(Cnv,Chr,snp.info))) { 
     Pos <- extend.50pc(Cnv,Chr,snp.info) } # if pos left blank, by default extend 'Cnv' range by 50%
@@ -10650,11 +10685,14 @@ init.dirs.fn <- function(dir,overwrite=F,ignore=c("raw","sup"),
   }
   if(!silent) {
     cat(length(which(passfail)),"of",length(passfail),"directories created successfully\n") }
+  #prv(update.bash)
   if(update.bash) 
   {  
     scr.file <- cat.path(dir$scr,bash.file)
+    #prv(scr.file)
     if(!file.exists(scr.file)) {
       src <- cat.path(info.dir,bash.file)
+     # prv(src)
       if(file.exists(src)) {
         file.copy(from=src,to=scr.file,recursive=T,overwrite=T)
       } else {
@@ -10764,7 +10802,7 @@ init.dirs.fn <- function(dir,overwrite=F,ignore=c("raw","sup"),
 }
 
 
-check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=T,
+check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=T,plink.cmd="plink",
                             penn.path="/usr/local/bin/penncnv/",verbose=T,hmm="hh550.hmm") {
   ## check whether all appropriate files are in place to run plumbCNV
   ## Check for appropriate Penn CNV installation
@@ -10781,7 +10819,7 @@ check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=
                                      cat(" as are bash commands. Pipeline may not succeed.\n\n")
   }
   if(plink.check) {
-    try(system("plink -h > temp.txt ",intern=F))
+    try(system(paste0(plink.cmd," -h > temp.txt "),intern=F))
     plink.test <- system("head temp.txt",intern=T)
     system("rm temp.txt")
     if(!length(plink.test)>0 | !is.character(plink.test)) {
@@ -10814,7 +10852,7 @@ check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=
       res <- download.file(scr.url,cat.path(penn.path,conv.scrpt),quiet=F)
     }
     if(!file.exists(hmm.file)) { 
-      hmm.file <- paste(penn.path,"lib/",hmm,sep="")
+      hmm.file <- paste(dir.force.slash(penn.path),"lib/",hmm,sep="")
       alt.hmm <- F
     } else { 
       alt.hmm <- T 
@@ -10957,7 +10995,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                      pc.to.keep=.11,assoc=F,n.store=50,correct.sex=F,
                      add.int=F,exclude.bad.reg=T,preserve.median=F,
                      comparison=T,comp.gc=F,comps="plate",use.penn.gc=F,
-                     penn.path="/usr/local/bin/penncnv64/",hmm="hh550.hmm",
+                     penn.path="/usr/local/bin/penncnv64/",plink.cmd="plink",hmm="hh550.hmm",
                      relative=F,run.manual=F,print.cmds=F,trio=F,joint=F,ped.file="my.ped",qs.trios=F,
                      result.pref="cnvResults",out.format="Ranges",results="DT",print.summary.overlaps=F,
                      cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,
@@ -11023,7 +11061,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
     #prv(dir)
     init.dirs.fn(dir,overwrite=erase.previous,silent=T,update.bash=T,info.dir=aux.files.dir)
     erase.previous <- F  # change erase so it can't be done again below
-    if(check.readiness(dir=dir,mode=run.mode,snp.mode=snp.run.mode)) { cat("plumbCNV file check successful\n") }
+    if(check.readiness(dir=dir,mode=run.mode,snp.mode=snp.run.mode,penn.path=penn.path,plink.cmd=plink.cmd)) { cat("plumbCNV file check successful\n") }
     if(is.file(ped.file,dir$ano,dir)) { ped.file <- find.file(ped.file,dir$ano,dir) } else {
       if(trio) {
         cat("trio was set to TRUE but did not find a valid ped.file. Will set trio to FALSE\n")
@@ -11189,7 +11227,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   # 5. Run PennCNV to call CNVs 
   if(start.at<6) {
     Header("5. RUN CNV CALLING WITH PENN-CNV","#")
-    DT <- run.PENN.cnv(DT=DT,num.pcs=num.pcs,n.cores=n.cores,low.ram=T,q.cores=q.cores,grid.id=grid.id,
+    DT <- run.PENN.cnv(DT=DT,num.pcs=num.pcs,n.cores=n.cores,low.ram=T,q.cores=q.cores,grid.id=grid.id,cluster.fn=cluster.fn,
                        restore.mode=restore.mode,relative=relative,run.manual=run.manual,use.penn.gc=use.penn.gc,
                        hide.penn.out=hide.penn.plink,penn.path=penn.path,print.cmds=print.cmds,build=build,hmm=hmm)
     DT <- setSlot(DT,settings=settings,proc.done=5)
@@ -11208,7 +11246,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                      del.rate=del.rate,dup.rate=dup.rate,thr.sd=thr.sd,plate.thr=plate.thr,
                      min.sites=min.sites,rare.olp=rare.olp,rare.pc=rare.pc,rmv.low.plates=rmv.low.plates,
                      rmv.bad.reg=rmv.bad.reg,trio=trio,joint=joint,ped.file=ped.file,
-                     hmm=hmm,q.cores=q.cores,grid.id=grid.id,n.cores=n.cores)
+                     hmm=hmm,q.cores=q.cores,grid.id=grid.id,n.cores=n.cores,plink.cmd=plink.cmd)
     DT <- setSlot(DT,settings=settings,proc.done=6)
   }
   doneCNVR <- FALSE

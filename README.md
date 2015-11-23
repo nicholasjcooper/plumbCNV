@@ -14,11 +14,11 @@ To use this now, you must install by copying the files to a directory on your ma
 Running instructions
 ====================
 
-At the moment you need to source() the individual function files: FunctionsCNVAnalysis.R, generalCNVFunctions.R, validation.functions.R, iFunctions.R, qcScripts.R, SnpMatrixList.R and tdtFunctions.R so that all required functions are loaded into the session (if you modify the path in the header of FunctionsCNVAnalysis.R, the other scripts should be sourced automatically when this file is sourced). Package installation may or may not happen automatically - try 'load.all.libs()' and make sure everything works, and ensure that packages are up to date, particularly for the bioconductor packages, especially for the human genome BSgenome.Hsapiens.UCSC.hg18/hg19 reference which has changed since july 2014.
+At the moment you need to source() the individual function files: FunctionsCNVAnalysis.R, generalCNVFunctions.R, validation.functions.R, qcScripts.R, SnpMatrixList.R and tdtFunctions.R so that all required functions are loaded into the session (if you modify the path in the header of FunctionsCNVAnalysis.R, the other scripts should be sourced automatically when this file is sourced). Package installation may or may not happen automatically - try 'load.all.libs()' and make sure everything works, and ensure that packages are up to date, particularly for the bioconductor packages, especially for the human genome BSgenome.Hsapiens.UCSC.hg18/hg19 reference which has changed since july 2014.
 
 To prepare for running, work your way through the instructions below. Feel free to contact me if you can't find your answer in this document [nick.cooper@cimr.cam.ac.uk]. Once it's all in place it should be quite easy to use, you just need to use one function 'plumbCNV()' which does everything really; it takes the input files as parameters, as well as various thresholds.
 
-'/personal/multiRunsLightSnp.R' and '/personal/multirunsFam.R' are examples of how I run the pipeline once everything is installed and the input files are in place. It might be easiest to just modify these files to match your own filenames, etc.
+'/personal/multiRunsLightSnp.R' and '/personal/multirunsFam.R' are examples of how I run the pipeline once everything is installed and the input files are in place. It might be easiest to just modify these files to match your own filenames, etc. Please also download my plumbCNV_Example repository. Getting this working should demonstrate that you've managed to install everything correctly.
 
 These run on my system with 22 cores ('n.cores' parameter) for most tasks, and automatically submit to a 100-core 'grid' for others ('q.cores' parameter), but you don't have to use a grid if you don't have one, in which case you would set q.cores=0.
 
@@ -44,8 +44,21 @@ NB: need at least R v3.0, but this code should install everything you need
 
 #reader and NCmisc
 install.packages(reader,dependencies=TRUE)
-
 install.packages(bigpca,dependencies=TRUE)
+
+source("https://bioconductor.org/biocLite.R")
+biocLite()
+biocLite("snpStats")
+biocLite("genoset")
+biocLite("GenomicRanges")
+biocLite("rtracklayer")
+biocLite("IRanges")
+biocLite("snpStatsWriter")
+install.packages("devtools")
+library(devtools)
+install_git("http://github.com/chr1swallace/annotSnpStats")
+# humarray is available in my iChip repository, or as part of the plumbCNV_Example repository.
+install.packages("humarray_1.0.0.tar.gz",repos=NULL)
 
 require(reader)
 

@@ -11,7 +11,9 @@ This package has not yet been completely encased in the usual R format and direc
 To use this now, you must install by copying the files to a directory on your machine. You must also install the  humarray package from the repository: nicholasjcooper/iChip or /plumbCNV_Example.
 
 $ git clone https://github.com/nicholasjcooper/plumbCNV
+
 $ git clone https://github.com/nicholasjcooper/plumbCNV_Example
+
 $ git clone https://github.com/nicholasjcooper/iChip
 
 Warnings!
@@ -51,31 +53,47 @@ NB: need at least R v3.0, but this code should install everything you need
 If installing from scratch I think only R3.2.2 will work now.
 
 #reader and NCmisc
+
 install.packages(reader,dependencies=TRUE)
+
 install.packages(bigpca,dependencies=TRUE)
 
 source("https://bioconductor.org/biocLite.R")
+
 biocLite()
+
 biocLite("snpStats")
+
 biocLite("genoset")
+
 biocLite("GenomicRanges")
+
 biocLite("rtracklayer")
+
 biocLite("IRanges")
+
 biocLite("snpStatsWriter")
+
 install.packages("devtools")
+
 library(devtools)
+
 install_git("http://github.com/chr1swallace/annotSnpStats")
+
 # humarray is available in my iChip repository, or as part of the plumbCNV_Example repository.
+
 install.packages("humarray_1.0.0.tar.gz",repos=NULL)
 
 require(reader)
 
 #Other packages
+
 further.packages <- c("bigmemory","biganalytics","multicore","lattice","compiler","NCmisc")
 
 bioC.packages <- c("IRanges","BiocGenerics","Biobase","GenomicRanges","genoset","bigalgebra")
 
 #these NCmisc functions should install all these packages with this command
+
 must.use.package(further.packages) 
 
 must.use.package(bioC.packages,TRUE)
@@ -120,7 +138,9 @@ Regarding use with a cluster or GRID, one of the arguments for plumbCNV() is 'cl
 'source()' a function something like the one below, then you can just set cluster.fn="my.slurm".
 
 my.slurm <- function(file.name,output.dir="",id="") {
+
    return(paste("sbatch ",file.name,"-o ",output.dir) )
+   
 }
 
 You just need to make sure that the function has the same arguments as the original function 'q.cmd' and that the output makes a call to the cluster that results in the output file being written to 'output.dir'.
@@ -155,17 +175,26 @@ WORKAROUNDS AND TRICKS FOR LOCAL INSTALLATION WITHOUT ADMIN RIGHTS
 In all practicality sometimes you need to work on a server where you cannot freely install software. Recently I had to install plumbCNV on such a server and found it possible, with some hacks. The server had an old version of R, which because of a dplyr change, wasn't letting me install NCmisc, so I had to install the latest R:
 
 Installing R without admin priveleges:
+
 $ wget https://cran.rstudio.com/src/base/R-3/R-3.2.2.tar.gz
+
 $ tar xvf R-3.2.2.tar.gz
+
 $ ./configure --prefix=$HOME/R
+
 $ make && make install
+
 
 Either add your install directory to the Path, or run R using the full path.
 
 You can install Plink using wget:
+
 $ wget http://pngu.mgh.harvard.edu/~purcell/plink/dist/plink-1.07-x86_64.zip
+
 Then expand, and set a path to the plink command file;
+
 $ PATH=/software/plink-1.07-x86_64:$PATH
+
 
 or else use: plink.cmd="/software/plink-1.07-x86_64/plink" in plumbCNV().
 
@@ -176,7 +205,9 @@ WORKAROUNDS WHEN HUMARRAY WON'T INSTALL
 Currently the humarray package won't install because GenomicFeatures is broken, because RSQLite was updated changing function names. To get plumbCNV to work with humarray, some hacks are required:
 
 1) find all references to humarray and GenomicFeatures with the plumbCNV/*.R files and comment them out.
+
 2) remove humarray:: from a few places in the iChip/ChipInfoClass.R file (should still work ok)
+
 3) before running plumbCNV(), instead of using library(humarray), source the 3 separate R script files in the iChip repository, 'headandinternal.R', 'iFunctions.R' and 'ChipInfoClass.R'.
 
 I was able to run all steps of the pipeline in this way on a system where i had no admin rights. Please contact me if you are having issues with this part of the installation.

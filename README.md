@@ -8,7 +8,7 @@ https://github.com/nicholasjcooper/plumbCNV
 
 This package has not yet been completely encased in the usual R format and directory structure, and so has not been submitted to CRAN.
 
-To use this now, you must install by copying the files to a directory on your machine. You must also copy the file iFunctions.R from the repository: nicholasjcooper/iChip, and it's probably easiest to copy this into the same directory as the plumbCNV scripts.
+To use this now, you must install by copying the files to a directory on your machine. You must also install the  humarray package from the repository: nicholasjcooper/iChip or /plumbCNV_Example.
 
 $ git clone https://github.com/nicholasjcooper/plumbCNV
 $ git clone https://github.com/nicholasjcooper/plumbCNV_Example
@@ -21,9 +21,9 @@ If installing from scratch, the current version of GenomicFeatures is broken due
 Running instructions
 ====================
 
-At the moment you need to source() the individual function files: FunctionsCNVAnalysis.R, generalCNVFunctions.R, validation.functions.R, qcScripts.R, SnpMatrixList.R and tdtFunctions.R so that all required functions are loaded into the session (if you modify the path in the header of FunctionsCNVAnalysis.R, the other scripts should be sourced automatically when this file is sourced). Package installation may or may not happen automatically - try 'load.all.libs()' and make sure everything works, and ensure that packages are up to date, particularly for the bioconductor packages, especially for the human genome BSgenome.Hsapiens.UCSC.hg18/hg19 reference which has changed since july 2014.
+At the moment you need to source() the individual function files: FunctionsCNVAnalysis.R, generalCNVFunctions.R, validation.functions.R, qcScripts.R, SnpMatrixList.R and tdtFunctions.R so that all required functions are loaded into the session (if you modify the path in the header of FunctionsCNVAnalysis.R, the other scripts should be sourced automatically when this file is sourced). Package installation may or may not happen automatically - try 'load.all.libs()' and make sure everything works, and ensure that packages are up to date, particularly for the bioconductor packages, especially for the human genome BSgenome.Hsapiens.UCSC.hg18/hg19 reference which has changed since july 2014. Note that if you use one of my templates to run plumbCNV, the correct files should be 'sourced' in there already, e.g, 'plumbCNV_Example/run_example.R'.
 
-To prepare for running, work your way through the instructions below. Feel free to contact me if you can't find your answer in this document [nick.cooper@cimr.cam.ac.uk]. Once it's all in place it should be quite easy to use, you just need to use one function 'plumbCNV()' which does everything really; it takes the input files as parameters, as well as various thresholds.
+To prepare for running, work your way through the instructions below. Feel free to contact me if you can't find your answer in this document [nick.cooper at cimr.cam.ac.uk]. Once it's all in place it should be quite easy to use, you just need to use one function 'plumbCNV()' which does everything really; it takes the input files as parameters, as well as various thresholds.
 
 '/personal/multiRunsLightSnp.R' and '/personal/multirunsFam.R' are examples of how I run the pipeline once everything is installed and the input files are in place. It might be easiest to just modify these files to match your own filenames, etc. Please also download my plumbCNV_Example repository. Getting this working should demonstrate that you've managed to install everything correctly.
 
@@ -48,6 +48,7 @@ BLAS - you may have BLAS already as part of R or linux, if not: http://www.openb
 R packages required:
 --------------------
 NB: need at least R v3.0, but this code should install everything you need
+If installing from scratch I think only R3.2.2 will work now.
 
 #reader and NCmisc
 install.packages(reader,dependencies=TRUE)
@@ -134,7 +135,7 @@ SYSTEM LIMITATIONS AND REQUIREMENTS
 
 * this pipeline will not work in MS Windows (except perhaps via putty to a linux server), it requires multiple linux commands installed. It WILL work on MAC OS X and Linux.
 
-* make sure PennCNV is installed for 64bit if your machine is 64-bit (default PennCNV 1.0.3 github download is currently 32-bit), use the 'make' file to install the correction version for your system. 
+* make sure PennCNV is installed for 64-bit if your machine is 64-bit (default PennCNV 1.0.3 github download is currently 32-bit), use the 'make' file to install the correction version for your system. 
 
 * if any single raw data files contain more than roughly 1,000,000,000 samples x snps, you may need to use the option to run SNP-QC in plink, as the SnpMatrix object is limited by the maximum permitted size of R-objects. Alternatively you can split the raw input files into as many subsets as you like and still analyse them as if they are one file, see instructions above
 
@@ -162,11 +163,11 @@ $ make && make install
 Either add your install directory to the Path, or run R using the full path.
 
 You can install Plink using wget:
-wget http://pngu.mgh.harvard.edu/~purcell/plink/dist/plink-1.07-x86_64.zip
+$ wget http://pngu.mgh.harvard.edu/~purcell/plink/dist/plink-1.07-x86_64.zip
 Then expand, and set a path to the plink command file;
-PATH=/software/plink-1.07-x86_64:$PATH
+$ PATH=/software/plink-1.07-x86_64:$PATH
 
-or else use the plink.cmd="/software/plink-1.07-x86_64/plink" in plumbCNV().
+or else use: plink.cmd="/software/plink-1.07-x86_64/plink" in plumbCNV().
 
 PennCNV can be downloaded from github, see normal link. Go into the 'kext' directory and type 'make' to compile for your system.
 

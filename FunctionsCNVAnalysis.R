@@ -7082,7 +7082,7 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
         cat(" expect HMM process ",tt,"/",n.calls," to take roughly ",round(time.per.it,2)," minutes\n",sep="")
         kk <- proc.time()
         save(penn.calls,file="~/EXOME/test.RData")
-			  print(penn.calls[tt])
+			 # print(penn.calls[tt])
         killme <- system(penn.calls[tt],intern=hide.penn.out, ignore.stderr=hide.penn.out)
         jj <- proc.time()
         time.per.it <- round((jj[3]-kk[3])/60)

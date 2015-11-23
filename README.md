@@ -10,6 +10,13 @@ This package has not yet been completely encased in the usual R format and direc
 
 To use this now, you must install by copying the files to a directory on your machine. You must also copy the file iFunctions.R from the repository: nicholasjcooper/iChip, and it's probably easiest to copy this into the same directory as the plumbCNV scripts.
 
+$ git clone https://github.com/nicholasjcooper/plumbCNV
+$ git clone https://github.com/nicholasjcooper/plumbCNV_Example
+$ git clone https://github.com/nicholasjcooper/iChip
+
+Warnings!
+=========
+If installing from scratch, the current version of GenomicFeatures is broken due to importing a now non-existent function from the RSQLite package which has recently been overhauled. If you have an old version RSQLite you may be ok. Not being able to install GenomicFeatures prevents my humarray package from installing properly. This makes it very difficult to get plumbCNV working. See below for my workaround/local install tips. Also dplyr has recently changed a function name so some packages here require the latest version, which requires R 3.2.2, so you may need the latest version of R to be able to run the pipeline.
 
 Running instructions
 ====================
@@ -112,13 +119,12 @@ Regarding use with a cluster or GRID, one of the arguments for plumbCNV() is 'cl
 'source()' a function something like the one below, then you can just set cluster.fn="my.slurm".
 
 my.slurm <- function(file.name,output.dir="",id="") {
-
-    return(paste("sbatch -C nickC --wrap -o ",output.dir,"
-",file.name,sep=""))
-
+   return(paste("sbatch ",file.name,"-o ",output.dir) )
 }
 
 You just need to make sure that the function has the same arguments as the original function 'q.cmd' and that the output makes a call to the cluster that results in the output file being written to 'output.dir'.
+
+Note that if you are using a Slurm system, I've built in an internal function called htt() that provides the prefix text for command files, which makes the running of this part of the pipeline nice and seamless. You can edit this in the file FunctionsCNVAnalysis.R to add your own account id to charge and your server name (server name for me on the Cambridge HPCS was sandybridge). If you set the plumbCNV() argument 'grid.id' = "SLURM" then this btt() prefix text will be utilised automatically.
 
 Alternatively you can set q.cores=0 to avoid using the cluster, and PennCNV will still be run in parallel using however many cores you have available. Another alternative is setting the 2 arguments: run.manual=TRUE, print.cmds=TRUE; which will print the bash/putty penn cnv commands to the console and allow you to run the CNV calling manually using whatever method you like. Although this latter option is largely untested.
 
@@ -128,12 +134,51 @@ SYSTEM LIMITATIONS AND REQUIREMENTS
 
 * this pipeline will not work in MS Windows (except perhaps via putty to a linux server), it requires multiple linux commands installed. It WILL work on MAC OS X and Linux.
 
-* make sure PennCNV is installed for 64bit if your machine is 64-bit (default PennCNV download is currently 32-bit)
+* make sure PennCNV is installed for 64bit if your machine is 64-bit (default PennCNV 1.0.3 github download is currently 32-bit), use the 'make' file to install the correction version for your system. 
 
 * if any single raw data files contain more than roughly 1,000,000,000 samples x snps, you may need to use the option to run SNP-QC in plink, as the SnpMatrix object is limited by the maximum permitted size of R-objects. Alternatively you can split the raw input files into as many subsets as you like and still analyse them as if they are one file, see instructions above
 
+* problems during step 0 of the pipeline will occur if you specify your home directory using tilde(~) notation. Please use the full /home/user/... format
+
+* there is an option to automatically create a map file from a genome studio file, but if the chromosome and position columns are not as expected then please modify the getDataGS.sh script accordingly, or else create your own map file to put into the 'preannotation' folder instead. This could be a reason for a crash in steps 0-2.
+
+* be careful of the sample heterozygosity high and low threshold parameters. if you are using an array other than ImmunoChip, the limits in the template files and example files may not be suitable. I noticed for exomeChip that using these limits removed ALL samples causing an obvious failure.
+
+* in case you have had to install software without admin priveleges, I've now added options to specify a path to both PennCNV (penn.path) and Plink (plink.cmd). 
+
+* the genome build might not be set automatically if you are conducting post processing after using the pipeline, so make sure you set options(ucsc="hg18") or whatever build is appropriate.
 
 
+WORKAROUNDS AND TRICKS FOR LOCAL INSTALLATION WITHOUT ADMIN RIGHTS
+------------------------------------------------------------------
+In all practicality sometimes you need to work on a server where you cannot freely install software. Recently I had to install plumbCNV on such a server and found it possible, with some hacks. The server had an old version of R, which because of a dplyr change, wasn't letting me install NCmisc, so I had to install the latest R:
+
+Installing R without admin priveleges:
+$ wget https://cran.rstudio.com/src/base/R-3/R-3.2.2.tar.gz
+$ tar xvf R-3.2.2.tar.gz
+$ ./configure --prefix=$HOME/R
+$ make && make install
+
+Either add your install directory to the Path, or run R using the full path.
+
+You can install Plink using wget:
+wget http://pngu.mgh.harvard.edu/~purcell/plink/dist/plink-1.07-x86_64.zip
+Then expand, and set a path to the plink command file;
+PATH=/software/plink-1.07-x86_64:$PATH
+
+or else use the plink.cmd="/software/plink-1.07-x86_64/plink" in plumbCNV().
+
+PennCNV can be downloaded from github, see normal link. Go into the 'kext' directory and type 'make' to compile for your system.
+
+WORKAROUNDS WHEN HUMARRAY WON'T INSTALL
+---------------------------------------
+Currently the humarray package won't install because GenomicFeatures is broken, because RSQLite was updated changing function names. To get plumbCNV to work with humarray, some hacks are required:
+
+1) find all references to humarray and GenomicFeatures with the plumbCNV/*.R files and comment them out.
+2) remove humarray:: from a few places in the iChip/ChipInfoClass.R file (should still work ok)
+3) before running plumbCNV(), instead of using library(humarray), source the 3 separate R script files in the iChip repository, 'headandinternal.R', 'iFunctions.R' and 'ChipInfoClass.R'.
+
+I was able to run all steps of the pipeline in this way on a system where i had no admin rights. Please contact me if you are having issues with this part of the installation.
 
 SUPPORT AND ANNOTATION FILES
 ----------------------------

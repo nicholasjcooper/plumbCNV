@@ -52,7 +52,7 @@ R packages required:
 NB: need at least R v3.0, but this code should install everything you need
 If installing from scratch I think only R3.2.2 will work now.
 
-#reader and NCmisc
+reader and NCmisc
 
 install.packages(reader,dependencies=TRUE)
 
@@ -80,19 +80,19 @@ library(devtools)
 
 install_git("http://github.com/chr1swallace/annotSnpStats")
 
-# humarray is available in my iChip repository, or as part of the plumbCNV_Example repository.
+humarray is available in my iChip repository, or as part of the plumbCNV_Example repository.
 
 install.packages("humarray_1.0.0.tar.gz",repos=NULL)
 
 require(reader)
 
-#Other packages
+Other packages
 
 further.packages <- c("bigmemory","biganalytics","multicore","lattice","compiler","NCmisc")
 
 bioC.packages <- c("IRanges","BiocGenerics","Biobase","GenomicRanges","genoset","bigalgebra")
 
-#these NCmisc functions should install all these packages with this command
+These NCmisc functions should install all these packages with this command
 
 must.use.package(further.packages) 
 

@@ -6691,7 +6691,7 @@ btt <- function() {
 "#! Name of the job:",
 paste0("#SBATCH -J testjob",sample(1000000,1)),
 "#! Which project should be charged:",
-"#SBATCH -A TODD",
+"#SBATCH -A <YOUR_ACCOUNT>",
 "#! How many whole nodes should be allocated?",
 "#SBATCH --nodes=1",
 "#! How many (MPI) tasks will there be in total? (<= nodes*16)",
@@ -6699,7 +6699,7 @@ paste0("#SBATCH -J testjob",sample(1000000,1)),
 "#! How much wallclock time will be required?",
 "#SBATCH --time=00:10:00",
 "#! Select partition:",
-"#SBATCH -p sandybridge")
+"#SBATCH -p <PARTITION_NAME>")
   return(bash.txt)
 }
 

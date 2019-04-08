@@ -4634,7 +4634,7 @@ impute.missing <- function (X,  strata = NULL, by=NULL, random=TRUE, data.frame 
 #' print(as.data.frame(newMat)) # to see actual values
 rSnpMatrix <- function(nsamp=10, nsnp=5, call.rate=.95, A.freq.fun=runif) {
   dummy.vec <- rep(nsamp,nsnp)
-  call.rate <- force.percentage(call.rate)
+  if(call.rate!=1) { call.rate <- force.percentage(call.rate) }
   exp.fac <- 10
   ld <- FALSE
   warn.mem <- 0.5 # 0.5GB

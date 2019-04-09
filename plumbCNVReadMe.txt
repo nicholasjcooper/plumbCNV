@@ -37,9 +37,9 @@ R packages required:
 NB: need at least R v3.0, but this code should install everything you need
 
 #reader and NCmisc
-install.packages(reader,dependencies=TRUE)
+install.packages("reader",dependencies=TRUE)
 
-install.packages(bigpca,dependencies=TRUE)
+install.packages("bigpca",dependencies=TRUE)
 
 require(reader)
 

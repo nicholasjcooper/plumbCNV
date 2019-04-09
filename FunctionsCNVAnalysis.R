@@ -1822,7 +1822,13 @@ do.median.for.ranges <- function(ranges.list,bigMat,dir,cont=T,
   if(n.cores>1) { multi <- T } else { multi <- F }
   if(multi) { job.count <- 0 ; cc.collect <- numeric(n.cores)}  # start a counter for parallels (if multi)
   # sort numranges if using parallel (ensures multi processors are working on as similar size chunks as possible)
-  lens <- sapply(ranges.list,diff); sort.lens <- order(lens)
+  lens <- sapply(ranges.list,diff);
+  if(multi) {
+  	sort.lens <- lens
+    try({
+      sort.lens <- order(lens)
+    })
+  }
   ##unsort.lens <- order(((1:length(lens))[order(lens)])) # not needed
   ####
   runs <- vector("list",n.cores)
@@ -1843,6 +1849,7 @@ do.median.for.ranges <- function(ranges.list,bigMat,dir,cont=T,
       loop.tracker(cc, num.ranges)
     }
   } else {
+  	#prv(ranges.list, use.big.list, bigMat, dir, ncb, cont)
     for (cc in 1:num.ranges) {
       med.store[cc,] <- do.med.chunk(ranges.list[[cc]],(cc %in% use.big.list),bigMat,dir,ncb,cont)
       # add a tracker, saving backups as we go
@@ -1873,13 +1880,14 @@ get.ranges.for.median <- function(snp.info,gc.dat,bigMat,min.size=10)
  # get number of snps in each of these
  mbGroupsC <- sapply(mbGroups,length)
  too.small <- which(mbGroupsC<min.size)
- if(any(too.small)) { mbGroups <- mbGroups[-too.small]; mbGroupsC <- mbGroupsC[-too.small] }
+ #prv(olp,mbGroups, mbGroupsC, too.small)
+ if(length(too.small)>0) { mbGroups <- mbGroups[-too.small]; mbGroupsC <- mbGroupsC[-too.small] }
  if(length(mbGroups)<2) { stop("Error: insufficient snp density for GC calculations. Check data or turn off GC") }
  #
  #prv(gc.dat,snp.info)
  gc.dat.filt <- subsetByOverlaps(as(gc.dat,"GRanges"),as(snp.info,"GRanges"))
  gc.dat.filt <- gc.dat.filt[-too.small,]
- 
+  
  # Prepare list of ranges for median calcs (depends on whether ranges will be continuous)
  if( any(rownames(snp.info)!=rownames(bigMat)) )
  { 
@@ -1894,8 +1902,9 @@ get.ranges.for.median <- function(snp.info,gc.dat,bigMat,min.size=10)
   name.ind <- T
   # convert position info to snp labels
   mbGroupsN <- lapply(mbGroups,function(X,rn) { rn[X] },rn=rownames(snp.info))
-  ranges.list <- lapply(mbGroups,function(X,rn) { narm(match(X,rn)) },rn=rownames(bigMat))
+  ranges.list <- lapply(mbGroupsN,function(X,rn) { narm(match(X,rn)) },rn=rownames(bigMat))
   use.big.chunk <- which(sapply(ranges.list,length)>bad.row.max)
+  #prv(bad.row.max,mbGroupsN, mbGroups,ranges.list)
   if(any(use.big.chunk)) 
   { 
    stop("Error: some ranges are too large for name indexing, regenerate datafile as suggested above")
@@ -1907,6 +1916,7 @@ get.ranges.for.median <- function(snp.info,gc.dat,bigMat,min.size=10)
   ranges.list <- lapply(mbGroups,range)
   row.max <- 200  
   use.big.chunk <- which(sapply(ranges.list,diff)>row.max)
+  #prv(row.max,mbGroupsN,ranges.list, use.big.chunk, name.ind)
  }
  outlist <- list(ranges.list,use.big.chunk,name.ind,gc.dat.filt)
  names(outlist) <- c("ranges.list","big.list","name.ind","gc.dat") 
@@ -3796,10 +3806,14 @@ update.plate.bad.count.table <- function(dir,plate.index=NULL,plate.list="plate.
 			next.bad[[cc]] <- ""
 		}
 	}
-   if (!is.null(filt.list) & nchar(next.bad[[cc]][1])>1) {
-     excl <- which(!next.bad[[cc]] %in% filt.list)
-     if(length(excl)>1) {
-       next.bad[[cc]] <- next.bad[[cc]][-excl]  }
+   if (!is.null(filt.list)) {
+     if(length(next.bad[[cc]])>0) {
+       if(nchar(next.bad[[cc]][1])>1) {
+         excl <- which(!next.bad[[cc]] %in% filt.list)
+         if(length(excl)>1) {
+           next.bad[[cc]] <- next.bad[[cc]][-excl]  }
+       }
+     }
    }
  }
  TOTAL.bad <- unique(unlist(next.bad))
@@ -5166,7 +5180,8 @@ run.SNP.qc <- function(DT=NULL, dir=NULL, import.plink=F, HD.mode=F, restore.mod
                          grp.hwe.z.thr=grp.hwe.z.thr, grp.cr.thr=grp.cr.thr, maf.thr=NA,
                          snpMatLst=snpMatLst, subIDs.plink=subIDs.actual, group.miss=group.miss,
                          snp.info=snp.info, sample.info=sample.info, autosomes.only=autosomes.only)
-  save(objs,file="~/EXOME/objs.RData")
+  dir.create("/tmp/EXOME")
+  save(objs,file="/tmp/EXOME/objs.RData")
   snp.qc.list <- doSnpQC(dir=dir, plink=import.plink, n.cores=l.cores, proc=2,
                          call.rate=callrate.snp.thr, hwe.p.thr=hwe.thr,
                          grp.hwe.z.thr=grp.hwe.z.thr, grp.cr.thr=grp.cr.thr, maf.thr=NA,
@@ -7081,7 +7096,8 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
       for (tt in 1:n.calls) {
         cat(" expect HMM process ",tt,"/",n.calls," to take roughly ",round(time.per.it,2)," minutes\n",sep="")
         kk <- proc.time()
-        save(penn.calls,file="~/EXOME/test.RData")
+        dir.create("/tmp/EXOME")
+        save(penn.calls,file="/tmp/EXOME/test.RData")
 			 # print(penn.calls[tt])
         killme <- system(penn.calls[tt],intern=hide.penn.out, ignore.stderr=hide.penn.out)
         jj <- proc.time()
@@ -8325,6 +8341,7 @@ calculate.gc.for.samples <- function(bigMat,snp.info,dir,med.chunk.fn="",restore
   # get list of snps for each valid megabase windows that has at least 10 snps
   med.list <- get.ranges.for.median(snp.info=snp.info,gc.dat=gc.dat,bigMat=bigMat)
   rng <- med.list$gc.dat
+  #prv(rng, med.list, snp.info, gc.dat, bigMat)
   if(!(med.chunk.fn=="")) { 
     med.chunk.fn <- cat.path(dir$gc,med.chunk.fn)
     if(!file.exists(med.chunk.fn) | !restore.mode) { 

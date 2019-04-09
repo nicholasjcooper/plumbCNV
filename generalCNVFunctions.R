@@ -1176,6 +1176,15 @@ read.penn.cnv.file <- function(filename,readtable=TRUE) {
   if(readtable) {
     if(file.nrow(filename)<1) { return(matrix("",nrow=0,ncol=0)) }
     file.out <- read.table(filename,header=FALSE,stringsAsFactors=FALSE)
+    #prv(filename,file.out)
+    if(ncol(file.out) < length(cN)) {
+    	if(unlist(head(file.out))[1]=="<NONE>") {
+    	 warning("file had active <NONE>")
+    	} else {
+    	 warning("file had insufficient columns")
+    	}
+    	return(matrix("",nrow=0,ncol=0)) 
+    }
     colnames(file.out) <- cN
   } else {
     raw.dat <- readLines(filename)
@@ -1379,6 +1388,11 @@ plink.to.cnvGSA <- function(cnv.data) {
 rmv.dir.penn.cnv.file <- function(filename,append=".nodir",ext=F,verbose=F,
                                   plink=F,readtable=T) {
   raw.file <- readLines(filename)
+  if(length(raw.file)<1) {
+  	warning(filename, " was empty")
+  	ofn <- paste(filename,append,sep="")
+  	return(ofn)
+  }
   if(plink) {
     p.file <- read.plink.file(filename,readtable=readtable); cL <- "IID"
   } else {

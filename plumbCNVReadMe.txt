@@ -31,6 +31,10 @@ Plink - http://pngu.mgh.harvard.edu/~purcell/plink/
 
 BLAS - you may have BLAS already as part of R or linux, if not: http://www.openblas.net/
 
+# I found it really difficult to get PennCnv working on Max OS X 10.13.6 with perl 5.28
+# This page had the final solution for me (I already edited the make file).
+# also when I didn't use sudo and the version of penncnv in /usr/local/bin, i didn't
+# get the right code compiling.
 
 R packages required:
 --------------------

@@ -1822,7 +1822,7 @@ do.median.for.ranges <- function(ranges.list,bigMat,dir,cont=T,
   if(n.cores>1) { multi <- T } else { multi <- F }
   if(multi) { job.count <- 0 ; cc.collect <- numeric(n.cores)}  # start a counter for parallels (if multi)
   # sort numranges if using parallel (ensures multi processors are working on as similar size chunks as possible)
-  lens <- sapply(ranges.list,diff);
+  lens <- sapply(ranges.list,length);
   if(multi) {
   	sort.lens <- lens
     try({
@@ -6325,7 +6325,7 @@ prepare.penncnv.markers <- function(snp.info,lrr.descr, baf.descr="BAFdescrFile"
 
 
 get.trios.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",ped.file="my.ped",combined.file="raw.merge2.cnv",
-                         penn.path="/usr/local/bin/penncnv/",pref="family",relative=F,hmm="hh550.hmm",joint=FALSE)
+                         perl.path="perl",penn.path="/usr/local/bin/penncnv/",pref="family",relative=F,hmm="hh550.hmm",joint=FALSE)
 {
   # this function generates calls to runn penn-cnv for 'ndir' directories created by plumbcnv
   # can run with either absolute or relative file paths. marker.fn is a list
@@ -6334,7 +6334,7 @@ get.trios.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",ped.fi
   if(!is.file(combined.file,dir$cnv.qc)) { stop("couldn't find merged penn-cnv file: ",combined.file) } else { combined.file <- find.file(combined.file,dir$cnv.qc) }
   if(!is.file(ped.file,dir$ano,dir)) { stop("couldn't find family file: ",ped.file) } else { ped.file <- find.file(ped.file,dir$ano,dir) }
   if(joint) { cmd.type <- "-joint" } else { cmd.type <- "-trio" }
-  penn.cmd <- paste("perl",cat.path(penn.path,"detect_cnv.pl",must.exist=T),cmd.type)
+  penn.cmd <- paste(perl.path,cat.path(penn.path,"detect_cnv.pl",must.exist=T),cmd.type)
   if(joint) {
     arg.nms <- c("hmm","pfb","","list","log","out")
   } else {
@@ -6389,13 +6389,13 @@ get.trios.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",ped.fi
 
 
 get.penn.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",use.penn.gc=T,
-                         penn.path="/usr/local/bin/penncnv/",pref="output",relative=F,hmm="hh550.hmm")
+                         perl.path="perl", penn.path="/usr/local/bin/penncnv/",pref="output",relative=F,hmm="hh550.hmm")
 {
   # this function generates calls to runn penn-cnv for 'ndir' directories created by plumbcnv
   # can run with either absolute or relative file paths. marker.fn is a list
   #  containing elements 'baf' and 'gc' which are the files from prepare.penncnv.markers()
   dir <- validate.dir.for(dir,c("cnv","cnv.raw","cnv.pen"),warn=F)
-  penn.cmd <- paste("perl",cat.path(penn.path,"detect_cnv.pl",must.exist=T),"-test")
+  penn.cmd <- paste(perl.path,cat.path(penn.path,"detect_cnv.pl",must.exist=T),"-test")
   arg.nms <- c("hmm","pfb","list","log","out") ; num.to.chk <- c(1,2)
   if(use.penn.gc) { arg.nms <- c(arg.nms,"gcmodel"); num.to.chk <- c(num.to.chk,6) }
   penn.args.list <- vector("list",length(arg.nms))
@@ -6429,7 +6429,7 @@ get.penn.cmd <- function(dir,gc.out.fn="marker.gcm",baf.out.fn="BAF.pfb",use.pen
 }  
 
 
-process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/penncnv/",build="hg18",
+process.penn.results <- function(dir,sample.info=NULL,perl.path="perl",penn.path="/usr/local/bin/penncnv/",build="hg18",
                                  min.sites=10,rare.olp=.5,rare.pc=1,baf.fn="BAF.pfb",cnv.qc=T,rare.qc=T,
                                  plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,
                                  rmv.low.plates=F,raw.main="raw",plink.out="plink.cnv",rmv.bad.reg=T,
@@ -6472,7 +6472,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   commands[1] <- paste(penn.cmb)
   # get pure IDs by removing directory and file extension
   #rmv.dir.penn.cnv.file(raw.fn,append="",ext=T,verbose=T) # remove directory garbage from penn.cnv file
-  cmd <- paste("perl ",penn.path,cln.scrpt,sep="")
+  cmd <- paste(perl.path," ",penn.path,cln.scrpt,sep="")
   baf.fn <- cat.path(dir$cnv,baf.fn)
   cur.pen <- cat.path(fn=raw.fn,suf=".merge1",ext="cnv")
   args <- paste("combineseg --signalfile ",baf.fn," --fraction 0.2 --bp ",raw.fn," > ",cur.pen,sep="")
@@ -6491,7 +6491,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
       if(!file.exists(first.pen) | !restore.mode) {
         run.PENN.trios(ped.file=ped.file,combined.file=cur.pen,
                      low.ram=T, hide.penn.out=hide.plink.out,
-                     penn.path=penn.path,build=build,joint=joint,hmm=hmm,...)
+                     penn.path=penn.path,perl.path=perl.path,build=build,joint=joint,hmm=hmm,...)
                      # ... = DT=NULL,n.cores=n.cores,num.pcs=num.pcs,run.manual=run.manual,hmm=hmm,print.cmds=print.cmds,q.cores=q.cores,grid.id=grid.id,
       }
       cat.arg <- cat.path(dir$cnv.fam,"familyp*",ext="triocnv")
@@ -6526,7 +6526,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
     }
   }
   #####################################
-  cmd <- paste("perl ",penn.path,scn.scrpt,sep="")
+  cmd <- paste(perl.path," ",penn.path,scn.scrpt,sep="")
   cnv.in.bad <- cat.path("",bad.reg.fn,pre="cnvs_in_")
   args <- paste(cur.pen,bad.reg.fn,"-minqueryfrac 0.5 > ",cnv.in.bad)
   commands[4] <- paste(cmd,args)
@@ -6545,7 +6545,9 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
     #cat(" copied from ",prev.pen,", and wrote to ",cur.pen,"\n",sep="")
   } 
   # need to run these commands before processing the sample ids excluded
-  nn[[2]] <- sapply(commands[4:5],system,intern=hide.plink.out, ignore.stderr=hide.plink.out) 
+  nn[[2]] <- system(commands[4],intern=hide.plink.out, ignore.stderr=hide.plink.out) 
+  if(length(readLines(cat.path(dir$cnv.qc,cnv.in.bad),n=10))<1) { writeLines("<NONE>",con=cat.path(dir$cnv.qc,cnv.in.bad)) } # blank file with mess with fgrep
+  nn[[2]] <- c(nn[[2]],system(commands[5],intern=hide.plink.out, ignore.stderr=hide.plink.out))  
   
   if(rmv.bad.reg) {
     tmp <- rmv.dir.penn.cnv.file(cnv.in.bad,append=".tmp",ext=T,verbose=F)
@@ -6560,9 +6562,10 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
   # convert to plink format
   cat(". done\n")
   if(conv.scrpt %in% list.files(penn.path)) {
-    cmd <- paste("perl ",penn.path,conv.scrpt,sep="")
+    cmd <- paste(perl.path," ",penn.path,conv.scrpt,sep="")
     args <- paste("-i ",cur.pen," -o ",plink.out," -c 1 ",sep="")
     commands[6] <- paste(cmd,args)
+    #prv(commands)
     nn[[3]] <- system(commands[6],intern=hide.plink.out)
   } else {
     # do it in R instead (slower)
@@ -6573,6 +6576,7 @@ process.penn.results <- function(dir,sample.info=NULL,penn.path="/usr/local/bin/
     commands[6] <- "# conversion to plink format was done in R"
   }
   # remove directory garbage from plink file
+  prv(plink.out)
   rmv.dir.plink.file(plink.out,append="",ext=T,verbose=verbose)
   if(brf) {
     # bad region CNVs were removed, check if any samples should be removed as result
@@ -6961,7 +6965,7 @@ run.PENN.trios <- function(ped.file="my.ped",combined.file="raw.merge2.cnv",hmm=
 
 run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdescrFile",
             n.cores=1,q.cores=NA,grid.id="all.q",cluster.fn="q.cmd",relative=T,run.manual=F,low.ram=T,
-            penn.path="/usr/local/bin/penncnv/",build="hg18",sample.info=NULL,snp.info=NULL,
+            penn.path="/usr/local/bin/penncnv/", perl.path="perl", build="hg18",sample.info=NULL,snp.info=NULL,
             restore.mode=F,print.cmds=F,hide.penn.out=T,hmm="hh550.hmm",use.penn.gc=T,trio=FALSE,...)
 {
   #takes PC corrected data, generates the prerequisite PENN-CNV input files
@@ -6993,7 +6997,7 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
   cat("\nPreparing for the running of PennCNV.\n")
   if(!file.exists(penn.path)) {
     cat("Error: Make sure this open-source perl script is correctly installed to:",penn.path,"\n")
-    cat("[NB: Perl must also be installed, which should be fairly standard on linux]\n")
+    cat("[NB: Perl must also be installed, you can specify a path if necessary]\n")
     stop("Find PennCNV at: http://www.openbioinformatics.org/penncnv/penncnv_download.html")
   }
   dir <- validate.dir.for(dir,c("cnv","cnv.raw","cnv.pen","cnv.qsub"),warn=F)
@@ -7052,11 +7056,11 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
   #ndir <- count.penn.dirs(dir) .
   if(trio) {
     penn.calls <- get.trios.cmd(dir,gc.out.fn=marker.fn$gc,baf.out.fn=marker.fn$baf,
-                                penn.path=penn.path,relative=F,hmm=hmm,...)
+                                penn.path=penn.path,perl.path=perl.path,relative=F,hmm=hmm,...)
                                 #ped.file="my.ped",combined.file="raw.merge2.cnv")
   } else {
     penn.calls <- get.penn.cmd(dir,gc.out.fn=marker.fn$gc,baf.out.fn=marker.fn$baf,
-                             relative=relative,penn.path=penn.path,hmm=hmm,use.penn.gc=use.penn.gc)
+                             relative=relative,penn.path=penn.path,perl.path=perl.path,hmm=hmm,use.penn.gc=use.penn.gc)
   }
   n.calls <- length(penn.calls)
   if(multi) {  must.use.package("parallel",F) } # run in parallel
@@ -7136,7 +7140,7 @@ run.PENN.cnv <- function(DT=NULL,dir=NULL,num.pcs=NA,LRR.fn=NULL,BAF.fn="BAFdesc
 
 
 
-run.CNV.qc <- function(DT=NULL,dir=NULL,num.pcs=NA,penn.path="/usr/local/bin/penncnv/",
+run.CNV.qc <- function(DT=NULL,dir=NULL,num.pcs=NA,penn.path="/usr/local/bin/penncnv/", perl.path="perl",
                          build="hg18",sample.info=NULL,snp.info=NULL,
                          out.format="Ranges",result.pref="cnvResults",
                          cnv.qc=T,rare.qc=T,plate.qc=T,restore.mode=F,trio=FALSE,joint=FALSE,ped.file="my.ped",
@@ -7173,7 +7177,7 @@ run.CNV.qc <- function(DT=NULL,dir=NULL,num.pcs=NA,penn.path="/usr/local/bin/pen
     warning("restore mode selected, any existing CNVQC files won't be deleted",
             " before this function proceeds; results may be inaccurate")
   }
-  my.out <- process.penn.results(dir,penn.path=penn.path,sample.info=sample.info,
+  my.out <- process.penn.results(dir,penn.path=penn.path,perl.path=perl.path,sample.info=sample.info,
                    build=build,hide.plink.out=hide.plink.out,
                    cnv.qc=cnv.qc,rare.qc=rare.qc,plate.qc=plate.qc,pval=pval,
                    del.rate=del.rate,dup.rate=dup.rate,thr.sd=thr.sd,plate.thr=plate.thr,
@@ -10820,7 +10824,7 @@ init.dirs.fn <- function(dir,overwrite=F,ignore=c("raw","sup"),
 
 
 check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=T,plink.cmd="plink",
-                            penn.path="/usr/local/bin/penncnv/",verbose=T,hmm="hh550.hmm") {
+                            penn.path="/usr/local/bin/penncnv/",perl.path="perl",verbose=T,hmm="hh550.hmm") {
   ## check whether all appropriate files are in place to run plumbCNV
   ## Check for appropriate Penn CNV installation
   # mode 1: run the pipeline starting from a raw genome studio file, using file.spec.txt
@@ -10883,7 +10887,7 @@ check.readiness <- function(dir=NULL,mode=2,snp.mode=1,penn.check=T,plink.check=
       cat("Modify parameters therein; B1_uf, B2_uf, B3_uf, from 0.01 to 0.03,")
       cat("if using Affymetrix arrays\n")
     }
-    if(!check.linux.install(c("perl"))) {
+    if(!check.linux.install(c(perl.path))) {
       stop("perl installation not detected - please install perl\n")
     }
     cat("\nPennCNV installation detected\n")
@@ -11012,7 +11016,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
                      pc.to.keep=.11,assoc=F,n.store=50,correct.sex=F,
                      add.int=F,exclude.bad.reg=T,preserve.median=F,
                      comparison=T,comp.gc=F,comps="plate",use.penn.gc=F,
-                     penn.path="/usr/local/bin/penncnv64/",plink.cmd="plink",hmm="hh550.hmm",
+                     penn.path="/usr/local/bin/penncnv64/",perl.path="perl",plink.cmd="plink",hmm="hh550.hmm",
                      relative=F,run.manual=F,print.cmds=F,trio=F,joint=F,ped.file="my.ped",qs.trios=F,
                      result.pref="cnvResults",out.format="Ranges",results="DT",print.summary.overlaps=F,
                      cnv.qc=T,rare.qc=T,plate.qc=T,pval=0.05,del.rate=0.4,dup.rate=0.18,thr.sd=3,plate.thr=3,
@@ -11078,7 +11082,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
     #prv(dir)
     init.dirs.fn(dir,overwrite=erase.previous,silent=T,update.bash=T,info.dir=aux.files.dir)
     erase.previous <- F  # change erase so it can't be done again below
-    if(check.readiness(dir=dir,mode=run.mode,snp.mode=snp.run.mode,penn.path=penn.path,plink.cmd=plink.cmd)) { cat("plumbCNV file check successful\n") }
+    if(check.readiness(dir=dir,mode=run.mode,snp.mode=snp.run.mode,penn.path=penn.path,perl.path=perl.path,plink.cmd=plink.cmd)) { cat("plumbCNV file check successful\n") }
     if(is.file(ped.file,dir$ano,dir)) { ped.file <- find.file(ped.file,dir$ano,dir) } else {
       if(trio) {
         cat("trio was set to TRUE but did not find a valid ped.file. Will set trio to FALSE\n")
@@ -11246,7 +11250,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
     Header("5. RUN CNV CALLING WITH PENN-CNV","#")
     DT <- run.PENN.cnv(DT=DT,num.pcs=num.pcs,n.cores=n.cores,low.ram=T,q.cores=q.cores,grid.id=grid.id,cluster.fn=cluster.fn,
                        restore.mode=restore.mode,relative=relative,run.manual=run.manual,use.penn.gc=use.penn.gc,
-                       hide.penn.out=hide.penn.plink,penn.path=penn.path,print.cmds=print.cmds,build=build,hmm=hmm)
+                       fenn.out=hide.penn.plink,penn.path=penn.path,perl.path=perl.path,print.cmds=print.cmds,build=build,hmm=hmm)
     DT <- setSlot(DT,settings=settings,proc.done=5)
     write.data.tracker(DT,fn=dt.name)
     if(delete.as.we.go) { remove.for.step(DT,5,n.pcs=num.pcs) }
@@ -11256,7 +11260,7 @@ plumbCNV <- function(dir.base,dir.raw,snp.support="snpdata.map",gsf=gsf,delete.a
   # 6. Do CNV-QC
   if(start.at<7) {
     Header("6. CNV QC AND SUMMARY","#")
-    DT <- run.CNV.qc(DT=DT,num.pcs=num.pcs,penn.path=penn.path,
+    DT <- run.CNV.qc(DT=DT,num.pcs=num.pcs,penn.path=penn.path,perl.path=perl.path,
                      build=build,hide.plink.out=hide.penn.plink,verbose=verbose,
                      out.format=out.format,result.pref=result.pref,
                      cnv.qc=cnv.qc,rare.qc=rare.qc,plate.qc=plate.qc,pval=pval,restore.mode=restore.mode,
